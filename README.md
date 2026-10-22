@@ -26,9 +26,14 @@ npm start
 ```powershell
 npm test
 node --check dist/game.js
+node scripts/ui-qa.mjs --play
 ```
 
 核心物理、计分、结算、暂停、输入触点隔离、存储降级均有独立测试；挥击提示与真实判定逐帧对照（`tests/readability.test.mjs`），打法平衡用只通过移动/挥击输入驱动的模拟玩家回归（`tests/strategy.test.mjs`）。生产代码没有作弊入口，也不挂载游戏状态；浏览器 QA 只在测试浏览器里拦截加载的脚本读取状态。`scripts/browser-qa.mjs` 是旧版规则的脚本，已不适用。
+
+新版界面由准备、对局、暂停、结算四种状态组成。关卡和装备在准备页原生对话框内选择；对局采用单视口布局；结算亮点从实际事件统计。`dist/ui.mjs` 管理界面状态、图标和本局摘要，不修改物理或存档。
+
+`scripts/ui-qa.mjs` 为当前界面检查：`--play` 使用独立参考模拟按帧向真实页面发送键盘事件，验证实际胜利/下一关/解锁；不读取或修改运行中游戏状态。`--fallback` 验证无 WebGL，`--context-loss` 验证运行中丢失图形上下文。旧脚本仅保留历史参考。脚本使用本机已有的浏览器与 Playwright 路径，换机器需调整脚本顶部路径。
 
 ## 文件
 
