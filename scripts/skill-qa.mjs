@@ -52,12 +52,12 @@ for(const [name,viewport,mobile] of [['390x844',{width:390,height:844},true],['3
     return out;});
   await waitReady(p,'spin');await p.screenshot({path:`${OUT}/spin-ready-${name}.png`});await ctx.close();
 }
-// 2) Phone: hold the move pad with one finger, tap spin with another.
+// 2) Phone: hold a direction button with one finger, tap spin with another.
 {const {ctx,p}=await open(browser);await pickLevel(p,5);await click(p,'#start-match');await waitPhase(p,'playing');await waitReady(p,'spin');
-  const cdp=await ctx.newCDPSession(p),mv=await p.locator('#move-control').boundingBox(),sp=await p.locator('#skill-spin').boundingBox();
+  const cdp=await ctx.newCDPSession(p),mv=await p.locator('#move-right').boundingBox(),sp=await p.locator('#skill-spin').boundingBox();
   const m0={x:mv.x+mv.width/2,y:mv.y+mv.height/2,id:1},s0={x:sp.x+sp.width/2,y:sp.y+sp.height/2,id:2},before=await st(p);
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[m0]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...m0,x:m0.x+40}]});
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...m0,x:m0.x+40},s0]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...m0,x:m0.x+40}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[m0]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[m0,s0]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[s0]});
   await p.waitForTimeout(60);const mid=await st(p);await p.screenshot({path:`${OUT}/spin-route-390.png`});await p.waitForTimeout(250);const later=await st(p);
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   R.twoFingerSpin={energy:[before.energy,mid.energy],lastShot:mid.lastShot,curving:mid.curve,kind:mid.kind,keptMoving:later.px>mid.px+.2};

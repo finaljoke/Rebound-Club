@@ -8,20 +8,15 @@
 <title>反弹守卫 · REBOUND CLUB</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ed6843'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23fff5da' stroke-width='3'/%3E%3Cpath d='M15 32h34M32 15c-12 10-12 24 0 34m0-34c12 10 12 24 0 34' fill='none' stroke='%23fff5da' stroke-width='3'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./lobby.css">
 </head>
 <body data-screen="ready">
 <div class="app">
 <header class="site-header">
   <a class="brand" href="./" aria-label="反弹守卫首页"><span class="brand-ball"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="13"/><path d="M7 20h26M20 7c-10 8-10 18 0 26m0-26c10 8 10 18 0 26"/></svg></span><span>反弹守卫<small>REBOUND CLUB</small></span></a>
-  <div class="header-center">一颗球，一场漂亮对决。</div>
   <div class="header-right"><button class="icon-button sound-button" id="sound" aria-label="关闭音效" aria-pressed="true"><span class="sound-glyph">♪</span><span>音效开</span></button><button class="icon-button" id="help" aria-label="查看玩法说明">?</button></div>
 </header>
 <main class="layout">
-  <section class="intro" aria-label="欢迎来到反弹俱乐部">
-    <div class="eyebrow"><span class="live-dot"></span>单球攻守 · 随时开场</div>
-    <h1>来一场，<br><span>漂亮对决。</span><i aria-hidden="true">✳</i></h1>
-    <p>守住自家，攻破对面。<br>把每一次回击，打出自己的节奏。</p>
-  </section>
   <section class="game-shell" aria-label="反弹守卫游戏">
     <div class="game-top"><div class="stage-heading"><span class="mini-label">第 01 关</span><h2 id="stage-name">初次交锋</h2></div><span class="preview-label">球场已就绪 <span>↗</span></span><button id="pause" class="pause-button" aria-label="暂停游戏" disabled><span></span><span></span></button></div>
     <div class="hud"><div class="hud-progress"><span class="hud-label">进球目标</span><b id="progress">0 / 3</b><div class="progress-track"><i id="progress-bar"></i></div></div><div class="hud-divider"></div><div class="lives"><span class="hud-label">防守机会 <em class="practice-chip" id="practice" hidden></em></span><div id="hearts" aria-label="剩余3次机会"></div></div></div>
@@ -35,30 +30,29 @@
       <div class="combo" id="combo"><b>0</b><span>连击</span></div>
       <div class="overlay" id="overlay" hidden><div class="overlay-content" id="overlay-content"></div></div>
     </div>
-    <div class="controls"><div class="move-control" id="move-control" role="group" aria-label="左右移动触控区"><div class="move-caption"><span>←</span><b>滑动补位</b><span>→</span></div><div class="move-rail"><i id="move-knob"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5m6-10 5 5-5 5M5 12h14"/></svg></i></div><small>A / D 或方向键</small></div><div class="attack-wrap"><span class="attack-hint" id="attack-hint">看准再出手</span><div class="skill-dock" id="skill-dock"><div class="energy" id="energy" role="meter" aria-label="能量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i id="energy-fill"></i><b class="energy-tick" aria-hidden="true"></b><span id="energy-value">50</span></div><div class="skill-buttons"><button class="skill-button spin" id="skill-spin" aria-label="旋转回击，消耗50能量"><b>旋转<em id="spin-dir"></em></b><small>50 · J</small><span class="skill-state" id="spin-state">待开球</span></button><button class="skill-button burst" id="skill-burst" aria-label="爆发回击，消耗100能量"><b>爆发</b><small>100 · K</small><span class="skill-state" id="burst-state">待开球</span></button></div></div><button id="attack" class="attack-button" aria-label="挥击" disabled><svg viewBox="0 0 48 44" aria-hidden="true"><path d="M13 28c-8-2-9-12-4-15 2-1 5 0 7 3V9c0-4 6-4 6 0V6c0-4 6-4 6 0v2c0-4 6-4 6 0v3c1-4 7-3 7 1v10c0 6-5 10-11 10H17zM17 32v5h14v-5"/></svg><span>挥击</span><small>SPACE</small></button></div></div>
+    <div class="controls"><div class="move-control" id="move-control" role="group" aria-label="左右移动" aria-describedby="move-hint"><div class="move-buttons"><button type="button" class="move-button" id="move-left" aria-label="向左移动" aria-pressed="false" disabled><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16H6m9-9-9 9 9 9"/></svg></button><button type="button" class="move-button" id="move-right" aria-label="向右移动" aria-pressed="false" disabled><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 16h20m-9-9 9 9-9 9"/></svg></button></div><small id="move-hint">按住移动 · 松开停止</small></div><div class="attack-wrap"><span class="attack-hint" id="attack-hint">看准再出手</span><div class="skill-dock" id="skill-dock"><div class="energy" id="energy" role="meter" aria-label="能量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i id="energy-fill"></i><b class="energy-tick" aria-hidden="true"></b><span id="energy-value">50</span></div><div class="skill-buttons"><button class="skill-button spin" id="skill-spin" aria-label="旋转回击，消耗50能量"><b>旋转<em id="spin-dir"></em></b><small>50 · J</small><span class="skill-state" id="spin-state">待开球</span></button><button class="skill-button burst" id="skill-burst" aria-label="爆发回击，消耗100能量"><b>爆发</b><small>100 · K</small><span class="skill-state" id="burst-state">待开球</span></button></div></div><button id="attack" class="attack-button" aria-label="挥击" disabled><svg viewBox="0 0 48 44" aria-hidden="true"><path d="M13 28c-8-2-9-12-4-15 2-1 5 0 7 3V9c0-4 6-4 6 0V6c0-4 6-4 6 0v2c0-4 6-4 6 0v3c1-4 7-3 7 1v10c0 6-5 10-11 10H17zM17 32v5h14v-5"/></svg><span>挥击</span><small>SPACE</small></button></div></div>
     <div class="game-footer"><span id="feedback">准备好，就上场。</span><span id="score">0000 <small>分</small></span></div>
   </section>
-  <aside class="sidebar prep-panel" aria-label="赛前准备">
-    <div class="prep-heading"><span class="eyebrow">你的下一场</span><span class="round-number" id="level-count">01 / 06</span></div>
-    <div class="mission"><div class="mission-icon" aria-hidden="true">↗</div><div><h2 id="prep-level-name">初次交锋</h2><p id="prep-rule">进 3 球通关 · 丢 3 球结束</p></div></div>
-    <p class="prep-lesson" id="prep-lesson"></p>
-    <div class="prep-selectors"><button class="selector-button" data-action="choose-level"><span class="selector-label">选择关卡</span><span class="selector-value"><b id="prep-stage">第 01 关</b><i>↗</i></span></button><button class="selector-button" data-action="choose-gear"><span class="selector-label">上场装备</span><span class="selector-value"><span class="selected-gear-icon" id="prep-weapon-icon"></span><b id="prep-weapon">拳套</b><i>↗</i></span></button></div>
-    <div class="prep-record"><span>本关最高分</span><b id="best">—</b><span class="record-rule">稳稳接住，漂亮打回。</span></div>
-    <button class="primary-button start-button" id="start-match" data-action="start">开始挑战 <span>↗</span></button>
-    <div class="prep-bottom"><button class="text-button" data-action="help">第一次来？看看怎么玩</button><span id="save-note"></span></div>
+  <aside class="sidebar prep-panel lobby-menu" aria-label="赛前准备">
+    <div class="lobby-options">
+      <button class="lobby-option lobby-level" data-action="choose-level" aria-label="选择关卡"><span id="prep-stage">第 01 关</span><b id="prep-level-name">初次交锋</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      <button class="lobby-option lobby-gear" data-action="choose-gear" aria-label="上场装备"><span class="selected-gear-icon" id="prep-weapon-icon"></span><b id="prep-weapon">拳套</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+    </div>
+    <button class="primary-button start-button" id="start-match" data-action="start">开始游戏 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7Z"/></svg></button>
+    <p class="lobby-record" id="best-record" hidden>本关最佳 <b id="best">—</b></p>
+    <p id="save-note" role="status" hidden></p>
   </aside>
 </main>
-<footer class="site-footer"><span>REBOUND CLUB · VOL. 01</span><span>好球，永远值得再来一次。</span></footer>
 </div>
 <dialog id="selection-dialog" aria-labelledby="selection-title" data-kind="levels">
   <button class="selector-close" id="selection-close" aria-label="关闭赛前选择">×</button><span class="eyebrow">赛前准备</span><h2 id="selection-title">选择关卡</h2>
-  <section class="level-options"><p class="dialog-intro">每一场，练出一种新本领。</p><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note"></p></section>
+  <section class="level-options"><p class="dialog-intro" id="prep-rule">进 2 球通关 · 丢 3 球结束</p><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note"></p></section>
   <section class="gear-options"><p class="dialog-intro">选一件顺手的装备，打出你的节奏。</p><div id="weapons"></div><p class="selection-note" id="weapon-note"></p></section>
   <button class="primary-button" id="selection-done">就这样，上场</button>
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-title">
   <button class="dialog-close" aria-label="关闭玩法说明">×</button><span class="eyebrow">上场指南</span><h2 id="help-title">守住自家，攻破对面。</h2>
-  <ol><li><b>先移动到位</b><p>手机左侧滑动；电脑按 A / D 或方向键。地上的影子就是球的位置。</p></li><li><b>看框出手</b><p>人物前方方框是击球范围，橙色横条是重炮甜点。框变亮时挥击：早打往左，晚打往右，箭头显示击球方向。</p></li><li><b>技能：旋转与爆发</b><p>普通回击攒能量（完美 +25，其他 +12）。50 能量放「旋转」（J），球沿真实弧线拐弯：早打左旋、晚打右旋，正中默认左旋，按钮上会显示方向。满 100 放「爆发」（K）：短暂蓄力后高速打出，接球范围略宽。两种技能都要等来球进框，门将依然可能扑住。</p></li><li><b>找到门将的空当</b><p>射门终点变绿是空当，变红是门将封住了路线。尝试变向或借侧墙，进满目标球数即可通关。</p></li></ol>
+  <ol><li><b>先移动到位</b><p>手机按住左、右箭头移动，松开停止；电脑按 A / D 或方向键。地上的影子就是球的位置。</p></li><li><b>看框出手</b><p>人物前方方框是击球范围，橙色横条是重炮甜点。框变亮时挥击：早打往左，晚打往右，箭头显示击球方向。</p></li><li><b>技能：旋转与爆发</b><p>普通回击攒能量（完美 +25，其他 +12）。50 能量放「旋转」（J），球沿真实弧线拐弯：早打左旋、晚打右旋，正中默认左旋，按钮上会显示方向。满 100 放「爆发」（K）：短暂蓄力后高速打出，接球范围略宽。两种技能都要等来球进框，门将依然可能扑住。</p></li><li><b>找到门将的空当</b><p>射门终点变绿是空当，变红是门将封住了路线。尝试变向或借侧墙，进满目标球数即可通关。</p></li></ol>
   <p class="dialog-tip">挥空需要收招，连按容易漏球。前几关提供练习保护，对局内会显示剩余练习次数。</p><button class="primary-button" id="help-close">明白了</button><button class="text-button replay-tutorial" id="replay-tutorial">重新体验第一关教学</button>
 </dialog>
 <noscript>请开启 JavaScript 以游玩反弹守卫。</noscript>

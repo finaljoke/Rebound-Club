@@ -68,18 +68,17 @@ function selections(){
   $('levels').innerHTML=LEVELS.map((l,i)=>`<button class='level-button ${selected===i?'selected':''}' data-level='${i}' aria-label='第${i+1}关 ${l.name}${i>progress.unlocked?'，未解锁':''}' aria-pressed='${selected===i}' ${i>progress.unlocked||busy?'disabled':''}><strong>${String(i+1).padStart(2,'0')}</strong><span>${l.name}</span><small>${i>progress.unlocked?icon('lock'):progress.perfect[i]?icon('spark'):progress.scores[i]?icon('check'):''}</small></button>`).join('');
   $('weapons').innerHTML=Object.entries(WEAPONS).map(([id,w])=>`<button class='weapon-button ${weapon===id?'selected':''}' data-weapon='${id}' aria-pressed='${weapon===id}' ${busy||(id!=='glove'&&progress.unlocked===0)?'disabled':''}><span class='weapon-icon'>${icons[id]}</span><span class='weapon-copy'><b>${w.name}</b><small>${w.subtitle}</small></span><span class='weapon-check'>${id!=='glove'&&progress.unlocked===0?icon('lock'):weapon===id?icon('check'):''}</span></button>`).join('');
   $('stage-name').textContent=LEVELS[selected].name;
-  $('level-count').textContent=`${String(selected+1).padStart(2,'0')} / 06`;
   document.querySelector('.game-top .mini-label').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
   $('level-note').textContent=LEVELS[selected].lesson;
   $('weapon-note').textContent=progress.unlocked===0?'完成第一关，解锁球拍和剑。':'三种装备各有手感，找到自己的节奏。';
   $('prep-level-name').textContent=LEVELS[selected].name;
   $('prep-rule').textContent=`进 ${LEVELS[selected].goals} 球通关 · 丢 3 球结束`;
-  $('prep-lesson').textContent=(LEVELS[selected].practice?`${LEVELS[selected].tag}。提供 ${LEVELS[selected].practice} 次练习保护。`:LEVELS[selected].tag+'。')+(selected===0&&needsTutorial(progress)?'首次上场先做 3 步小教学。':'');
   $('prep-stage').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
   $('prep-weapon').textContent=WEAPONS[weapon].name;$('prep-weapon-icon').innerHTML=icons[weapon];
   $('attack').querySelector('svg').outerHTML=icons[weapon];
   $('best').textContent=progress.scores[selected]??'—';
-  $('save-note').innerHTML=`<span class='live-dot'></span>${progress.saved?'本机进度已保存':'当前进度未保存'}`;
+  $('best-record').hidden=!progress.scores[selected];
+  $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
 }
 function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,weapon,{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
@@ -129,7 +128,11 @@ function hud(){
     b.setAttribute('aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
   const pv=game.phase==='playing'&&game.ball.vz<0?spinPreview(game):null;$('spin-dir').textContent=pv?(pv.dir==='left'?' ↺':' ↻'):'';
   $('combo').style.opacity=game.combo>1?'1':'0';$('combo').querySelector('b').textContent=game.combo;
-  $('move-knob').style.transform=`translateX(${input.axis()*30}px)`;
+  for(const [id,direction] of [['move-left',-1],['move-right',1]]){
+    const button=$(id),pressed=input.pressed(direction);
+    button.disabled=!ACTIVE_PHASES.includes(game.phase);
+    button.classList.toggle('pressed',pressed);button.setAttribute('aria-pressed',String(pressed));
+  }
 }
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}
 // Shot quality pops mid-court; what the shot achieved gets its own banner at the top.
@@ -182,17 +185,24 @@ $('tutorial-skip').addEventListener('click',()=>{if(game.tutorial)finishTutorial
 $('replay-tutorial').addEventListener('click',()=>{$('help-dialog').close();beginTutorial();});
 $('attack').addEventListener('pointerdown',e=>{if(!e.isPrimary&&e.pointerType==='mouse')return;e.preventDefault();swing();});
 $('attack').addEventListener('click',e=>{if(e.detail===0)swing();});
-// Skill buttons take their own pointer, so a finger holding the move pad keeps moving.
+// Skill buttons take their own pointer, so a finger holding a direction keeps moving.
 for(const [id,kind] of [['skill-spin','spin'],['skill-burst','burst']]){
   $(id).addEventListener('pointerdown',e=>{if(!e.isPrimary&&e.pointerType==='mouse')return;e.preventDefault();trySkill(kind);});
   $(id).addEventListener('click',e=>{if(e.detail===0)trySkill(kind);});
 }
-const move=$('move-control');
-move.addEventListener('pointerdown',e=>{e.preventDefault();input.down(e.pointerId,e.clientX);move.setPointerCapture(e.pointerId);});
-move.addEventListener('pointermove',e=>input.move(e.pointerId,e.clientX));
-move.addEventListener('pointerup',e=>input.up(e.pointerId));
-move.addEventListener('pointercancel',()=>input.cancel());
-move.addEventListener('lostpointercapture',e=>input.up(e.pointerId));
+for(const [id,direction] of [['move-left',-1],['move-right',1]]){
+  const button=$(id);
+  button.addEventListener('pointerdown',e=>{
+    if(e.button!==0||!ACTIVE_PHASES.includes(game.phase))return;
+    e.preventDefault();input.down(e.pointerId,direction);button.setPointerCapture(e.pointerId);
+  });
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,e=>input.up(e.pointerId));
+  // Focused buttons support keyboard hold without also triggering the global Space attack.
+  button.addEventListener('keydown',e=>{if(!['Space','Enter'].includes(e.code))return;e.preventDefault();e.stopPropagation();if(ACTIVE_PHASES.includes(game.phase))input.down(`${id}:${e.code}`,direction);});
+  button.addEventListener('keyup',e=>{if(!['Space','Enter'].includes(e.code))return;e.preventDefault();e.stopPropagation();input.up(`${id}:${e.code}`);});
+  button.addEventListener('blur',()=>{input.up(`${id}:Space`);input.up(`${id}:Enter`);});
+  button.addEventListener('contextmenu',e=>e.preventDefault());
+}
 window.addEventListener('keydown',e=>{
   if(document.querySelector('dialog[open]'))return;
   if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)&&ACTIVE_PHASES.includes(game.phase)){e.preventDefault();input.key(e.key,true);}

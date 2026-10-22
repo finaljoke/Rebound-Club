@@ -19,7 +19,7 @@ if(process.argv.includes('--play'))await page.addInitScript(()=>{
 try{
   await mkdir('artifacts',{recursive:true});
   const response=await page.goto('http://localhost:4173');if(response.status()!==200)throw Error('Preview failed');
-  await page.getByRole('button',{name:'开始挑战'}).waitFor();
+  await page.getByRole('button',{name:'开始游戏'}).waitFor();
   const backend=await page.locator('#court').getAttribute('data-renderer');
   if(backend!==(process.argv.includes('--fallback')?'2d':'3d'))throw Error('Unexpected renderer: '+backend);
   results.push({backend});let contextLost=false;
@@ -36,7 +36,7 @@ try{
     await page.getByRole('button',{name:/上场装备/}).click();
     if(!await page.locator('[data-weapon="racket"]').isDisabled())throw Error('Locked gear is available');
     await page.locator('#selection-done').click();
-    await page.getByRole('button',{name:'开始挑战'}).click();
+    await page.getByRole('button',{name:'开始游戏'}).click();
     await page.waitForFunction(()=>document.body.dataset.screen==='match');await page.waitForTimeout(950);
     const fit=await page.evaluate(()=>{const b=id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {screen:document.body.dataset.screen,scroll:document.documentElement.scrollWidth,width:innerWidth,height:innerHeight,court:b('court-wrap'),attack:b('attack'),footer:b('feedback'),prepVisible:document.querySelector('.prep-panel').getBoundingClientRect().height>0};});
     if(fit.scroll>size.width||fit.attack.bottom>size.height||fit.footer.bottom>size.height||fit.prepVisible)throw Error('Match layout failed: '+JSON.stringify(fit));
@@ -56,15 +56,15 @@ try{
     await page.getByRole('button',{name:'返回俱乐部'}).click();
     if(await page.locator('body').getAttribute('data-screen')!=='ready')throw Error('Return to ready failed');
   }
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'开始挑战'}).click();await page.waitForTimeout(300);
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'开始游戏'}).click();await page.waitForTimeout(300);
   if(await page.locator('#tutorial-bar').isVisible())await page.getByRole('button',{name:'跳过教学'}).click();await page.waitForTimeout(950);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-  const m=await page.locator('#move-control').boundingBox(),a=await page.locator('#attack').boundingBox(),left={id:1,x:m.x+m.width/2,y:m.y+m.height/2},right={id:2,x:a.x+a.width/2,y:a.y+a.height/2};
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[left]});left.x+=45;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[left]});await page.waitForTimeout(60);
-  const drag=await page.locator('#move-knob').getAttribute('style');await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[left,right]});await page.waitForTimeout(50);
+  const m=await page.locator('#move-right').boundingBox(),a=await page.locator('#attack').boundingBox(),left={id:1,x:m.x+m.width/2,y:m.y+m.height/2},right={id:2,x:a.x+a.width/2,y:a.y+a.height/2};
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[left]});await page.waitForTimeout(60);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[left,right]});await page.waitForTimeout(50);
   if(await page.locator('#attack span').textContent()!=='收招')throw Error('Attack not triggered by second touch');
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[right]});await page.waitForTimeout(50);if(drag!==await page.locator('#move-knob').getAttribute('style'))throw Error('Attack released movement');
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});results.push({touch:'independent movement and swing'});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[right]});await page.waitForTimeout(50);if(await page.locator('#move-right').getAttribute('aria-pressed')!=='true')throw Error('Attack released movement');
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(50);if(await page.locator('#move-right').getAttribute('aria-pressed')!=='false')throw Error('Movement stuck after release');results.push({touch:'independent direction buttons and swing'});
   await page.waitForFunction(()=>document.body.dataset.screen==='result',null,{timeout:40000});
   if(!/差一点/.test(await page.locator('#overlay-content h3').textContent()))throw Error('Expected natural defeat');
   for(const size of [{width:390,height:844},{width:360,height:640},{width:844,height:390}]){
@@ -99,7 +99,7 @@ try{
         C.stepGame(s,dt,axis);
       }};
     });
-    await page.getByRole('button',{name:'开始挑战'}).click();
+    await page.getByRole('button',{name:'开始游戏'}).click();
     await page.waitForFunction(()=>document.body.dataset.screen==='result',null,{timeout:90000});
     const title=await page.locator('#overlay-content h3').textContent();
     if(!/拿下/.test(title))throw Error('Input replay did not win: '+title);

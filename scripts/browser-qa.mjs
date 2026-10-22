@@ -10,7 +10,7 @@ try{
   await mkdir('artifacts',{recursive:true});
   const response=await page.goto('http://localhost:4173');
   if(response.status()!==200)throw Error('Preview HTTP is not 200');
-  await page.getByRole('button',{name:'开始挑战'}).waitFor();
+  await page.getByRole('button',{name:'开始游戏'}).waitFor();
   const backend=await page.locator('#court').getAttribute('data-renderer');
   if(backend!==(process.argv.includes('--fallback')?'2d':'3d'))throw Error('Unexpected rendering backend: '+backend);
   results.push({backend});
@@ -25,29 +25,28 @@ try{
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'查看玩法说明'}).click();
   await page.getByRole('button',{name:'明白了'}).click();
-  await page.getByRole('button',{name:'开始挑战'}).click();
+  await page.getByRole('button',{name:'开始游戏'}).click();
   await page.waitForTimeout(1100);
   if(process.argv.includes('--touch')){
     await page.evaluate(()=>{window.qaTouchEvents=[];for(const name of ['pointerdown','pointerup','pointercancel','lostpointercapture'])document.addEventListener(name,e=>window.qaTouchEvents.push({name,id:e.pointerId,target:e.target.id,x:e.clientX}));});
     const cdp=await page.context().newCDPSession(page);
     await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-    const m=await page.locator('#move-control').boundingBox(),a=await page.locator('#attack').boundingBox();
+    const m=await page.locator('#move-right').boundingBox(),a=await page.locator('#attack').boundingBox();
     const p={x:m.x+m.width/2,y:m.y+m.height/2,id:1};
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p]});
-    p.x+=45;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[p]});
     await page.waitForTimeout(80);
-    const moving=await page.locator('#move-knob').getAttribute('style');
+    const moving=await page.locator('#move-right').getAttribute('aria-pressed');if(moving!=='true')throw Error('Direction button did not start movement');
     const q={x:a.x+a.width/2,y:a.y+a.height/2,id:2};
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p,q]});
     await page.waitForTimeout(50);
     if(await page.locator('#attack span').textContent()!=='收招')throw Error('Second touch did not swing');
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[q]});
     await page.waitForTimeout(50);
-    const after=await page.locator('#move-knob').getAttribute('style');
+    const after=await page.locator('#move-right').getAttribute('aria-pressed');
     if(after!==moving)throw Error('Attack touch interrupted movement: '+JSON.stringify({moving,after,events:await page.evaluate(()=>window.qaTouchEvents)}));
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await page.waitForTimeout(50);
-    if(!/translateX\(0px\)/.test(await page.locator('#move-knob').getAttribute('style')))throw Error('Touch release left movement active');
+    if(await page.locator('#move-right').getAttribute('aria-pressed')!=='false')throw Error('Touch release left movement active');
     results.push({multitouch:'move + swing + independent release'});
   }
   if(backend==='3d')await page.screenshot({path:'artifacts/3d-gameplay.png',fullPage:true});
@@ -112,7 +111,7 @@ try{
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('button',{name:'选择关卡与装备'}).click();
     await page.getByRole('button',{name:/球拍/}).click();
-    await page.getByRole('button',{name:'开始挑战'}).click();
+    await page.getByRole('button',{name:'开始游戏'}).click();
     await page.waitForFunction(()=>document.querySelector('#overlay-content h3')?.textContent.includes('差一点')&&!document.getElementById('overlay').hidden,{},{timeout:20000});
     results.push({uiLoss:'three misses',unlocked:await page.getByRole('button',{name:/第2关/}).isEnabled()});
     await page.setViewportSize({width:360,height:640});
