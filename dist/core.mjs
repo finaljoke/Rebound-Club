@@ -24,17 +24,30 @@ const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 export function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
 // The keeper puts every new ball into play, alternating sides.
+// First-visit tutorial for level 1. Its slow serves, fixed keeper and forgiving outcomes live only on
+// s.tutorial; a finished or skipped tutorial is replaced by a fresh createGame(), so nothing carries over.
+function tutorialServe(s){
+  const t=s.tutorial,z=KEEPER_Z-.3;s.swing=null;t.shotStep=-1;
+  if(t.step===0)s.ball={x:s.player.x,z,vx:0,vz:-2.6};
+  else if(t.step===1)s.ball={x:s.player.x>0?-2.3:2.3,z,vx:0,vz:-2.8};
+  else{t.keeperX=(t.attempt%2?1:-1)*1.5;s.keeper.x=s.keeper.target=t.keeperX;s.ball={x:0,z,vx:0,vz:-3};}
+  launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));
+}
+// Ends a tutorial rally without touching lives, practice or the goal count.
+function tutorialReset(s,event){s.events.push(event);s.swing=null;s.power=false;s.rally=1;s.phase='miss';s.countdown=1;}
 function serve(s){
+  if(s.tutorial){tutorialServe(s);return;}
   const z=KEEPER_Z-.3,dir=(s.misses+s.goals)%2?-1:1;
   s.ball={x:clamp(s.keeper.x,-1.5,1.5),z,vx:.65*dir,vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;
 }
-export function createGame(level=0,weapon='glove'){
+export function createGame(level=0,weapon='glove',options={}){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
   return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',phase:'ready',
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
     rally:1,power:false,shots:0,hitstop:0,lastShot:'',
+    whiff:null,tutorial:options.tutorial&&levelIndex===0?{step:0,attempt:0,shotStep:0,keeperX:0,done:false}:null,
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
 }
 export function startGame(s){if(s.phase==='ready'){serve(s);s.phase='serving';s.countdown=.8;}}
@@ -90,10 +103,12 @@ function strike(s,w,sw){
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   if(perfect)s.hitstop=.07;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
+  const tu=s.tutorial;if(tu){tu.shotStep=tu.step;if(tu.step<2){tu.step++;s.events.push('tutorialStep');}}
 }
 function moveKeeper(s,dt){
   const k=s.keeper,K=s.level.keeper,b=s.ball,g=s.level.goalHalf;
   k.dive=Math.max(0,k.dive-dt);
+  if(s.tutorial?.step===2&&s.tutorial.shotStep!==1){k.x=k.target=s.tutorial.keeperX;return;}
   let target=0,speed=K.speed*.35;
   if(s.phase==='playing'&&b.vz>0&&b.z>=KEEPER_Z){
     // Beaten: a last lunge straight at the ball, no misread left to apply.
@@ -111,9 +126,25 @@ function moveKeeper(s,dt){
   }
   k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
 }
+// Only names a cause the recorded window positions support; anything mixed stays 'unclear'.
+function whiffReason(s,w,sw){
+  const r=hitZone(s),f=sw.first,l=sw.last,lateral=o=>Math.abs(o.dx)<=w.width;
+  if(!f||(!f.inc&&!l.inc))return {reason:'none'};
+  if(sw.side)return {reason:'reach',side:sw.side};
+  if(l.inc&&l.z>r.far&&lateral(l))return {reason:'early'};
+  if(f.inc&&f.z<r.near&&lateral(f))return {reason:'late'};
+  return {reason:'unclear'};
+}
 // The keeper gets one chance as the ball crosses its line; the goal itself is the drawn mouth further back.
 function farEnd(s,prevZ){
   const b=s.ball,k=s.keeper,g=s.level.goalHalf;
+  if(s.tutorial&&prevZ<KEEPER_Z&&b.z>=KEEPER_Z&&Math.abs(b.x-k.x)<=KEEPER_REACH){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.tutorial.attempt++;tutorialReset(s,'save');return;}
+  if(s.tutorial&&prevZ<GOAL_Z&&b.z>=GOAL_Z&&Math.abs(b.x)<=g){
+    if(s.tutorial.shotStep===2){s.tutorial.done=true;s.swing=null;s.phase='tutorial-done';s.events.push('goal','tutorialDone');}
+    else tutorialReset(s,'goal');
+    return;
+  }
+  if(s.tutorial&&b.z>FAR_WALL){s.tutorial.attempt+=s.tutorial.shotStep===2?1:0;tutorialReset(s,'wide');return;}
   if(prevZ<KEEPER_Z&&b.z>=KEEPER_Z&&Math.abs(b.x-k.x)<=KEEPER_REACH){
     // Saves come back at varied angles, so the defender still has to move.
     const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
@@ -149,19 +180,25 @@ function tick(s,dt,axis){
   const w=WEAPONS[s.weapon],sw=s.swing;
   if(sw){
     sw.time+=dt;
-    if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.events.push('whiff');}
+    if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');}
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
   const b=s.ball,prevZ=b.z;
   b.x+=b.vx*dt;b.z+=b.vz*dt;
   if(b.x>SIDE){b.x=2*SIDE-b.x;b.vx=-Math.abs(b.vx);s.events.push('wall');}
   if(b.x< -SIDE){b.x=-2*SIDE-b.x;b.vx=Math.abs(b.vx);s.events.push('wall');}
+  if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
+    // What the ball was doing while the window was open, so a whiff can be explained honestly.
+    const r=hitZone(s),dx=b.x-s.player.x,inc=b.vz<0;sw.first??={z:b.z,dx,inc};sw.last={z:b.z,dx,inc};
+    if(inc&&b.z>=r.near&&b.z<=r.far&&Math.abs(dx)>w.width)sw.side=Math.sign(dx);
+  }
   if(b.vz>0){farEnd(s,prevZ);return;}
   if(s.swing&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // Whether the ball was already in range when the window opened decides clean hit vs. soft contact.
     if(sw.armed===null)sw.armed=inHitRange(s);
     if(inHitRange(s)){strike(s,w,sw);return;}
   }
+  if(b.z<=0&&s.tutorial){tutorialReset(s,'tutorialRetry');return;}
   if(b.z<=0){
     s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;
     // Practice balls keep the real feel but don't cost a life.

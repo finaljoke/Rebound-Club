@@ -28,3 +28,15 @@ const paths={
   home:'m6 22 18-16 18 16M12 18v22h9V28h7v12h9V18',spark:'m24 3 5 15 15 5-15 5-5 15-5-15-15-5 15-5 5-15Z'
 };
 export function icon(name){return `<svg viewBox="0 0 48 44" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.glove}"/></svg>`;}
+// Per-gear contact feel: glove = punchy burst, racket = springy rings, sword = a slash arc.
+const gearFeel={glove:{flash:'burst',color:'#ff8a4c',sound:'punch',motion:1},racket:{flash:'ring',color:'#ffe08a',sound:'string',motion:.8},sword:{flash:'slash',color:'#e9fbff',sound:'blade',motion:.9}};
+export function hitFeel(weapon,kind){
+  const g=gearFeel[weapon]||gearFeel.glove,k={soft:[.45,.14,.6],hit:[1,.18,1],perfect:[1.9,.26,1.5]}[kind]||[1,.18,1];
+  return {...g,intensity:k[0],life:k[1],motion:g.motion*k[2]};
+}
+export function whiffHint(w){
+  if(!w)return '挥空';
+  return {early:'太早了 · 等球进框',late:'太晚了 · 球已过身',reach:w.side>0?'够不着 · 球在右边':'够不着 · 球在左边',none:'没有来球'}[w.reason]||'挥空';
+}
+// One short line per tutorial step; shown only while that step is active.
+export const TUTORIAL_TIPS=['球来了：等它进框，按挥击打回去','球从侧边来：先移到影子上，再挥击','看门将站哪边，朝空的一侧打进去'];
