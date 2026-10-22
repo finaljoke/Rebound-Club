@@ -1,4 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
+import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry} from './art.mjs';
 import {LEVELS,WEAPONS,ballHeight,hitZone,swingPreview,crossingFrom,foldX,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE} from './core.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
@@ -10,6 +11,7 @@ export function buildWorld(){
   const material=(color,roughness=.8)=>{const key=color+roughness;if(!mats.has(key))mats.set(key,new THREE.MeshStandardMaterial({color,roughness}));return mats.get(key);};
   const mesh=(geometry,color,parent=scene,x=0,y=0,z=0,shadow=true)=>{const m=new THREE.Mesh(geometry,typeof color==='string'?material(color):color);m.position.set(x,y,z);m.castShadow=shadow;m.receiveShadow=true;parent.add(m);return m;};
   const box=(sx,sy,sz,color,parent,x,y,z)=>mesh(new THREE.BoxGeometry(sx,sy,sz),color,parent,x,y,z);
+  const softBox=(sx,sy,sz,color,parent,x,y,z,r=.06)=>mesh(softBoxGeometry(sx,sy,sz,r),color,parent,x,y,z);
   const sphere=(r,color,parent,x,y,z,sx=1,sy=1,sz=1)=>{const m=mesh(new THREE.SphereGeometry(r,20,14),color,parent,x,y,z);m.scale.set(sx,sy,sz);return m;};
   const rod=(a,b,r,color,parent=scene)=>{const v1=new THREE.Vector3(...a),v2=new THREE.Vector3(...b),delta=v2.clone().sub(v1);const m=mesh(new THREE.CylinderGeometry(r,r,delta.length(),8),color,parent);m.position.copy(v1).add(v2).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());return m;};
   const floorLine=(x,z,width,depth,color='#e0e6c3')=>box(width,.016,depth,color,scene,x,.022,z);
@@ -18,10 +20,15 @@ export function buildWorld(){
   sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-10;sun.shadow.camera.right=10;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-10;sun.shadow.camera.near=1;sun.shadow.camera.far=40;sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;
   const fill=new THREE.DirectionalLight('#dce9ee',.75);fill.position.set(7,8,-10);scene.add(fill);
   const ground=mesh(new THREE.PlaneGeometry(200,200),'#d7dfc5',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;
-  const platform=box(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6);
-  box(10.45,.13,13.75,'#e5dfc5',scene,0,-.08,-4.6);
-  const court=box(8.25,.06,10.2,'#286659',scene,0,-.015,-4.9);
-  const stripes=[];for(let i=0;i<10;i++)stripes.push(floorLine(0,-.45-i,8,.97,i%2?'#286659':'#2c6c5e'));
+  const platform=softBox(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6,.13);
+  const stone=makeSurfaceTexture('stone');
+  softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#e5dfc5',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
+  const turf=makeSurfaceTexture('turf'),turfMaterials=new Map();
+  function fieldMaterial(color){if(!turfMaterials.has(color))turfMaterials.set(color,new THREE.MeshStandardMaterial({color,map:turf,bumpMap:turf,bumpScale:.012,roughness:.94}));return turfMaterials.get(color);}
+  const court=box(8.25,.06,10.2,fieldMaterial('#286659'),scene,0,-.015,-4.9);
+  const stripes=[];for(let i=0;i<10;i++)stripes.push(box(8,.016,.97,fieldMaterial(i%2?'#286659':'#2c6c5e'),scene,0,.022,-.45-i));
+  const paving=[];for(let z=-10.4;z<2;z+=1.45)for(const side of [-1,1])paving.push(new THREE.Vector3(side*4.35,-.008,z),new THREE.Vector3(side*5.07,-.008,z));
+  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#c9c6ac',transparent:true,opacity:.5})));
   for(const x of [-3.75,3.75])floorLine(x,-4.9,.035,9.6);
   for(const z of [-.25,-4.9,-9.55])floorLine(0,z,7.5,.035);
   floorLine(-2.4,-1.25,.035,2);floorLine(2.4,-1.25,.035,2);floorLine(0,-2.25,4.8,.035);
@@ -35,22 +42,20 @@ export function buildWorld(){
   }
   // The far wall is split around the goal mouth; both are rebuilt whenever the level's goal width changes.
   const farGoal=new THREE.Group();farGoal.position.set(0,0,-FAR_WALL);scene.add(farGoal);
-  const farNet=new THREE.LineBasicMaterial({color:'#e4e3c7',transparent:true,opacity:.5});
+  const farNet=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.4});
   function buildFarGoal(g){
-    for(const child of [...farGoal.children]){farGoal.remove(child);child.geometry?.dispose();}
+    for(const child of [...farGoal.children]){farGoal.remove(child);if(child!==sign)child.geometry?.dispose();}
     const edge=SIDE+.4,span=edge-g;
     for(const side of [-1,1]){
       box(span,.32,.65,'#244d40',farGoal,side*(g+span/2),.17,-.3);
       box(span,.95,.32,'#cfdda8',farGoal,side*(g+span/2),.82,-.42);
       const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#fff2db',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
       rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#fff2db',farGoal);
+      sphere(.078,'#e6ddc5',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
     }
     rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
-    const points=[];
-    for(let x=-g;x<=g+.01;x+=.24)points.push(new THREE.Vector3(x,.02,-.75),new THREE.Vector3(x,.9,-.75));
-    for(let y=.02;y<=.91;y+=.16)points.push(new THREE.Vector3(-g,y,-.75),new THREE.Vector3(g,y,-.75));
-    farGoal.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),farNet));
+    farGoal.add(new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet));
     if(sign){sign.position.set(0,1.62,-.5);farGoal.add(sign);}
   }
   function label(value,width,height,color='#2c5745',background=null){
@@ -70,68 +75,42 @@ export function buildWorld(){
   }
   rod([-4,1.04,.05],[4,1.04,.05],.065,'#fff7e3',goal);
   rod([-4,.75,1.04],[4,.75,1.04],.045,'#e9e8c9',goal);
-  const netMat=new THREE.LineBasicMaterial({color:'#e4e3c7',transparent:true,opacity:.42});
-  const netPoints=[];
-  for(let x=-4;x<=4.01;x+=.24)netPoints.push(new THREE.Vector3(x,.02,1.04),new THREE.Vector3(x,.75,1.04));
-  for(let y=.02;y<=.76;y+=.16)netPoints.push(new THREE.Vector3(-4,y,1.04),new THREE.Vector3(4,y,1.04));
-  goal.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(netPoints),netMat));
+  const netMat=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.32});
+  goal.add(new THREE.LineSegments(netGeometry(4,1.04,.75,.05,1.04),netMat));
+  for(const side of [-1,1]){const joint=sphere(.075,'#e6ddc5',goal,side*4,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,'#7d8b72',goal,side*4,.015,.05,.015);foot.castShadow=false;}
   // Small bleachers, planted corners, and front steps establish scale and depth.
   for(const side of [-1,1]){
-    for(let i=0;i<3;i++){
-      const x=side*(4.65+i*.18);box(.4,.15,3.2,'#d8caa3',scene,x,.17+i*.18,-7.6);
-      box(.09,.36+i*.18,.14,'#738566',scene,x,.07+i*.09,-6.4);box(.09,.36+i*.18,.14,'#738566',scene,x,.07+i*.09,-8.8);
-    }
+    for(let i=-1;i<=1;i++)softBox(.19,.095,3.1,'#d2b78a',scene,side*4.75+i*.21,.44,-7.6,.035);
+    for(const z of [-6.45,-8.75]){softBox(.61,.39,.09,'#677c65',scene,side*4.75,.2,z,.025);rod([side*5.04,.2,z],[side*5.04,.91,z],.035,'#677c65');}
+    softBox(.075,.22,3.1,'#d8bf97',scene,side*5.04,.8,-7.6,.025);
     for(const z of [-10.6,-3.4]){
-      box(.92,.33,.92,'#d3bba0',scene,side*4.65,.13,z);
+      mesh(new THREE.CylinderGeometry(.45,.38,.34,18),'#d3bba0',scene,side*4.65,.13,z);
+      const rim=mesh(new THREE.TorusGeometry(.44,.025,6,22),'#efe1c7',scene,side*4.65,.3,z,false);rim.rotation.x=Math.PI/2;
       sphere(.52,'#819d68',scene,side*4.65,.68,z,1,.9,1);
       sphere(.36,'#9ab47b',scene,side*4.83,.91,z+.1);
     }
   }
   for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
   const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
-  // Rounded, articulated full-body character shared by the defender and the keeper.
-  const skin=material('#b98460'),shorts=material('#263f38');
-  function person(jerseyColor,trim,numberText){
-    const group=new THREE.Group();group.scale.setScalar(1.16);scene.add(group);
-    const torso=new THREE.Group();group.add(torso);
-    mesh(new THREE.CylinderGeometry(.31,.28,.64,10),material(jerseyColor),torso,0,.97,0);
-    box(.63,.1,.45,trim,torso,0,1.17,0);
-    box(.58,.29,.4,shorts,group,0,.57,0);
-    sphere(.29,'#bb865f',torso,0,1.53,-.015,1,1.12,.95);
-    sphere(.295,'#303d31',torso,0,1.66,.025,1,.7,1);
-    sphere(.075,'#bb865f',torso,-.285,1.5,0);sphere(.075,'#bb865f',torso,.285,1.5,0);
-    const number=label(numberText,.35,.25,'#31513f');if(number){number.position.set(0,1.0,.306);torso.add(number);}
-    const legs=[];
-    for(const side of [-1,1]){
-      const leg=new THREE.Group();leg.position.set(side*.18,.48,0);group.add(leg);legs.push(leg);
-      mesh(new THREE.CapsuleGeometry(.105,.19,4,10),skin,leg,0,-.15,0);
-      const shoe=sphere(.14,'#f4e8ce',leg,0,-.37,-.06,1, .5,1.65);
-      box(.24,.05,.39,'#c1cbb2',leg,0,-.415,-.05);shoe.castShadow=true;
-    }
-    const arms=[];
-    for(const side of [-1,1]){
-      const arm=new THREE.Group();arm.position.set(side*.36,1.2,0);torso.add(arm);arms.push(arm);
-      sphere(.13,material(jerseyColor),arm,0,-.03,0);
-      mesh(new THREE.CapsuleGeometry(.1,.22,4,10),skin,arm,side*.02,-.22,0);
-    }
-    return {group,torso,legs,arms};
-  }
-  const player=person('#f6e9ce','#ed774b','01'),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
-  hero.position.set(0,0,-1.6);
-  // The keeper faces the defender, wears big gloves on both hands and dives sideways on a save.
-  const goalie=person('#3d6f95','#f2c14e','1'),keeper=goalie.group;
-  keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
-  for(const arm of goalie.arms)sphere(.2,material('#f2c14e',.45),arm,0,-.44,-.015,1,1.05,1.1);
-  const leftGlove=sphere(.19,material('#ed6941',.4),arms[0],-.015,-.44,-.015,1,1.05,1.1);
+  // Shared articulated collectible athletes; visual parts stay under their joints.
+  const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
+  const skin=player.skin;scene.add(hero);hero.position.set(0,0,-1.6);
+  const goalie=buildAthlete({jersey:'#356f91',accent:'#edc25e',number:'1',goalie:true}),keeper=goalie.group;
+  scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
+  for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#edc25e',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
+  const leftHand=buildGlove('#ed6941',-1);leftHand.group.position.set(-.015,-.44,-.015);arms[0].add(leftHand.group);
+  const leftGlove=leftHand.body;
   const gear={glove:new THREE.Group(),racket:new THREE.Group(),sword:new THREE.Group()};
   for(const g of Object.values(gear)){g.position.set(.02,-.43,-.025);arms[1].add(g);}
-  sphere(.19,material('#ed6941',.4),gear.glove,0,0,0,1,1.05,1.1);
-  const wrist=mesh(new THREE.CylinderGeometry(.14,.14,.11,12),'#fff0d2',gear.glove,0,.14,0);wrist.rotation.x=.3;
+  gear.glove.add(buildGlove('#ed6941').group);
   rod([0,-.06,0],[0,.45,0],.045,'#c99d60',gear.racket);
   const racket=mesh(new THREE.TorusGeometry(.3,.035,8,36),'#edb85f',gear.racket,0,.65,0);racket.scale.set(1,1.3,1);
+  for(let y=.02;y<.24;y+=.055)mesh(new THREE.CylinderGeometry(.048,.048,.022,10),'#345c4a',gear.racket,0,y,0,false);
   for(let p=-.2;p<=.201;p+=.1){rod([p,.43,-.005],[p,.87,-.005],.006,'#e9e4c4',gear.racket);rod([-.24,.65+p,-.005],[.24,.65+p,-.005],.006,'#e9e4c4',gear.racket);}
-  rod([0,-.09,0],[0,.2,0],.055,'#976a47',gear.sword);box(.38,.06,.12,'#e9c56f',gear.sword,0,.22,0);
+  rod([0,-.09,0],[0,.2,0],.055,'#345c4a',gear.sword);softBox(.38,.06,.12,'#e9c56f',gear.sword,0,.22,0,.025);
+  for(let y=-.05;y<.16;y+=.06)mesh(new THREE.CylinderGeometry(.058,.058,.014,10),'#d5ba78',gear.sword,0,y,0,false);
   const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;
+  box(.025,.82,.054,'#f5f1d7',gear.sword,-.007,.68,0).castShadow=false;
   const tip=mesh(new THREE.ConeGeometry(.073,.23,4),material('#d8e6df',.25),gear.sword,0,1.24,0);tip.rotation.y=Math.PI/4;
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
@@ -158,18 +137,28 @@ export function buildWorld(){
   // A ground shadow under the airborne ball makes its depth and landing point readable.
   const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
   const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false}),scene,0,.68,-5,false);m.visible=false;return m;});
-  let lastBall=null,history=[],lastLevel=-1;
+  let lastBall=null,history=[],lastLevel=-1,lastSwing=null,punchLeft=false;
   function update(s,axis=0,reduceMotion=false){
-    if(lastLevel!==s.levelIndex){court.material=material(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=material('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
+    if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
     hero.position.set(s.player.x,0,-s.player.z);
-    hero.rotation.z=s.phase==='playing'?-axis*.065:0;
+    hero.rotation.z=s.phase==='playing'?-axis*.075:0;
     const moving=s.phase==='playing'&&Math.abs(axis)>.05;
+    const stride=moving?Math.sin(s.elapsed*16):0;
     legs.forEach((leg,i)=>leg.rotation.x=moving?Math.sin(s.elapsed*16+i*Math.PI)*.48:0);
     const sw=s.swing,w=WEAPONS[s.weapon];
     const punch=sw?Math.sin(Math.min(1,sw.time/(w.windup+w.active))*Math.PI):0;
-    arms[1].rotation.x=.22+punch*1.9;arms[0].rotation.x=.28+punch*.5;torso.rotation.y=punch*-.24;
+    if(sw!==lastSwing){lastSwing=sw;punchLeft=!!sw&&s.weapon==='glove'&&s.ball.x<s.player.x-.08;}
+    for(let i=0;i<arms.length;i++){
+      const active=(i===0)===punchLeft,extension=active?punch:0;
+      // Rotate about the attached shoulder; translating this root separates its sleeve.
+      arms[i].rotation.x=.32+extension*(s.weapon==='glove'?.65:.1)+(i===0?stride:-stride)*.18;
+    }
+    // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
+    for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch;
+    torso.rotation.y=punch*(punchLeft?.28:-.28);
+    torso.rotation.x=punch*.06;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
-    leftGlove.material=s.weapon==='glove'?material('#ed6941',.4):skin;
+    leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
     const k=s.keeper,dive=k.dive/.35;
     keeper.position.set(k.x,0,-KEEPER_Z);keeper.rotation.z=k.diveDir*dive*.85;
     goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);

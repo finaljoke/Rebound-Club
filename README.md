@@ -41,6 +41,8 @@ node scripts/ui-qa.mjs --play
 - `dist/core.mjs`：单球模拟、挥击及关卡状态。
 - `dist/game.js`：Canvas 画面、DOM、音效和实际输入。
 - `dist/scene3d.mjs`：立体场景、人物、光影与设备适配；`dist/vendor/`：Three.js固定版本及MIT授权。
+- `dist/art.mjs`：潮玩球员、拳套、细节贴花、确定性草地与铺装纹理、立体球网；全部本地生成。`vendor/RoundedBoxGeometry.js`来自同版本Three.js官方插件，沿用MIT许可。
+- `scripts/art-qa.mjs`：使用实际3D素材渲染人物近景预览，输出到忽略的 `artifacts/`，不向游戏加入测试入口。
 - `dist/input.mjs`、`storage.mjs`：输入隔离与保存降级。
 - `tests/`：Node 行为测试；`scripts/serve.mjs`：本地静态服务器。
 
