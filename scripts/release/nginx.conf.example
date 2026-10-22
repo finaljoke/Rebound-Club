@@ -1,0 +1,30 @@
+# 反弹守卫 · nginx 配置示例。把 example.com、证书路径和 root 改成实际值。
+server {
+    listen 80;
+    server_name example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name example.com;
+
+    ssl_certificate     /etc/nginx/certs/example.com.pem;
+    ssl_certificate_key /etc/nginx/certs/example.com.key;
+
+    # 解压后 site/ 目录的位置
+    root /var/www/rebound-club/site;
+    index index.html;
+
+    # 文件名不带哈希：让浏览器每次向服务器确认是否有更新，避免新旧脚本混用
+    add_header Cache-Control "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    gzip on;
+    gzip_types text/css text/javascript application/javascript application/json image/svg+xml;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
