@@ -1,4 +1,4 @@
-import {LEVELS,WEAPONS,createGame,startGame,stepGame,attack,pauseGame,resumeGame,inHitRange} from './core.mjs';
+import {LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,createGame,startGame,stepGame,attack,pauseGame,resumeGame,inHitRange,ballHeight} from './core.mjs';
 import {createInput} from './input.mjs';
 import {loadProgress,saveProgress} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
@@ -9,32 +9,55 @@ const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,weapon='glove',game=createGame(),uiPhase='',soundOn=true,audio=null;
-let lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0;
+let lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const icons={glove:'◒',racket:'◎',sword:'⚔'};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
+// Every cue is synthesized: a low sine thump for weight layered with a short filtered noise burst for the crack.
+function tone(a,b,d,type='sine',vol=.1,delay=0){
+  const at=audio.currentTime+delay,osc=audio.createOscillator(),gain=audio.createGain();
+  osc.type=type;osc.frequency.setValueAtTime(a,at);osc.frequency.exponentialRampToValueAtTime(b,at+d);
+  gain.gain.setValueAtTime(vol,at);gain.gain.exponentialRampToValueAtTime(.001,at+d);
+  osc.connect(gain);gain.connect(audio.destination);osc.start(at);osc.stop(at+d);
+}
+function noise(d,vol,freq,delay=0){
+  const at=audio.currentTime+delay,buffer=audio.createBuffer(1,Math.ceil(audio.sampleRate*d),audio.sampleRate),data=buffer.getChannelData(0);
+  for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*(1-i/data.length);
+  const src=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();
+  src.buffer=buffer;filter.type='bandpass';filter.frequency.value=freq;filter.Q.value=.9;gain.gain.value=vol;
+  src.connect(filter);filter.connect(gain);gain.connect(audio.destination);src.start(at);
+}
+const cues={
+  swing:()=>noise(.09,.05,1700),
+  whiff:()=>{noise(.14,.05,800);tone(240,160,.1,'sine',.04);},
+  hit:()=>{tone(210,90,.12,'sine',.28);noise(.05,.22,2600);},
+  perfect:()=>{tone(150,48,.24,'sine',.42);noise(.09,.32,1300);tone(880,1320,.16,'triangle',.07,.03);},
+  soft:()=>{tone(320,210,.08,'sine',.12);noise(.03,.06,3200);},
+  wall:()=>{tone(200,150,.05,'sine',.08);noise(.03,.05,1800);},
+  save:()=>{tone(130,60,.18,'sine',.32);noise(.12,.22,650);},
+  goal:()=>{[523,659,784,1046].forEach((f,i)=>tone(f,f*1.01,i===3?.4:.13,'triangle',.09,i*.09));noise(.7,.06,1400,.05);},
+  miss:()=>{tone(170,60,.4,'sawtooth',.06);noise(.2,.08,400);},
+  win:()=>[523,659,784,1046,1318].forEach((f,i)=>tone(f,f,i===4?.5:.14,'triangle',.08,i*.1)),
+  start:()=>tone(350,700,.12,'triangle',.07)
+};
 function sound(kind){
-  if(!soundOn)return;
+  if(!soundOn||!cues[kind])return;
   try{
     const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
     audio??=new Audio();if(audio.state==='suspended')audio.resume().catch(()=>{});
-    const notes={hit:[480,740,.09],perfect:[660,1040,.13],wall:[200,150,.035],miss:[170,80,.2],win:[580,1160,.35],swing:[140,260,.06],start:[350,700,.12]};
-    const [a,b,d]=notes[kind]||notes.hit,osc=audio.createOscillator(),gain=audio.createGain();
-    osc.type=kind==='wall'?'sine':'triangle';osc.frequency.setValueAtTime(a,audio.currentTime);osc.frequency.exponentialRampToValueAtTime(b,audio.currentTime+d);
-    gain.gain.setValueAtTime(kind==='wall'?.025:.055,audio.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);
-    osc.connect(gain);gain.connect(audio.destination);osc.start();osc.stop(audio.currentTime+d);
+    cues[kind]();
   }catch{/* Audio is optional; play remains available. */}
 }
 
 function selections(){
-  const busy=['playing','serving','miss','paused'].includes(game.phase);
+  const busy=[...ACTIVE_PHASES,'paused'].includes(game.phase);
   $('levels').innerHTML=LEVELS.map((l,i)=>`<button class="level-button ${selected===i?'selected':''}" data-level="${i}" aria-label="第${i+1}关 ${l.name}${i>progress.unlocked?'，未解锁':''}" aria-pressed="${selected===i}" ${i>progress.unlocked||busy?'disabled':''}>${String(i+1).padStart(2,'0')}<small class="${progress.scores[i]?'completed':''}">${i>progress.unlocked?'⌑':progress.perfect[i]?'★':progress.scores[i]?'✓':'↗'}</small></button>`).join('');
   $('weapons').innerHTML=Object.entries(WEAPONS).map(([id,w])=>`<button class="weapon-button ${weapon===id?'selected':''}" data-weapon="${id}" aria-pressed="${weapon===id}" ${busy||(id!=='glove'&&progress.unlocked===0)?'disabled':''}><span class="weapon-icon">${icons[id]}</span><span class="weapon-copy"><b>${w.name}</b><small>${w.subtitle}</small></span><span class="weapon-check">${id!=='glove'&&progress.unlocked===0?'⌑':weapon===id?'●':'○'}</span></button>`).join('');
   $('stage-name').textContent=LEVELS[selected].name;
   $('level-count').textContent=`${String(selected+1).padStart(2,'0')} / 06`;
   document.querySelector('.game-top .mini-label').textContent=`COURT ${String(selected+1).padStart(2,'0')}`;
-  $('level-note').textContent=`回击 ${LEVELS[selected].target} 次 · ${LEVELS[selected].tag}。`;
+  $('level-note').textContent=`进 ${LEVELS[selected].goals} 球通关 · ${LEVELS[selected].tag}。`;
   $('weapon-note').textContent=progress.unlocked===0?'完成第一关，解锁球拍和剑。':'装备各有手感，找到你的防守节奏。';
   $('best').textContent=progress.scores[selected]??'—';
   $('save-note').innerHTML=`<span class="live-dot"></span>${progress.saved?'进度自动保存在这台设备':'进度暂未保存，仍可继续游玩'}`;
@@ -43,37 +66,37 @@ function ready(){game=createGame(selected,weapon);trail=[];particles=[];input.re
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;uiPhase=game.phase;
-  if(game.phase==='ready')overlay(`<div class="overlay-symbol">✳</div><span class="eyebrow">READY TO REBOUND?</span><h3>拳头就位，<br>守住这一球。</h3><p>${WEAPONS[weapon].name}已就绪。回击 ${game.level.target} 次通关，<br>守住身后的球门，允许两次失误。</p><button class="primary-button" data-action="start">开始挑战 <span>↗</span></button>`);
+  if(game.phase==='ready')overlay(`<div class="overlay-symbol">✳</div><span class="eyebrow">READY TO REBOUND?</span><h3>守住自家，<br>攻破对面。</h3><p>${WEAPONS[weapon].name}已就绪。进 ${game.level.goals} 球通关，丢 3 球结束。<br>早打往左、晚打往右，正中出重炮。</p><button class="primary-button" data-action="start">开始挑战 <span>↗</span></button>`);
   else if(game.phase==='paused')overlay('<div class="overlay-symbol">Ⅱ</div><span class="eyebrow">TAKE A BREATH</span><h3>休息一下。</h3><p>球会等你。准备好，再打个漂亮。</p><button class="primary-button" data-action="resume">继续防守 →</button><button class="secondary-button" data-action="retry">重新开始本关</button>');
   else if(game.phase==='won'){
     progress.unlocked=Math.max(progress.unlocked,Math.min(5,selected+1));
     progress.scores[selected]=Math.max(progress.scores[selected]||0,game.score);
     if(game.misses===0)progress.perfect[selected]=true;
     progress.saved=saveProgress(storage,progress);
-    overlay(`<div class="overlay-symbol">${game.misses===0?'★':'✓'}</div><span class="eyebrow">COURT CLEARED</span><h3>${game.misses===0?'完美防守！':'守住了！'}</h3><p>${selected===5?'六关全部完成，你就是守门王牌。':'这一球接得漂亮，下一关见。'}</p><div class="result-score">${game.score}<small>本关得分</small></div><div class="result-stats"><span><b>${game.bestCombo}</b>最高连击</span><span><b>${3-game.misses}</b>剩余机会</span></div><button class="primary-button" data-action="${selected===5?'retry':'next'}">${selected===5?'再挑战一次 ↻':'挑战下一关 →'}</button><button class="secondary-button" data-action="ready">选择关卡与装备</button>`);
+    overlay(`<div class="overlay-symbol">${game.misses===0?'★':'✓'}</div><span class="eyebrow">COURT CLEARED</span><h3>${game.misses===0?'完美防守！':'守住了！'}</h3><p>${selected===5?'六关全部完成，你就是守门王牌。':'这一球接得漂亮，下一关见。'}</p><div class="result-score">${game.score}<small>本关得分</small></div><div class="result-stats"><span><b>${game.goals}</b>进球</span><span><b>${game.bestCombo}</b>最高连击</span><span><b>${3-game.misses}</b>剩余机会</span></div><button class="primary-button" data-action="${selected===5?'retry':'next'}">${selected===5?'再挑战一次 ↻':'挑战下一关 →'}</button><button class="secondary-button" data-action="ready">选择关卡与装备</button>`);
     sound('win');input.reset();
   }else if(game.phase==='lost'){
-    overlay(`<div class="overlay-symbol">↻</div><span class="eyebrow">ONE MORE TRY</span><h3>差一点，<br>再接一球。</h3><p>已回击 ${game.hits} / ${game.level.target} 次。<br>看准球的落点，提前移动到位。</p><div class="result-score">${game.score}<small>本关得分</small></div><button class="primary-button" data-action="retry">再来一局 ↻</button><button class="secondary-button" data-action="ready">返回准备</button>`);input.reset();
+    overlay(`<div class="overlay-symbol">↻</div><span class="eyebrow">ONE MORE TRY</span><h3>差一点，<br>再接一球。</h3><p>已进 ${game.goals} / ${game.level.goals} 球。<br>正面的球会被扑住，试试站边路打重炮。</p><div class="result-score">${game.score}<small>本关得分</small></div><button class="primary-button" data-action="retry">再来一局 ↻</button><button class="secondary-button" data-action="ready">返回准备</button>`);input.reset();
   }else $('overlay').hidden=true;
   selections();
 }
 function hud(){
-  $('progress').textContent=`${game.hits} / ${game.level.target}`;
-  $('progress-bar').style.width=`${game.hits/game.level.target*100}%`;
+  $('progress').textContent=`${game.goals} / ${game.level.goals}`;
+  $('progress-bar').style.width=`${game.goals/game.level.goals*100}%`;
   $('hearts').innerHTML=[0,1,2].map(i=>`<span class="${i>=3-game.misses?'spent':''}">●</span>`).join(' ');
   $('hearts').setAttribute('aria-label',`剩余${3-game.misses}次机会`);
   $('score').innerHTML=`${String(game.score).padStart(4,'0')} <small>分</small>`;
-  $('pause').disabled=!['playing','serving','miss'].includes(game.phase);
+  $('pause').disabled=!ACTIVE_PHASES.includes(game.phase);
   $('attack').disabled=game.phase!=='playing';
   $('attack').classList.toggle('recovering',!!game.swing);
   $('attack').querySelector('span').textContent=game.swing?'收招':'挥击';
-  const status={ready:'热身准备',serving:'发球准备',playing:'防守进行中',miss:'稳住，再来',paused:'已暂停',won:'本关完成',lost:'挑战结束'};
-  $('court-status').textContent=game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:status[game.phase];
+  const status={ready:'热身准备',serving:'发球准备',playing:'对决进行中',miss:'稳住，再来',goal:'进球！',paused:'已暂停',won:'本关完成',lost:'挑战结束'};
+  $('court-status').textContent=game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase];
   $('combo').style.opacity=game.combo>1?'1':'0';$('combo').querySelector('b').textContent=game.combo;
   $('move-knob').style.transform=`translateX(${input.axis()*30}px)`;
 }
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}
-function swing(){if(attack(game)){sound('swing');$('feedback').textContent='看准时机，漂亮出手。';}}
+function swing(){if(attack(game))sound('swing');}
 function suspend(){pauseGame(game);input.reset();phaseUI();hud();}
 function fallbackRenderer(){
   court3D?.dispose();court3D=null;
@@ -107,9 +130,9 @@ move.addEventListener('pointercancel',()=>input.cancel());
 move.addEventListener('lostpointercapture',e=>input.up(e.pointerId));
 window.addEventListener('keydown',e=>{
   if($('help-dialog').open)return;
-  if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)&&['playing','serving','miss'].includes(game.phase)){e.preventDefault();input.key(e.key,true);}
+  if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)&&ACTIVE_PHASES.includes(game.phase)){e.preventDefault();input.key(e.key,true);}
   if(e.code==='Space'&&game.phase==='playing'){e.preventDefault();if(!e.repeat)swing();}
-  if(e.code==='Escape'&&['playing','serving','miss'].includes(game.phase))suspend();
+  if(e.code==='Escape'&&ACTIVE_PHASES.includes(game.phase))suspend();
 });
 window.addEventListener('keyup',e=>input.key(e.key,false));
 window.addEventListener('blur',suspend);
@@ -143,10 +166,12 @@ function stage(){
   ctx.save();ctx.translate(225,354);ctx.scale(1,.65);text('REBOUND',0,0,37,'#f7f2ce10','900');ctx.restore();
   // Side rails are visual bounds, matching the ball's two collision edges.
   for(const side of [-1,1]){const near=project(side*4,0),far=project(side*4,10);line(near.x,near.y,far.x,far.y,'#72876a',5);line(near.x,near.y-18,far.x,far.y-14,'#ebecd1',3);for(let z=0;z<=10;z+=2){const p=project(side*4,z);line(p.x,p.y,p.x,p.y-17,'#cdd6b8',2);}}
-  // A single broad return panel visibly tilts before the ball reaches it.
-  ctx.save();ctx.translate(225,117);ctx.rotate(game.boardAngle*.35);round(-109,2,218,18,4,'#1b4438');round(-109,-8,218,17,4,'#dfebad');
-  for(let x=-95;x<=95;x+=16)line(x,-4,x+6,4,'#9aaf75',1.6);
-  text('↙   RETURN   ↘',0,3,8,'#5e7952');ctx.restore();
+  // The far wall is split around the keeper's goal mouth.
+  const g=game.level.goalHalf,wl=project(-4,FAR_WALL),wr=project(4,FAR_WALL),gl=project(-g,FAR_WALL),gr=project(g,FAR_WALL);
+  for(const [a,b] of [[wl,gl],[gr,wr]]){round(Math.min(a.x,b.x),a.y-14,Math.abs(b.x-a.x),18,3,'#dfebad');round(Math.min(a.x,b.x),a.y+2,Math.abs(b.x-a.x),6,2,'#1b4438');}
+  polygon([[gl.x,gl.y-20],[gr.x,gr.y-20],[gr.x,gr.y+4],[gl.x,gl.y+4]],'#f1f0d32c');
+  for(let x=gl.x+6;x<gr.x;x+=9)line(x,gl.y-20,x,gl.y+4,'#eeefd25a',.8);
+  line(gl.x,gl.y+4,gl.x,gl.y-20,'#f8f2d7',4);line(gr.x,gr.y+4,gr.x,gr.y-20,'#f8f2d7',4);line(gl.x,gl.y-20,gr.x,gr.y-20,'#fff7df',4);
   // Fixed goal and net sit behind the defender.
   polygon([[41,471],[409,471],[423,512],[27,512]],'#f1f0d32c');
   for(let x=43;x<410;x+=18)line(x,449,x+(x-225)*.06,507,'#eeefd25a',.8);
@@ -186,22 +211,30 @@ function player(){
   ellipse(p.x,p.y-54,12,13,'#bf8f69');ellipse(p.x,p.y-58,12,9,'#30392f');round(p.x-12,p.y-57,24,6,3,'#30392f');
   if(sw&&!reduceMotion){ctx.beginPath();ctx.ellipse(p.x+6,p.y-47,38+Math.sin(sw.time*8)*6,17,-.3,Math.PI*1.05,Math.PI*1.85);ctx.strokeStyle=`rgba(245,241,192,${swingAmount*.65})`;ctx.lineWidth=4;ctx.stroke();}
 }
+function keeper(){
+  const k=game.keeper,p=project(k.x,KEEPER_Z),s=p.scale,lean=k.diveDir*(k.dive/.35)*14;
+  ellipse(p.x,p.y+2,KEEPER_REACH*48*s,5,'#12372d45');
+  line(p.x-5*s,p.y-14*s,p.x-7*s,p.y,'#ad805f',6*s);line(p.x+5*s,p.y-14*s,p.x+7*s,p.y,'#ad805f',6*s);
+  polygon([[p.x-12*s+lean*.4,p.y-36*s],[p.x+12*s+lean*.4,p.y-36*s],[p.x+10*s,p.y-14*s],[p.x-10*s,p.y-14*s]],'#3d6f95','#2c5574',1);
+  for(const side of [-1,1]){const hx=p.x+side*(20*s)+lean,hy=p.y-40*s-(k.dive>0?8:0);line(p.x+side*11*s+lean*.4,p.y-33*s,hx,hy,'#bc8b65',5*s);ellipse(hx,hy,6*s,6*s,'#f2c14e');}
+  ellipse(p.x+lean*.5,p.y-43*s,8*s,9*s,'#bf8f69');ellipse(p.x+lean*.5,p.y-47*s,8*s,6*s,'#30392f');
+}
 function ball(){
   if(game.phase==='miss'||game.phase==='lost')return;
   const b=game.ball,p=project(b.x,b.z),r=8.4*p.scale;
   if(!reduceMotion)for(let i=0;i<trail.length;i++){const q=project(trail[i].x,trail[i].z);ellipse(q.x,q.y-10*q.scale,r*(i/trail.length)*.65,r*(i/trail.length)*.65,`rgba(246,207,105,${i/trail.length*.27})`);}
   ellipse(p.x+3,p.y+1,r*1.15,r*.36,'#0c302d3b');
-  const y=p.y-11*p.scale;
+  const y=p.y-(11+(ballHeight(game)-.73)*30)*p.scale;
   if(b.vz<0&&b.z<3.4){ctx.beginPath();ctx.ellipse(p.x,p.y,r*2.1,r*.7,0,0,Math.PI*2);ctx.strokeStyle='#f6d77ab0';ctx.lineWidth=1.5;ctx.stroke();}
   ellipse(p.x,y,r+1,r+1,'#a9772b');ellipse(p.x,y-1,r,r,'#f6cc67');ellipse(p.x-2,y-3,r*.42,r*.32,'#ffe9a2');
   ctx.beginPath();ctx.ellipse(p.x,y-1,r*.5,r,0,0,Math.PI*2);ctx.strokeStyle='#ac802b';ctx.lineWidth=.9;ctx.stroke();line(p.x-r,y-1,p.x+r,y-1,'#ac802b',.9);
 }
 function draw(dt){
-  if(court3D){court3D.render(game,input.axis(),reduceMotion);return;}
+  if(court3D){court3D.render(game,input.axis(),reduceMotion,shake);return;}
   const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);
   if(rect.width!==viewWidth||rect.height!==viewHeight){viewWidth=rect.width;viewHeight=rect.height;canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);}
   ctx.setTransform(canvas.width/450,0,0,canvas.height/540,0,0);ctx.lineCap='round';ctx.lineJoin='round';
-  stage();player();ball();
+  stage();keeper();player();ball();
   for(const particle of particles){if(game.phase!=='paused'){particle.life-=dt;particle.x+=particle.vx*dt;particle.y+=particle.vy*dt;}ellipse(particle.x,particle.y,Math.max(.1,particle.life*5),Math.max(.1,particle.life*5),'#fff0a3');}
   particles=particles.filter(p=>p.life>0);
   if(game.phase==='serving'){const n=Math.max(1,Math.ceil(game.countdown*2));round(190,233,70,66,16,'#fff5dbed');text(String(n),225,280,39,'#2c5f4a','900');}
@@ -210,14 +243,20 @@ function frame(time){
   const dt=lastTime?Math.min((time-lastTime)/1000,.05):0;lastTime=time;
   stepGame(game,dt,input.axis());
   const events=game.events;game.events=[];
+  const aim={left:'偏左 ←',right:'偏右 →',straight:'直线 ↑'};
   for(const e of events){
-    if(['hit','perfect','wall','miss'].includes(e))sound(e);
-    if(e==='hit'||e==='perfect'){
-      pop(e==='perfect'?'漂亮回击！':'好球！');$('feedback').textContent=e==='perfect'?'漂亮！保持这个节奏。':'接得好，留意下一次回弹。';
-      if(!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}
-    }
-    if(e==='miss'){pop('漏球了，再来！',true);$('feedback').textContent='提前补位，看准再挥击。';trail=[];}
+    if(['hit','perfect','soft','whiff','wall','save','goal','miss'].includes(e))sound(e);
+    if(e==='hit'){pop(aim[game.lastShot]||'好球！');$('feedback').textContent='早打往左，晚打往右。';}
+    if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.12);$('feedback').textContent='正中甜点！门将很难追上。';}
+    if(e==='soft'){pop('软球',true);$('feedback').textContent='挥早了，球是自己撞上来的。等球到圈里再出手。';}
+    if(e==='whiff'){pop('挥空',true);$('feedback').textContent='挥空要多收招一会儿，别乱按。';}
+    if(e==='save'){pop('被扑住！',true);shake=Math.max(shake,.05);$('feedback').textContent='门将扑住了，准备防守！';}
+    if(e==='goal'){pop(game.lastShot==='perfect'?'重炮破门！':'进球！');shake=Math.max(shake,.22);$('feedback').textContent=`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`;}
+    if(['hit','perfect','goal'].includes(e)&&!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}
+    if(e==='miss'){pop('丢球了！',true);shake=Math.max(shake,.15);$('feedback').textContent='提前看影子，移动到位再出手。';trail=[];}
   }
+  if(reduceMotion){game.hitstop=0;shake=0;}
+  shake*=Math.exp(-dt*9);if(shake<.005)shake=0;
   if(game.phase==='playing'&&!reduceMotion&&!court3D){trail.push({x:game.ball.x,z:game.ball.z});if(trail.length>7)trail.shift();}
   phaseUI();hud();draw(dt);requestAnimationFrame(frame);
 }

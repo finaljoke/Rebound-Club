@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f4f1e9">
-  <meta name="description" content="一颗球，一双拳套。移动、挥击、守住球门。打开就玩的单球回弹防守游戏。">
+  <meta name="description" content="一颗球，一个门将。守住自家球门，再把球打进对面。打开就玩的单球攻守对决。">
   <title>反弹守卫 · REBOUND CLUB</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23f2643c'/%3E%3Ccircle cx='32' cy='32' r='17' fill='%23fff6df'/%3E%3Cpath d='M17 32h30M32 15c-12 10-12 24 0 34M32 15c12 10 12 24 0 34' fill='none' stroke='%232b302b' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css">
@@ -18,17 +18,17 @@
     <aside class="intro">
       <div class="eyebrow"><span class="live-dot"></span> SINGLE BALL. BIG ENERGY.</div>
       <h1>来球了，<br>漂亮地<br><span>打回去。</span><span class="title-star">✳</span></h1>
-      <p class="intro-copy">移动到位，抓准时机。<br>你身后的球门，今天由你守住。</p>
+      <p class="intro-copy">守住身后的门，<br>再把球打过对面的门将。</p>
       <div class="edition"><span>01</span><div>单球回弹挑战<small>THE FIRST SEASON</small></div><span class="edition-arrow">↗</span></div>
-      <div class="desktop-how"><div class="mini-label">轻松上手 · 越玩越顺</div><div class="how-row"><kbd>←</kbd><kbd>→</kbd><span>左右补位</span></div><div class="how-row"><kbd class="space-key">SPACE</kbd><span>挥击来球</span></div><p>手机上，左手滑动移动，右手点击挥击。</p></div>
+      <div class="desktop-how"><div class="mini-label">轻松上手 · 越玩越顺</div><div class="how-row"><kbd>←</kbd><kbd>→</kbd><span>左右补位</span></div><div class="how-row"><kbd class="space-key">SPACE</kbd><span>挥击来球</span></div><p>早打往左，晚打往右，正中是重炮。手机上左手滑动、右手挥击。</p></div>
       <div class="intro-bottom"><span>KEEP YOUR EYES ON THE BALL</span><span>↘</span></div>
     </aside>
 
     <section class="game-shell" aria-label="反弹守卫游戏">
       <div class="game-top"><div><span class="mini-label">COURT 01</span><h2 id="stage-name">初次交锋</h2></div><button id="pause" class="pause-button" aria-label="暂停游戏" disabled><span></span><span></span></button></div>
-      <div class="hud"><div class="hud-progress"><span>回击进度 <b id="progress">0 / 8</b></span><div class="progress-track"><i id="progress-bar"></i></div></div><div class="lives"><span>防守机会</span><div id="hearts" aria-label="剩余3次机会">● ● ●</div></div></div>
+      <div class="hud"><div class="hud-progress"><span>进球 <b id="progress">0 / 3</b></span><div class="progress-track"><i id="progress-bar"></i></div></div><div class="lives"><span>防守机会</span><div id="hearts" aria-label="剩余3次机会">● ● ●</div></div></div>
       <div class="court-wrap" id="court-wrap">
-        <canvas id="court" width="450" height="540" aria-label="斜俯视球场：球从前方飞来，人物在球门前左右移动"></canvas>
+        <canvas id="court" width="450" height="540" aria-label="斜俯视球场：你在近端守门，对面是 AI 门将"></canvas>
         <div class="court-badge"><span class="live-dot"></span><span id="court-status">热身准备</span></div>
         <div class="hit-pop" id="hit-pop" aria-live="polite"></div>
         <div class="combo" id="combo"><b>0</b><span>COMBO</span></div>
@@ -39,14 +39,14 @@
     </section>
 
     <aside class="sidebar">
-      <section class="selection"><div class="section-heading"><h2>选择关卡</h2><span id="level-count">01 / 06</span></div><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note">回击 8 次，完成你的首次防守。</p></section>
+      <section class="selection"><div class="section-heading"><h2>选择关卡</h2><span id="level-count">01 / 06</span></div><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note">进 3 球通关。</p></section>
       <section class="selection equipment"><div class="section-heading"><h2>上场装备</h2><span>YOUR GEAR</span></div><div id="weapons"></div><p class="selection-note" id="weapon-note">完成第一关，解锁球拍和剑。</p></section>
       <section class="best-card"><span class="mini-label">PERSONAL BEST</span><div><strong id="best">—</strong><span>本关最高分</span></div><span class="best-star">✳</span></section>
       <p class="save-note" id="save-note"><span class="live-dot"></span>进度自动保存在这台设备</p>
     </aside>
   </main>
   <footer class="site-footer"><span>REBOUND CLUB © 2026</span><span>专注这一球。享受每一击。</span><span>MADE FOR A LITTLE BREAK ↗</span></footer>
-  <dialog id="help-dialog"><button class="dialog-close" aria-label="关闭玩法说明">×</button><span class="eyebrow">HOW TO PLAY</span><h2>三步，守住球门。</h2><ol><li><b>移动补位</b><p>手机左侧滑动；电脑按 A / D 或方向键。</p></li><li><b>看准挥击</b><p>球靠近人物时，点击右侧按钮或按空格。站在球路上还不够，要主动出手。</p></li><li><b>接住下一球</b><p>观察前方回弹板，提前判断来球方向。漏球三次结束，完成指定回击次数即可通关。</p></li></ol><p class="dialog-tip">球靠近时会出现浅色提示圈。收招结束后才能再次挥击。</p><button class="primary-button" id="help-close">明白了</button></dialog>
+  <dialog id="help-dialog"><button class="dialog-close" aria-label="关闭玩法说明">×</button><span class="eyebrow">HOW TO PLAY</span><h2>守住自家，攻破对面。</h2><ol><li><b>移动补位</b><p>手机左侧滑动；电脑按 A / D 或方向键。地上的影子就是球的位置。</p></li><li><b>掐准时机</b><p>早打往左、晚打往右；球到提示圈正中时出手是「重炮」，最快最难扑。提前挥拍等球撞上来，只能打出软绵绵的直球。</p></li><li><b>骗过门将</b><p>门将反应慢半拍，但正面的球基本都能扑住。站到边路打重炮，或借侧墙反弹绕过它。进满目标球数通关，丢三球结束。</p></li></ol><p class="dialog-tip">挥空会有较长收招，连按只会更容易漏球。每回击一次球速都会变快，进球或丢球后重置。</p><button class="primary-button" id="help-close">明白了</button></dialog>
   <noscript>请开启 JavaScript 以游玩反弹守卫。</noscript>
   <script type="module" src="./game.js"></script>
 </body>
