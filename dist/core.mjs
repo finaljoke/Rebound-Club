@@ -1,11 +1,11 @@
 // goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude.
 export const LEVELS = [
-  {name:'初次交锋',tag:'找到击球的节奏',goals:3,speed:4.3,goalHalf:2.2,keeper:{delay:.5,speed:.9,error:.6},color:'#286659'},
-  {name:'左右开弓',tag:'早打往左，晚打往右',goals:3,speed:4.6,goalHalf:2.05,keeper:{delay:.45,speed:1.1,error:.55},color:'#316988'},
-  {name:'预判时刻',tag:'站到边路再起重炮',goals:4,speed:4.9,goalHalf:1.9,keeper:{delay:.4,speed:1.3,error:.5},color:'#5c5a8b'},
-  {name:'节奏大师',tag:'越打越快，稳住节奏',goals:4,speed:5.2,goalHalf:1.8,keeper:{delay:.36,speed:1.5,error:.45},color:'#867045'},
-  {name:'全场奔袭',tag:'借侧墙绕过门将',goals:5,speed:5.5,goalHalf:1.7,keeper:{delay:.32,speed:1.7,error:.4},color:'#8b574d'},
-  {name:'守门王牌',tag:'每一脚都要有想法',goals:5,speed:5.8,goalHalf:1.6,keeper:{delay:.28,speed:1.9,error:.35},color:'#285b54'}
+  {name:'初次交锋',tag:'找到击球的节奏',goals:3,speed:4.3,goalHalf:2.4,keeper:{delay:.55,speed:.6,error:.6},color:'#286659'},
+  {name:'左右开弓',tag:'早打往左，晚打往右',goals:3,speed:4.6,goalHalf:2.3,keeper:{delay:.5,speed:.7,error:.55},color:'#316988'},
+  {name:'预判时刻',tag:'站到边路再起重炮',goals:4,speed:4.9,goalHalf:2.2,keeper:{delay:.46,speed:.8,error:.5},color:'#5c5a8b'},
+  {name:'节奏大师',tag:'越打越快，稳住节奏',goals:4,speed:5.2,goalHalf:2.1,keeper:{delay:.42,speed:.9,error:.45},color:'#867045'},
+  {name:'全场奔袭',tag:'借侧墙绕过门将',goals:5,speed:5.5,goalHalf:2,keeper:{delay:.38,speed:1,error:.4},color:'#8b574d'},
+  {name:'守门王牌',tag:'每一脚都要有想法',goals:5,speed:5.8,goalHalf:1.9,keeper:{delay:.34,speed:1.1,error:.35},color:'#285b54'}
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
