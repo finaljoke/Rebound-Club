@@ -48,5 +48,5 @@ export function whiffHint(w){
 }
 // One short line per tutorial step; shown only while that step is active.
 // Short state labels for the skill buttons; text, not just colour.
-export const SKILL_STATE={ok:'可释放',energy:'能量不足',window:'等球进框',busy:'收招中',state:'待开球',tutorial:'教学中'};
+export const SKILL_STATE={ok:'可释放',energy:'能量不足',window:'等球进框',busy:'收招中',charging:'蓄力中',state:'待开球',tutorial:'教学中'};
 export const TUTORIAL_TIPS=['球来了：等它进框，按挥击打回去','球从侧边来：先移到影子上，再挥击','看门将站哪边，朝空的一侧打进去'];

@@ -20,7 +20,7 @@ export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 // Active skills, all first-round playtest values in one place. Energy lives only in the match state.
 export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
-  spin:{cost:50,angle:.22,curve:.035,maxAngle:.65,curveShare:.7},
+  spin:{cost:50,angle:.22,curve:.06,maxAngle:.65,curveShare:.7},
   burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:.5}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
@@ -144,6 +144,7 @@ export function skillStatus(s,kind){
   const cfg=SKILLS[kind];
   if(!cfg||kind==='max')return {ok:false,reason:'state'};
   if(s.tutorial)return {ok:false,reason:'tutorial'};
+  if(s.skill)return {ok:false,reason:'charging'};
   if(s.phase!=='playing')return {ok:false,reason:'state'};
   if(s.swing||s.skill)return {ok:false,reason:'busy'};
   if(s.energy<cfg.cost)return {ok:false,reason:'energy'};

@@ -51,7 +51,7 @@ test('AC3 重复输入：同帧只认第一个动作，只扣一次、只击一�
   let s=inZone(play(),.2);s.energy=100;assert.equal(useSkill(s,'spin').ok,true);assert.equal(useSkill(s,'spin').reason,'busy');assert.equal(attack(s),false);assert.equal(useSkill(s,'burst').reason,'busy');
   assert.equal(s.energy,50);let ev=collect(s,.6);assert.equal(ev.filter(e=>e==='spin').length,1);assert.equal(s.hits,1);
   s=inZone(play(),.2);s.energy=100;assert.equal(attack(s),true);assert.equal(useSkill(s,'spin').reason,'busy');assert.equal(s.energy,100);
-  s=inZone(play(),.2);s.energy=100;assert.equal(useSkill(s,'burst').ok,true);assert.equal(useSkill(s,'burst').reason,'state');assert.equal(attack(s),false);assert.equal(s.energy,0);
+  s=inZone(play(),.2);s.energy=100;assert.equal(useSkill(s,'burst').ok,true);assert.equal(useSkill(s,'burst').reason,'charging');assert.equal(attack(s),false);assert.equal(s.energy,0);
   ev=collect(s,1.2);assert.equal(ev.filter(e=>e==='burstStart').length,1);assert.equal(ev.filter(e=>e==='burst').length,1);assert.equal(s.hits,1);assert.equal(s.swing?.hit??true,true);
 });
 test('AC10 统计：旋转/爆发不冒充完美，各自计数；技能接触记100分',()=>{

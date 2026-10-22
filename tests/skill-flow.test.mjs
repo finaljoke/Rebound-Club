@@ -67,3 +67,15 @@ test('AC15 反复释放技能与重开对局，场景资源计数不增长',()=>
   for(let round=0;round<20;round++){s=armed();useSkill(s,round%2?'spin':'burst');for(let i=0;i<120;i++){stepGame(s,1/120,0);clock+=1/120;w.update(s,i%3-1,false,clock);w.shake(.02);}}
   assert.deepEqual(count(),before);
 });
+test('爆发镜头时间线按秒：0.08秒前不推，0.28–0.38秒推到最近，0.38–0.50秒拉回',()=>{
+  const w=buildWorld();w.resize(.7);const s=armed();useSkill(s,'burst');const at=[];
+  for(let i=1;i<=59;i++){stepGame(s,1/120,0);w.update(s,0,false,i/120);if([6,40,53].includes(i))at.push({t:s.skill.time,w:w.cine.w});}
+  assert.equal(at[0].w,0,`t=${at[0].t.toFixed(3)} 不应推近`);assert.equal(at[1].w,1,`t=${at[1].t.toFixed(3)} 应在最近`);
+  assert.ok(at[2].w>0&&at[2].w<1,`t=${at[2].t.toFixed(3)} 应在拉回中 ${at[2].w}`);
+});
+test('爆发特写取景：最近时人物头顶、双脚和被锁定的球都在画面内（竖屏与横屏）',()=>{
+  for(const aspect of [.62,.8,1.6,2.2]){const w=buildWorld();w.resize(aspect);const s=armed();s.player.x=aspect>1?-2.5:2.4;s.ball.x=s.player.x;useSkill(s,'burst');
+    for(let i=1;i<=40;i++){stepGame(s,1/120,0);w.update(s,0,false,i/120);}w.shake(0);assert.equal(w.cine.w,1);
+    for(const [x,z,y,what] of [[s.player.x,PLAYER_Z,2.25,'头顶'],[s.player.x,PLAYER_Z,0,'脚'],[s.skill.x,s.skill.z,.73,'球']]){const p=w.project(x,z,y);
+      assert.ok(p.x>.04&&p.x<.96&&p.y>.04&&p.y<.96,`aspect ${aspect} ${what} 出框 ${JSON.stringify(p)}`);}}
+});

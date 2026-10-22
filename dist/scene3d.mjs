@@ -188,8 +188,8 @@ export function buildWorld(){
     }
     // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
-    const sk=s.skill?.kind==='burst'?s.skill:null,kp=sk?Math.min(1,sk.time/SKILLS.burst.duration):0,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
-    const wind=sk?(kp<.28?sm((kp-.08)/.2):Math.max(0,1-sm((kp-.28)/.06))):0,blow=sk?(kp<.28?0:kp<.38?sm((kp-.28)/.1):1-sm((kp-.38)/.12)):0;
+    const sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(SKILLS.burst.duration,sk.time):0,kp=kt/SKILLS.burst.duration,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    const wind=sk?(kt<.28?sm((kt-.08)/.2):Math.max(0,1-sm((kt-.28)/.06))):0,blow=sk?(kt<.28?0:kt<.38?sm((kt-.28)/.1):1-sm((kt-.38)/.12)):0;
     if(sk){arms[1].rotation.x=.32-wind*.75+blow*1.5;arms[0].rotation.x=.32-wind*.3+blow*.4;torso.rotation.y=-wind*.38+blow*.3;torso.rotation.x=blow*.1;}
     for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch-blow;
     // Racket strings spring back after contact; the sword's blade carries through in a flat slash.
@@ -239,8 +239,8 @@ export function buildWorld(){
     if(showBurst){const bz=burstZone(s),be=.045;place(burstEdges[0],bz.left,bz.right,bz.near,bz.near+be);place(burstEdges[1],bz.left,bz.right,bz.far-be,bz.far);place(burstEdges[2],bz.left,bz.left+be,bz.near,bz.far);place(burstEdges[3],bz.right-be,bz.right,bz.near,bz.far);}
     burstEdges.forEach(m=>m.visible=showBurst&&showHints);
     // Cinematic weights: dim and key light for the whole lock, camera push only without reduced motion.
-    cine.dim=sk?(kp<.08?kp/.08:kp<.38?1:Math.max(0,1-(kp-.38)/.12)):0;
-    cine.w=sk&&!reduceMotion?(kp<.08?0:kp<.28?sm((kp-.08)/.2):kp<.38?1:sm(1-(kp-.38)/.12)):0;
+    cine.dim=sk?(kt<.08?kt/.08:kt<.38?1:Math.max(0,1-(kt-.38)/.12)):0;
+    cine.w=sk&&!reduceMotion?(kt<.08?0:kt<.28?sm((kt-.08)/.2):kt<.38?1:sm(1-(kt-.38)/.12)):0;
     if(sk){focus.set((s.player.x+sk.x)/2,.95,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
     hemisphere.intensity=2*(1-.3*cine.dim);sun.intensity=3.1*(1-.22*cine.dim);
     keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
@@ -290,7 +290,7 @@ export function buildWorld(){
   // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
   // always comes from the latest resize, so a close-up never restores an old screen shape.
   function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
-    if(cine.w>0){closePos.set(focus.x+cine.side*2.2,focus.y+.85,focus.z+1.5);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
+    if(cine.w>0){closePos.set(focus.x+cine.side*3.4,focus.y+1.2,focus.z+2.4);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
   return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,cine,update,project,resize,shake};

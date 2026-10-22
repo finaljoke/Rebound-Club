@@ -70,13 +70,13 @@ test('旋转预览：显示真实方向与短弧线，与实际弯曲方向一�
 // Reproducible cases under real level rules (keeper speed, delay and misread untouched).
 function caseState(level,x,shots){const s=createGame(level,'glove');s.practiceLeft=0;startGame(s);stepGame(s,1,0);s.energy=100;s.shots=shots;s.player.x=x;s.keeper.x=0;s.hitstop=0;return s;}
 function outcome(s){for(let i=0;i<900;i++){stepGame(s,1/120,0);for(const e of ['goal','save','wide'])if(s.events.includes(e))return e;}return 'none';}
-test('AC14 旋转绕位案例：同一接球点与时机，普通回击被扑，旋转绕过门将进球（第5关）',()=>{
+test('AC14 旋转绕位案例：同一接球点与时机，普通回击被扑，旋转绕过门将进球（第4关封角、第5关左右对称）',()=>{
   const w=WEAPONS.glove,dt=1/120;
-  for(const [x,t] of [[-.5,.4],[.5,-.4]])for(let shots=0;shots<4;shots++){
-    const z=PLAYER_Z+w.reach*.5+t*w.reach*.5,v=LEVELS[4].speed,ticks=Math.ceil(w.windup*120);
-    const normal=caseState(4,x,shots);normal.ball={x,z:z+v*ticks*dt,vx:0,vz:-v,z0:6,z1:PLAYER_Z};attack(normal);for(let i=0;i<ticks+2&&normal.ball.vz<0;i++)stepGame(normal,dt,0);
-    assert.notEqual(normal.lastShot,'soft');assert.equal(outcome(normal),'save',`普通 x=${x} t=${t} shots=${shots}`);
-    const spin=caseState(4,x,shots);spin.ball={x,z,vx:0,vz:-v,z0:6,z1:PLAYER_Z};assert.equal(useSkill(spin,'spin').ok,true);assert.equal(outcome(spin),'goal',`旋转 x=${x} t=${t} shots=${shots}`);
+  for(const [level,x,t] of [[3,0,.6],[4,0,.4],[4,0,-.4]])for(let shots=0;shots<4;shots++){
+    const z=PLAYER_Z+w.reach*.5+t*w.reach*.5,v=LEVELS[level].speed,ticks=Math.ceil(w.windup*120);
+    const normal=caseState(level,x,shots);normal.ball={x,z:z+v*ticks*dt,vx:0,vz:-v,z0:6,z1:PLAYER_Z};attack(normal);for(let i=0;i<ticks+2&&normal.ball.vz<0;i++)stepGame(normal,dt,0);
+    assert.notEqual(normal.lastShot,'soft');assert.equal(outcome(normal),'save',`普通 关${level+1} x=${x} t=${t} shots=${shots}`);
+    const spin=caseState(level,x,shots);spin.ball={x,z,vx:0,vz:-v,z0:6,z1:PLAYER_Z};assert.equal(useSkill(spin,'spin').ok,true);assert.equal(outcome(spin),'goal',`旋转 关${level+1} x=${x} t=${t} shots=${shots}`);
   }
 });
 test('AC14 正面爆发仍会被扑：门将站在球路上时爆发被扑住',()=>{
