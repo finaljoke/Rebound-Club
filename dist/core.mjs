@@ -21,7 +21,7 @@ export const ACTIVE_PHASES=['playing','serving','miss','goal'];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 // Folds a straight-line x back between the side walls, as repeated bounces would.
-function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
+export function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
 // The keeper puts every new ball into play, alternating sides.
 function serve(s){

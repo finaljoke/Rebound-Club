@@ -8,3 +8,44 @@
 @supports(padding:max(0px)){body{padding-bottom:env(safe-area-inset-bottom)}.site-header{padding-top:env(safe-area-inset-top)}}
 .overlay{padding:12px}.overlay-content{min-height:0;max-height:100%;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain}
 @media(max-width:380px){.overlay-content{padding:14px 18px}.overlay-content .overlay-symbol{display:none}.overlay-content .eyebrow{font-size:7px}.overlay-content h3{font-size:21px;line-height:1.15;margin:8px 0}.overlay-content p{font-size:10px;line-height:1.55;margin:7px 0 10px}.result-score{font-size:26px;margin:4px 0}.result-stats{margin:8px 0 12px;gap:20px;font-size:9px}.result-stats b{font-size:12px;display:inline;margin-right:5px}.overlay-content .secondary-button{margin-top:10px;font-size:10px}.overlay-content .primary-button{padding:10px;font-size:12px}}
+
+.result-pop{position:absolute;top:12px;left:50%;transform:translateX(-50%);padding:7px 13px;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap;pointer-events:none;opacity:0;z-index:3;box-shadow:0 4px 14px #14352d33}
+.result-pop.show{animation:verdict 1.6s both}
+.result-pop.good{background:#fff3c4;color:#1e5a3f}.result-pop.bad{background:#ffe1d6;color:#a2391d}.result-pop.info{background:#e6f1ff;color:#2c5574}
+@keyframes verdict{0%{opacity:0;transform:translate(-50%,-8px)}12%{opacity:1;transform:translate(-50%,0)}80%{opacity:1}100%{opacity:0}}
+.court-badge{top:auto;bottom:10px;left:10px}
+.practice-chip{font-style:normal;background:#e6f1ff;color:#2c5574;border-radius:8px;padding:1px 6px;margin-left:4px;font-size:9px}
+.overlay-content .lesson{color:#3f5a46;background:#eef3df;border-radius:9px;padding:8px 10px;line-height:1.7;text-align:left}
+.overlay-picks{display:none;margin:4px 0 12px;gap:6px;flex-direction:column}
+.overlay-picks>div{display:flex;gap:5px;justify-content:center}
+.pick{min-width:30px;height:30px;border-radius:8px;border:1px solid #d9dccb;background:#fffdf6;font-weight:800;font-size:12px;color:#3f4b3c}
+.pick.wide{flex:1;font-weight:600;font-size:11px}
+.pick.on{background:#2c5f4a;color:#fff;border-color:#2c5f4a}
+.pick:disabled{opacity:.4}
+@media(max-width:800px){
+  .site-header{height:50px}
+  .brand-ball{width:28px;height:28px;font-size:26px}
+  .layout{margin:6px auto 0;padding:0 8px;gap:12px}
+  .site-footer{display:none}
+  .game-shell{height:calc(100dvh - 62px);min-height:440px;display:flex;flex-direction:column;padding:10px 10px 8px}
+  .game-top h2{font-size:15px;margin-top:2px}
+  .hud{margin:6px 2px 8px;gap:16px}
+  .court-wrap{flex:1;height:auto;min-height:0}
+  .controls{padding:8px 8px 4px}
+  .move-caption{font-size:14px}
+  .move-control small{display:none}
+  .attack-button{width:72px;height:72px}
+  .game-footer{margin-top:4px;padding-top:6px;gap:10px}
+  #feedback{line-height:1.4}
+  .sidebar{display:none}
+  .overlay-picks{display:flex}
+  .result-pop{font-size:11px}
+}
+@media(max-width:380px){
+  .game-top .mini-label{display:none}
+  .hud{margin:4px 2px 6px}
+  .court-wrap{height:auto;min-height:0}
+  .attack-button{width:64px;height:64px}
+  .move-rail{height:31px;margin-top:5px}
+  .move-rail i{height:26px}
+}

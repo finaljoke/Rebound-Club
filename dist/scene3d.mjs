@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import {LEVELS,WEAPONS,inHitRange,ballHeight,KEEPER_Z,FAR_WALL,SIDE} from './core.mjs';
+import {LEVELS,WEAPONS,ballHeight,hitZone,swingPreview,crossingFrom,foldX,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE} from './core.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 export function buildWorld(){
@@ -136,9 +136,24 @@ export function buildWorld(){
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
   const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
-  const ballBody=mesh(new THREE.SphereGeometry(.225,24,18),ballMat,ball);
-  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.225,.008,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
-  const range=mesh(new THREE.RingGeometry(.8,.84,48),new THREE.MeshBasicMaterial({color:'#e5efac',transparent:true,opacity:.1,depthWrite:false}),scene,0,.045,-2.3,false);range.rotation.x=-Math.PI/2;
+  const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball);
+  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.26,.009,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
+  // Ground hints. Every shape is sized from the same numbers the rules use (hitZone, swingPreview, crossingFrom).
+  const flat=(geometry,color,opacity,y)=>{const m=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false}));m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=5;scene.add(m);return m;};
+  const unit=new THREE.PlaneGeometry(1,1);
+  const zone={fill:flat(unit,'#e5efac',.1,.043),band:flat(unit,'#ff6a2b',.2,.046),edges:[0,1,2,3].map(()=>flat(unit,'#f6f8dc',.4,.048))};
+  // Aim arrow: shaft plus head, pointing along local -z (towards the far goal).
+  const aim=new THREE.Group();scene.add(aim);const aimMat=new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:.85,depthWrite:false});
+  const shaft=new THREE.Mesh(unit,aimMat);shaft.rotation.x=-Math.PI/2;shaft.scale.set(.09,1.7,1);shaft.position.set(0,.06,-1.05);aim.add(shaft);
+  const headShape=new THREE.Shape();headShape.moveTo(-.22,0);headShape.lineTo(.22,0);headShape.lineTo(0,.42);headShape.lineTo(-.22,0);
+  const head=new THREE.Mesh(new THREE.ShapeGeometry(headShape),aimMat);head.rotation.x=-Math.PI/2;head.position.set(0,.06,-1.9);aim.add(head);aim.visible=false;
+  // Outgoing shot: dotted route to the goal line (folding off side walls) and a verdict ring at the end.
+  const routeMat=new THREE.MeshBasicMaterial({color:'#fff6d8',transparent:true,opacity:.75,depthWrite:false});
+  const route=Array.from({length:22},()=>{const d=new THREE.Mesh(new THREE.CircleGeometry(.06,10),routeMat);d.rotation.x=-Math.PI/2;d.visible=false;scene.add(d);return d;});
+  const target=flat(new THREE.RingGeometry(.3,.42,32),'#7ee08a',.9,.05);target.visible=false;
+  // What the keeper covers: drawn at its feet at the true save reach.
+  const reachBar=flat(unit,'#9cc8ea',.28,.05);reachBar.scale.set(KEEPER_REACH*2,.38,1);
+  const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
   const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
@@ -165,9 +180,29 @@ export function buildWorld(){
     const powered=s.power&&s.ball.vz>0;ball.scale.setScalar(powered?1.25:1);ballBody.material=powered?powerMat:ballMat;
     trail.forEach(m=>m.material.color.set(powered?'#ff6a2b':'#ffda7d'));ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
     ball.visible=!['miss','lost'].includes(s.phase);
-    range.position.set(s.player.x,.045,-(s.player.z+w.reach*.5));range.scale.set(w.width,w.reach*.5,1);
-    range.material.opacity=inHitRange(s)?.46:.1;
-    range.visible=s.phase==='playing'&&s.ball.vz<0&&s.ball.z<3.7;
+    const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
+    const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
+    const place=(m,l,rgt,n,f)=>{m.position.x=(l+rgt)/2;m.position.z=-(n+f)/2;m.scale.x=rgt-l;m.scale.y=f-n;};
+    place(zone.fill,r.left,r.right,r.near,r.far);place(zone.band,r.left,r.right,r.sweetNear,r.sweetFar);
+    const e=.06;place(zone.edges[0],r.left,r.right,r.near,r.near+e);place(zone.edges[1],r.left,r.right,r.far-e,r.far);
+    place(zone.edges[2],r.left,r.left+e,r.near,r.far);place(zone.edges[3],r.right-e,r.right,r.near,r.far);
+    zone.fill.material.opacity=fillOpacity*dim;zone.band.material.opacity=bandOpacity*dim;
+    for(const edge of zone.edges){edge.material.color.set(edgeColor);edge.material.opacity=edgeOpacity*dim;}
+    const showHints=['playing','serving','miss','goal','paused'].includes(s.phase);
+    for(const m of [zone.fill,zone.band,...zone.edges])m.visible=showHints;
+    // Before the swing: where pressing now would send the ball. Just after it: where it actually went.
+    const recent=s.shot&&s.elapsed-s.shot.at<.6&&s.ball.vz>0;
+    const arrow=p.kind==='clean'||p.kind==='perfect'?{x:p.x,z:p.z,angle:p.angle,kind:p.kind}:recent?s.shot:null;
+    aim.visible=!!arrow&&showHints;
+    if(arrow){aim.position.set(arrow.x,0,-arrow.z);aim.rotation.y=-arrow.angle;aimMat.color.set(arrow.kind==='perfect'?'#ff7a3d':arrow.kind==='soft'?'#d7d2b8':'#ffffff');aimMat.opacity=recent&&!(p.kind==='clean'||p.kind==='perfect')?.55:.85;}
+    const outgoing=s.shot&&s.ball.vz>0&&(s.phase==='playing'||s.phase==='goal'||s.phase==='won');
+    if(outgoing){
+      const c=crossingFrom(s.shot.x,s.shot.z,Math.sin(s.shot.angle),Math.cos(s.shot.angle),s),slope=Math.tan(s.shot.angle);
+      route.forEach((d,i)=>{const zz=s.shot.z+(GOAL_Z-s.shot.z)*(i+1)/(route.length+1);d.position.set(foldX(s.shot.x+slope*(zz-s.shot.z)),.052,-zz);d.visible=zz>s.ball.z;});
+      target.position.set(c.x,.05,-GOAL_Z);target.material.color.set(!c.inMouth?'#c9c9b8':c.blocked?'#ff5a4a':'#5fe07a');target.visible=true;
+    }else{route.forEach(d=>d.visible=false);target.visible=false;}
+    reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
+    reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(s.ball.x,.035,-s.ball.z);ballMarker.visible=ball.visible&&s.phase==='playing';
     ballShadow.position.set(s.ball.x,.038,-s.ball.z);ballShadow.scale.setScalar(1.25-(height-.73)*.35);ballShadow.visible=ball.visible;
     if(s.phase!=='playing'&&s.phase!=='paused'){history=[];lastBall=null;}
@@ -178,16 +213,19 @@ export function buildWorld(){
   function resize(aspect){
     camera.aspect=aspect;camera.updateProjectionMatrix();
     // Lower than a top-down view so the ball's arc and both goals read at once.
-    const target=new THREE.Vector3(0,.2,-4.9),offset=new THREE.Vector3(1.3,12.8,9.6).sub(target);
+    // Portrait screens look down more steeply so the long court fills the frame; framing is the tightest
+    // distance that still keeps both goals, the rails and the defender's whole zone in view.
+    const portrait=aspect<1,target=new THREE.Vector3(0,.2,portrait?-4.75:-4.9);
+    const tall=Math.min(1,Math.max(0,(.95-aspect)/.3));
+    const offset=(portrait?new THREE.Vector3(.5,15,6.2).lerp(new THREE.Vector3(.3,16,3.4),tall):new THREE.Vector3(1.3,12.8,9.6)).sub(target);
     const boundary=[];
-    for(const x of [-5.2,5.2])for(const z of [-11.4,2.3])boundary.push(new THREE.Vector3(x,0,z));
-    for(const x of [-4.3,4.3])boundary.push(new THREE.Vector3(x,1.95,-10.1),new THREE.Vector3(x,1.1,.1));
-    let distance=1;
-    for(let attempt=0;attempt<30;attempt++){
-      camera.position.copy(target).addScaledVector(offset,distance);camera.lookAt(target);camera.updateMatrixWorld(true);
-      if(boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.95&&Math.abs(p.y)<.95;}))break;
-      distance*=1.035;
-    }
+    // Far end keeps the whole back wall; the near end is framed by the goal posts, which still contain
+    // every position the ball can reach (side walls at ±SIDE).
+    for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
+    for(const x of [-4.05,4.05])boundary.push(new THREE.Vector3(x,0,1.15),new THREE.Vector3(x,1.15,0));
+    const fits=()=>{camera.position.copy(target).addScaledVector(offset,distance);camera.lookAt(target);camera.updateMatrixWorld(true);
+      return boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.97&&Math.abs(p.y)<.97;});};
+    let distance=.3;while(!fits()&&distance<4)distance*=1.02;
     base.copy(camera.position);
   }
   // Camera shake is a pure render offset around the framed position.
@@ -195,7 +233,7 @@ export function buildWorld(){
   function shake(amount=0){camera.position.copy(base);if(amount>0)camera.position.add(new THREE.Vector3(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,hero,keeper,farGoal,ball,platform,gear,range,update,project,resize,shake};
+  return {scene,camera,hero,keeper,farGoal,ball,platform,gear,zone,aim,target,reachBar,update,project,resize,shake};
 }
 
 export function create3DRenderer(canvas){
