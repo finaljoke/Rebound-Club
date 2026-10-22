@@ -1,10 +1,11 @@
+// goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude.
 export const LEVELS = [
-  {name:'初次交锋',tag:'找到击球的节奏',target:8,speed:4.3,tilt:.14,color:'#286659'},
-  {name:'左右开弓',tag:'脚步跟上球的方向',target:8,speed:4.5,tilt:.22,color:'#316988'},
-  {name:'预判时刻',tag:'留意回弹板的角度',target:10,speed:4.7,tilt:.26,color:'#5c5a8b'},
-  {name:'节奏大师',tag:'跟上每一次回弹',target:10,speed:4.9,tilt:.23,color:'#867045'},
-  {name:'全场奔袭',tag:'左右补位，保持专注',target:12,speed:5.1,tilt:.30,color:'#8b574d'},
-  {name:'守门王牌',tag:'把每次回击都打漂亮',target:15,speed:5.3,tilt:.32,color:'#285b54'}
+  {name:'初次交锋',tag:'找到击球的节奏',goals:3,speed:4.3,goalHalf:2.2,keeper:{delay:.5,speed:.9,error:.6},color:'#286659'},
+  {name:'左右开弓',tag:'早打往左，晚打往右',goals:3,speed:4.6,goalHalf:2.05,keeper:{delay:.45,speed:1.1,error:.55},color:'#316988'},
+  {name:'预判时刻',tag:'站到边路再起重炮',goals:4,speed:4.9,goalHalf:1.9,keeper:{delay:.4,speed:1.3,error:.5},color:'#5c5a8b'},
+  {name:'节奏大师',tag:'越打越快，稳住节奏',goals:4,speed:5.2,goalHalf:1.8,keeper:{delay:.36,speed:1.5,error:.45},color:'#867045'},
+  {name:'全场奔袭',tag:'借侧墙绕过门将',goals:5,speed:5.5,goalHalf:1.7,keeper:{delay:.32,speed:1.7,error:.4},color:'#8b574d'},
+  {name:'守门王牌',tag:'每一脚都要有想法',goals:5,speed:5.8,goalHalf:1.6,keeper:{delay:.28,speed:1.9,error:.35},color:'#285b54'}
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
@@ -13,15 +14,22 @@ export const WEAPONS = {
   sword:{name:'剑',subtitle:'长距离 · 提前拦截',width:.95,reach:1.6,windup:.06,active:.14,recovery:.28,whiff:.55}
 };
 export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=1.6,POWER=1.35,SOFT=.8,HIT_HEIGHT=.73,ARC=.9;
+export const KEEPER_Z=9.3,FAR_WALL=9.8,SIDE=3.82,KEEPER_REACH=.55;
+export const ACTIVE_PHASES=['playing','serving','miss','goal'];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
-function serve(s){s.ball={x:Math.sin(s.misses*1.4)*1.5,z:8.5,vx:.65*(s.misses%2?-1:1),vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;}
+// The keeper puts every new ball into play, alternating sides.
+function serve(s){
+  const z=KEEPER_Z-.3,dir=(s.misses+s.goals)%2?-1:1;
+  s.ball={x:clamp(s.keeper.x,-1.5,1.5),z,vx:.65*dir,vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;
+}
 export function createGame(level=0,weapon='glove'){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
   return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',phase:'ready',
-    ball:{x:0,z:8.5,vx:.65,vz:-LEVELS[levelIndex].speed,z0:8.5,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
-    hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
+    ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
+    keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},
+    goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
     rally:1,power:false,shots:0,hitstop:0,lastShot:'',
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
 }
@@ -30,7 +38,7 @@ export function attack(s){
   if(s.phase!=='playing'||s.swing)return false;
   s.swing={time:0,hit:false,armed:null,whiffed:false};s.events.push('swing');return true;
 }
-export function pauseGame(s){if(['playing','serving','miss'].includes(s.phase)){s.previousPhase=s.phase;s.phase='paused';}}
+export function pauseGame(s){if(ACTIVE_PHASES.includes(s.phase)){s.previousPhase=s.phase;s.phase='paused';}}
 export function resumeGame(s){if(s.phase==='paused'){s.phase=s.previousPhase||'playing';s.previousPhase=null;}}
 export function inHitRange(s){
   const w=WEAPONS[s.weapon],b=s.ball;
@@ -50,22 +58,60 @@ function strike(s,w,sw){
   const angle=soft?0:-t*MAX_AIM;
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
   const v=s.level.speed*s.rally*(perfect?POWER:soft?SOFT:1);
-  b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,9.8);
+  b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
   sw.hit=true;s.shots++;s.power=perfect;
+  // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
+  s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
   s.lastShot=soft?'soft':perfect?'perfect':angle<-.1?'left':angle>.1?'right':'straight';
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   if(perfect)s.hitstop=.07;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
 }
+function moveKeeper(s,dt){
+  const k=s.keeper,K=s.level.keeper,b=s.ball,g=s.level.goalHalf;
+  k.dive=Math.max(0,k.dive-dt);
+  let target=0,speed=K.speed*.35;
+  if(s.phase==='playing'&&b.vz>0){
+    if(k.delay>0){k.delay-=dt;return;}
+    // Straight-line read only: shots banked off a side wall fool the keeper.
+    // The misread fades over the last 0.6s, so slow balls get corrected and fast ones don't.
+    const remaining=(KEEPER_Z-b.z)/b.vz;
+    target=clamp(b.x+b.vx*remaining+k.err*Math.min(1,remaining/.6),-g,g);speed=K.speed;
+  }
+  k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
+}
+function farEnd(s){
+  const b=s.ball,k=s.keeper,g=s.level.goalHalf;
+  if(b.z>=KEEPER_Z&&Math.abs(b.x)<=g){
+    if(Math.abs(b.x-k.x)<=KEEPER_REACH){
+      // Saves come back at varied angles, so the defender still has to move.
+      const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
+      b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
+      k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.events.push('save');
+      return;
+    }
+    s.goals++;s.score+=1000+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
+    if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
+    else{s.phase='goal';s.countdown=1.2;}
+    return;
+  }
+  if(b.z>FAR_WALL){
+    b.z=2*FAR_WALL-b.z;
+    const angle=clamp(Math.atan2(b.vx,b.vz)+s.boardAngle,-.76,.76),speed=s.level.speed*s.rally;
+    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));s.power=false;s.events.push('wall');
+  }
+}
 function tick(s,dt,axis){
   s.flash=Math.max(0,s.flash-dt*2);
   if(s.hitstop>0){s.hitstop=Math.max(0,s.hitstop-dt);return;}
   s.elapsed+=dt;
-  s.boardAngle=Math.sin(s.elapsed*.65+s.levelIndex*.8)*s.level.tilt;
-  if(s.phase==='serving'||s.phase==='miss'){
+  // Small deterministic deflection off the far wall outside the goal mouth.
+  s.boardAngle=Math.sin(s.elapsed*.65+s.levelIndex*.8)*.15;
+  moveKeeper(s,dt);
+  if(s.phase!=='playing'){
     s.countdown-=dt;
-    if(s.countdown<=0){if(s.phase==='miss')serve(s);s.phase='playing';s.events.push('serve');}
+    if(s.countdown<=0){if(s.phase!=='serving')serve(s);s.phase='playing';s.events.push('serve');}
     return;
   }
   s.player.x=clamp(s.player.x+axis*6.2*dt,-3.45,3.45);
@@ -77,22 +123,13 @@ function tick(s,dt,axis){
   }
   const b=s.ball;
   b.x+=b.vx*dt;b.z+=b.vz*dt;
-  if(b.x>3.82){b.x=7.64-b.x;b.vx=-Math.abs(b.vx);s.events.push('wall');}
-  if(b.x< -3.82){b.x=-7.64-b.x;b.vx=Math.abs(b.vx);s.events.push('wall');}
-  if(b.z>9.8&&b.vz>0){
-    b.z=19.6-b.z;
-    const angle=clamp(Math.atan2(b.vx,b.vz)+s.boardAngle*2,-.76,.76);
-    const speed=s.level.speed*s.rally;
-    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;b.z0=9.8;b.z1=sweetZ(s,w);s.power=false;s.events.push('wall');
-  }
+  if(b.x>SIDE){b.x=2*SIDE-b.x;b.vx=-Math.abs(b.vx);s.events.push('wall');}
+  if(b.x< -SIDE){b.x=-2*SIDE-b.x;b.vx=Math.abs(b.vx);s.events.push('wall');}
+  if(b.vz>0){farEnd(s);return;}
   if(s.swing&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // Whether the ball was already in range when the window opened decides clean hit vs. soft contact.
     if(sw.armed===null)sw.armed=inHitRange(s);
-    if(inHitRange(s)){
-      strike(s,w,sw);
-      if(s.hits>=s.level.target){s.phase='won';s.events.push('win');}
-      return;
-    }
+    if(inHitRange(s)){strike(s,w,sw);return;}
   }
   if(b.z<=0){
     s.misses++;s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;s.events.push('miss');
@@ -101,11 +138,11 @@ function tick(s,dt,axis){
   }
 }
 export function stepGame(s,dt,axis=0){
-  if(!['playing','serving','miss'].includes(s.phase)||!Number.isFinite(dt)||dt<=0)return;
+  if(!ACTIVE_PHASES.includes(s.phase)||!Number.isFinite(dt)||dt<=0)return;
   s.events=[];
   axis=Number.isFinite(axis)?clamp(axis,-1,1):0;
   s.accumulator+=Math.min(dt,1);
-  while(s.accumulator>=1/120&&['playing','serving','miss'].includes(s.phase)){
+  while(s.accumulator>=1/120&&ACTIVE_PHASES.includes(s.phase)){
     tick(s,1/120,axis);s.accumulator-=1/120;
   }
 }
