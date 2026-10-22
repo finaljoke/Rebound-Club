@@ -2,12 +2,12 @@
 // practice: misses forgiven at the start of a level. Levels 1-3 keep ball speed and goal width fixed so
 // each one teaches a single thing through the keeper alone; later levels change one variable at a time.
 export const LEVELS = [
-  {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。门将很慢，别直接打到它身上就能进。',goals:2,practice:3,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
-  {name:'左右开弓',tag:'早打往左，晚打往右',lesson:'门将守住了正中。提早挥打向左，晚一点挥打向右，看准它站哪边。',goals:3,practice:2,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
-  {name:'预判时刻',tag:'甜点重炮与借墙',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或斜打侧墙绕过门将。',goals:3,practice:1,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#5c5a8b'},
-  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'只有球速变快。提前看影子移动到位。',goals:4,practice:0,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#867045'},
-  {name:'全场奔袭',tag:'球门变窄，选好路线',lesson:'球门变窄了。看清门将位置，再决定打哪条线。',goals:4,practice:0,speed:4.7,goalHalf:2.2,keeper:{delay:.42,speed:1.35,error:.4},color:'#8b574d'},
-  {name:'守门王牌',tag:'综合运用，攻破王牌',lesson:'更快的球、更强的门将。变向、重炮、借墙都要用上。',goals:5,practice:0,speed:5.2,goalHalf:2.1,keeper:{delay:.38,speed:1.4,error:.35},color:'#285b54'}
+  {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。门将很慢，别直接打到它身上就能进。',goals:2,practice:3,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
+  {name:'左右开弓',tag:'早打往左，晚打往右',lesson:'门将守住了正中。提早挥打向左，晚一点挥打向右，看准它站哪边。',goals:3,practice:2,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
+  {name:'预判时刻',tag:'甜点重炮与借墙',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或斜打侧墙绕过门将。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#5c5a8b'},
+  {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠。边路直线会撞上它，改打对角或借墙。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#867045'},
+  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'只有球速变快。提前看影子移动到位，再选路线。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#8b574d'},
+  {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将更强。变向、重炮、借墙都要用上。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.4,error:.4},color:'#285b54'}
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
@@ -20,6 +20,8 @@ export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal'];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
+// Folds a straight-line x back between the side walls, as repeated bounces would.
+function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
 // The keeper puts every new ball into play, alternating sides.
 function serve(s){
@@ -61,9 +63,7 @@ export function swingPreview(s){
 }
 // Where an outgoing ball will cross the goal line, folding in side-wall bounces (which the keeper ignores).
 export function crossingFrom(x,z,vx,vz,s){
-  const raw=x+vx/vz*(GOAL_Z-z),period=4*SIDE;
-  let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;
-  const at=u-SIDE;
+  const raw=x+vx/vz*(GOAL_Z-z),at=foldX(raw);
   return {x:at,viaWall:Math.abs(raw)>SIDE,inMouth:Math.abs(at)<=s.level.goalHalf,blocked:Math.abs(at-s.keeper.x)<=KEEPER_REACH};
 }
 export function predictCrossing(s){const b=s.ball;return b.vz>0?crossingFrom(b.x,b.z,b.vx,b.vz,s):null;}
@@ -104,6 +104,10 @@ function moveKeeper(s,dt){
     // The misread fades over the last 0.6s, so slow balls get corrected and fast ones don't.
     const remaining=(KEEPER_Z-b.z)/b.vz;
     target=clamp(b.x+b.vx*remaining+k.err*Math.min(1,remaining/.6),-g,g);speed=K.speed;
+  }else if(s.phase==='playing'&&b.vz<0&&s.level.shade){
+    // Narrowing the angle: while the defender receives, the keeper shades toward that side,
+    // so a straight shot from the flank runs into it and crossing or banked shots pay off.
+    target=clamp(foldX(b.x+b.vx*(sweetZ(s,WEAPONS[s.weapon])-b.z)/b.vz)*s.level.shade,-g,g);speed=K.speed*.5;
   }
   k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
 }

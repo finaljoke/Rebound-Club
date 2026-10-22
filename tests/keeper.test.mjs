@@ -64,3 +64,7 @@ test('球越过守门员后，守门员不会被误差拉向反方向',()=>{
   const s=play();s.keeper.x=.3;s.keeper.err=20;s.ball={x:1,z:9.4,vx:0,vz:3,z0:2,z1:KEEPER_Z};
   const x=s.keeper.x;stepGame(s,1/120,0);assert.ok(s.keeper.x>x,`守门员从 ${x} 移到 ${s.keeper.x}`);
 });
+test('封角：球飞向玩家时，后期门将会向接球一侧移动，第1关不会',()=>{
+  for(const [level,moves] of [[0,false],[5,true]]){const s=play(level);s.keeper.x=0;s.ball={x:2.5,z:8,vx:0,vz:-4,z0:8,z1:PLAYER_Z};
+    for(let i=0;i<60;i++)stepGame(s,1/120,0);assert.equal(s.keeper.x>.15,moves,`关${level+1} 门将 x=${s.keeper.x}`);}
+});
