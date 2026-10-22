@@ -56,7 +56,8 @@ try{
     await page.getByRole('button',{name:'返回俱乐部'}).click();
     if(await page.locator('body').getAttribute('data-screen')!=='ready')throw Error('Return to ready failed');
   }
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'开始挑战'}).click();await page.waitForTimeout(950);
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'开始挑战'}).click();await page.waitForTimeout(300);
+  if(await page.locator('#tutorial-bar').isVisible())await page.getByRole('button',{name:'跳过教学'}).click();await page.waitForTimeout(950);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
   const m=await page.locator('#move-control').boundingBox(),a=await page.locator('#attack').boundingBox(),left={id:1,x:m.x+m.width/2,y:m.y+m.height/2},right={id:2,x:a.x+a.width/2,y:a.y+a.height/2};
   await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[left]});left.x+=45;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[left]});await page.waitForTimeout(60);
