@@ -48,8 +48,10 @@ const cues={
   string:i=>{tone(360,640,.1,'triangle',.13*i);tone(760,1280,.12,'sine',.05*i,.012);noise(.04,.1*i,3600);},
   blade:i=>{noise(.17,.16*i,5400);tone(1600,880,.15,'sine',.05*i);tone(190,80,.08,'sine',.16*i);},
   impact:()=>{tone(72,36,.3,'sine',.38);tone(1320,1760,.18,'triangle',.06,.04);},
-  // Skill cues: burst charge rises over the 0.5s lock; spin adds a short whirl; a refused request blips low.
-  charge:()=>{tone(180,620,.42,'sawtooth',.035);tone(90,140,.42,'sine',.12);},
+  // Skill cues: burst charge rises with quickening pulses up to the strike beat, strike lands a deep boom and crack;
+  // spin adds a short whirl; a refused request blips low.
+  charge:()=>{const d=SKILLS.burst.strike;tone(160,720,d,'sawtooth',.035);tone(80,150,d,'sine',.13);[.1,.3,.46,.58,.67].forEach((t,i)=>tone(110+i*30,70,.07,'sine',.14+i*.03,t));},
+  strike:()=>{tone(64,26,.5,'sine',.5);noise(.3,.34,900);noise(.12,.2,4200);tone(1760,2640,.22,'triangle',.06,.02);},
   whirl:()=>{tone(520,980,.16,'triangle',.05);tone(980,560,.14,'triangle',.04,.08);},
   deny:()=>tone(240,180,.07,'square',.025),
   start:()=>tone(350,700,.12,'triangle',.07)
@@ -299,9 +301,13 @@ function hints(){
   }
   if(incoming&&skillStatus(game,'spin').ok){const sp=spinPreview(game);for(let i=1;i<sp.count;i++){const q=project(sp.xs[i],sp.zs[i]);ellipse(q.x,q.y,2.4,1.6,'#37d6c0ee');}}
   if(incoming&&!game.swing&&game.energy>=SKILLS.burst.cost){const z=burstZone(game);polygon(quad(z.left,z.right,z.near,z.far),null,'#ff9a3caa',1.4);}
-  if(game.skill){const p=project(game.player.x,game.player.z),k=Math.min(1,game.skill.time/SKILLS.burst.duration);
-    ctx.fillStyle=`rgba(20,45,36,${.18*Math.sin(Math.PI*k)})`;ctx.fillRect(0,0,450,540);
-    ctx.beginPath();ctx.ellipse(p.x,p.y,26+30*k,10+12*k,0,0,Math.PI*2);ctx.strokeStyle='#ff8a3c';ctx.lineWidth=3;ctx.stroke();}
+  // 2D burst show follows the same beats as the 3D one: dim, banner, growing ring, strike flash and shock ring.
+  if(game.skill){const B=SKILLS.burst,t=game.skill.time,p=project(game.player.x,game.player.z),k=Math.min(1,t/B.duration),charge=Math.min(1,t/B.strike);
+    ctx.fillStyle=`rgba(20,45,36,${.32*Math.sin(Math.PI*k)})`;ctx.fillRect(0,0,450,540);
+    ctx.beginPath();ctx.ellipse(p.x,p.y,26+30*charge,10+12*charge,0,0,Math.PI*2);ctx.strokeStyle='#ff8a3c';ctx.lineWidth=3+2*charge;ctx.stroke();
+    if(t>=B.strike){const s=Math.min(1,(t-B.strike)/(B.duration-B.strike));ctx.beginPath();ctx.ellipse(p.x,p.y,40+120*s,14+40*s,0,0,Math.PI*2);ctx.strokeStyle=`rgba(255,214,140,${1-s})`;ctx.lineWidth=4;ctx.stroke();}
+    if(t<B.release){const slide=reduceMotion?0:Math.max(0,1-t/B.freeze)*300;ctx.save();ctx.translate(slide,0);polygon([[60,176],[410,176],[390,216],[40,216]],'#ff7a2ee6');text('爆发 BURST »»»',225,205,24,'#fff8e8','900');ctx.restore();}
+    if(!reduceMotion&&(t<.07||(t>=B.strike&&t<B.strike+.1))){ctx.fillStyle='rgba(255,248,230,.55)';ctx.fillRect(0,0,450,540);}}
 }
 function keeper(){
   const k=game.keeper,p=project(k.x,KEEPER_Z),s=p.scale,lean=k.diveDir*(k.dive/.35)*14;
@@ -349,6 +355,7 @@ function frame(time){
     if(e==='energy100'&&!fullHintShown){say('能量满了：等球进框按「爆发」（K）打出强力回击，或先用「旋转」（J）。');fullHintShown=true;}
     if(e==='spin'){const f=hitFeel(game.weapon,'spin');sound(f.sound,f.intensity);sound('whirl');pop(game.ball.curve?.k>0?'右旋 ↻':'左旋 ↺');say('旋转球会沿弧线拐弯，撞到侧墙后变回直线。');}
     if(e==='burstStart'){sound('charge');$('feedback').textContent='蓄力爆发……';}
+    if(e==='burstStrike')sound('strike');
     if(e==='burst'){const f=hitFeel(game.weapon,'burst');sound(f.sound,f.intensity);sound('impact');pop('爆发！');shake=Math.max(shake,.08);say('爆发球很快，但正对门将一样会被扑住。');}
     if(e==='hit'){pop(aim[game.lastShot]||'好球！');if(!teaching)say('早打往左，晚打往右。看红绿终点判断门将有没有封住。');}
     if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.06);}
