@@ -35,7 +35,11 @@ export function icon(name){return `<svg viewBox="0 0 48 44" fill="none" stroke="
 // Per-gear contact feel: glove = punchy burst, racket = springy rings, sword = a slash arc.
 const gearFeel={glove:{flash:'burst',color:'#ff6a2b',sound:'punch',motion:1},racket:{flash:'ring',color:'#ffd23f',sound:'string',motion:.8},sword:{flash:'slash',color:'#bff4ff',sound:'blade',motion:.9}};
 export function hitFeel(weapon,kind){
-  const g=gearFeel[weapon]||gearFeel.glove,k={soft:[.45,.16,.6],hit:[1,.22,1],perfect:[1.9,.28,1.5]}[kind]||[1,.18,1];
+  const g=gearFeel[weapon]||gearFeel.glove;
+  // Skills keep the gear's own sound and motion: spin is a light teal ring, burst the gear's flash at full force.
+  if(kind==='spin')return {...g,flash:'ring',color:'#37d6c0',intensity:.85,life:.16,motion:g.motion*1.1};
+  if(kind==='burst')return {...g,intensity:2.4,life:.3,motion:g.motion*1.8};
+  const k={soft:[.45,.16,.6],hit:[1,.22,1],perfect:[1.9,.28,1.5]}[kind]||[1,.18,1];
   return {...g,intensity:k[0],life:k[1],motion:g.motion*k[2]};
 }
 export function whiffHint(w){
@@ -43,4 +47,6 @@ export function whiffHint(w){
   return {early:'太早了 · 等球进框',late:'太晚了 · 球已过身',reach:w.side>0?'够不着 · 球在右边':'够不着 · 球在左边',none:'没有来球'}[w.reason]||'挥空';
 }
 // One short line per tutorial step; shown only while that step is active.
+// Short state labels for the skill buttons; text, not just colour.
+export const SKILL_STATE={ok:'可释放',energy:'能量不足',window:'等球进框',busy:'收招中',state:'待开球',tutorial:'教学中'};
 export const TUTORIAL_TIPS=['球来了：等它进框，按挥击打回去','球从侧边来：先移到影子上，再挥击','看门将站哪边，朝空的一侧打进去'];

@@ -40,3 +40,30 @@ test('AC13 基础教学：能量为0、技能被拒、回击不回能；教学�
   assert.equal(t.tutorial.step,1);assert.equal(t.energy,0);assert.equal(useSkill(t,'spin').reason,'tutorial');
   assert.equal(createGame(0,'glove').energy,50);
 });
+
+// --- Scene: reads the core's skill clock; never drives it.
+import {buildWorld} from '../dist/scene3d.mjs';
+test('AC8/AC12 爆发镜头：演出中推近，结束时精确回到正常取景；中途改尺寸按新尺寸恢复；减少动态效果不推镜头',()=>{
+  const w=buildWorld();w.resize(.7);const s=armed();w.update(s,0,false,0);w.shake(0);const normal=w.camera.position.clone(),nq=w.camera.quaternion.clone();
+  useSkill(s,'burst');let maxPush=0;
+  for(let i=1;i<=30;i++){stepGame(s,1/120,0);w.update(s,0,false,i/120);w.shake(0);maxPush=Math.max(maxPush,w.camera.position.distanceTo(normal));}
+  assert.ok(maxPush>1,`特写推近 ${maxPush.toFixed(2)}`);assert.equal(w.chargeRing.visible,true);
+  w.resize(1.6);w.update(s,0,false,.3);w.shake(0);
+  for(let i=0;i<40&&s.phase==='skill';i++){stepGame(s,1/120,0);w.update(s,0,false,.3+i/120);w.shake(0);}
+  assert.equal(s.phase,'playing');w.update(s,0,false,.8);w.shake(0);const after=w.camera.position.clone(),afterQ=w.camera.quaternion.clone();w.resize(1.6);w.shake(0);
+  assert.ok(after.distanceTo(w.camera.position)<1e-9,'应回到新尺寸下的正常取景');assert.ok(1-Math.abs(afterQ.dot(w.camera.quaternion))<1e-12,'朝向也应恢复');
+  const r=buildWorld();r.resize(.7);r.shake(0);const base=r.camera.position.clone();const t=armed();useSkill(t,'burst');
+  for(let i=1;i<=70;i++){stepGame(t,1/120,0);r.update(t,0,true,i/120);r.shake(0);assert.ok(r.camera.position.distanceTo(base)<1e-9,'减少动态效果不推镜头');}
+  assert.equal(r.chargeRing.visible,false,'演出结束蓄力环消失');assert.ok(nq);
+});
+test('旋转弧线预览只在可释放时显示；爆发边界只在能量足够时显示',()=>{
+  const w=buildWorld(),s=armed();s.energy=40;w.update(s,0,true,0);assert.ok(w.spinArc.every(d=>!d.visible));assert.ok(w.burstEdges.every(d=>!d.visible));
+  s.energy=60;w.update(s,0,true,0);assert.ok(w.spinArc.some(d=>d.visible));assert.ok(w.burstEdges.every(d=>!d.visible));
+  s.energy=100;w.update(s,0,true,0);assert.ok(w.burstEdges.every(d=>d.visible));
+});
+test('AC15 反复释放技能与重开对局，场景资源计数不增长',()=>{
+  const w=buildWorld();const count=()=>{let n=0;const g=new Set(),m=new Set();w.scene.traverse(o=>{n++;if(o.geometry)g.add(o.geometry.uuid);if(o.material)m.add(o.material.uuid);});return [n,g.size,m.size];};
+  let s=armed();w.update(s,0,false,0);const before=count();let clock=0;
+  for(let round=0;round<20;round++){s=armed();useSkill(s,round%2?'spin':'burst');for(let i=0;i<120;i++){stepGame(s,1/120,0);clock+=1/120;w.update(s,i%3-1,false,clock);w.shake(.02);}}
+  assert.deepEqual(count(),before);
+});

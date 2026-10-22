@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,ballHeight,hitZone,swingPreview,crossingFrom,foldX,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
@@ -133,10 +133,19 @@ export function buildWorld(){
   const head=new THREE.Mesh(new THREE.ShapeGeometry(headShape),aimMat);head.rotation.x=-Math.PI/2;head.position.set(0,.06,-1.9);aim.add(head);aim.visible=false;
   // Outgoing shot: dotted route to the goal line (folding off side walls) and a verdict ring at the end.
   const routeMat=new THREE.MeshBasicMaterial({color:'#fff6d8',transparent:true,opacity:.75,depthWrite:false});
-  const route=Array.from({length:22},()=>{const d=new THREE.Mesh(new THREE.CircleGeometry(.06,10),routeMat);d.rotation.x=-Math.PI/2;d.visible=false;scene.add(d);return d;});
+  const dotGeo=new THREE.CircleGeometry(.06,10),spinMat=new THREE.MeshBasicMaterial({color:'#37d6c0',transparent:true,opacity:.9,depthWrite:false,depthTest:false});
+  const route=Array.from({length:48},()=>{const d=new THREE.Mesh(dotGeo,routeMat);d.rotation.x=-Math.PI/2;d.visible=false;scene.add(d);return d;});
+  // Spin hint: the short arc a spin taken now would follow, from the same physics step as the real flight.
+  const spinArc=Array.from({length:16},()=>{const d=new THREE.Mesh(dotGeo,spinMat);d.rotation.x=-Math.PI/2;d.scale.setScalar(1.25);d.renderOrder=6;d.visible=false;scene.add(d);return d;});
   const target=flat(new THREE.RingGeometry(.3,.42,32),'#7ee08a',.9,.05);target.visible=false;
   // What the keeper covers: drawn at its feet at the true save reach.
   const reachBar=flat(unit,'#9cc8ea',.28,.05);reachBar.scale.set(KEEPER_REACH*2,.38,1);
+  // Burst's slightly wider catch frame, shown only while it is affordable, so the extra margin is never hidden.
+  const burstEdges=[0,1,2,3].map(()=>flat(unit,'#ff9a3c',.6,.049));
+  // Burst cinematic pieces: a charge ring at the defender's feet and a warm key light; both built once.
+  const chargeRing=flat(new THREE.RingGeometry(.55,.66,40),'#ff8a3c',0,.055);chargeRing.visible=false;
+  const keyLight=new THREE.PointLight('#ffd7a0',0,6,1.6);scene.add(keyLight);
+  const cine={w:0,dim:0,side:1},focus=new THREE.Vector3(),closePos=new THREE.Vector3(),lookAt=new THREE.Vector3();
   const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
@@ -161,7 +170,7 @@ export function buildWorld(){
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
   function update(s,axis=0,reduceMotion=false,time){
     clock=time??clock+1/60;const now=clock;
-    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,s.shot.kind==='perfect'?'perfect':s.shot.kind==='soft'?'soft':'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
+    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
     hero.position.set(s.player.x,0,-s.player.z);
@@ -178,7 +187,11 @@ export function buildWorld(){
       arms[i].rotation.x=.32+extension*(s.weapon==='glove'?.65:.1)*Math.min(1.5,strong)+(i===0?stride:-stride)*.18;
     }
     // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
-    for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch;
+    // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
+    const sk=s.skill?.kind==='burst'?s.skill:null,kp=sk?Math.min(1,sk.time/SKILLS.burst.duration):0,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    const wind=sk?(kp<.28?sm((kp-.08)/.2):Math.max(0,1-sm((kp-.28)/.06))):0,blow=sk?(kp<.28?0:kp<.38?sm((kp-.28)/.1):1-sm((kp-.38)/.12)):0;
+    if(sk){arms[1].rotation.x=.32-wind*.75+blow*1.5;arms[0].rotation.x=.32-wind*.3+blow*.4;torso.rotation.y=-wind*.38+blow*.3;torso.rotation.x=blow*.1;}
+    for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch-blow;
     // Racket strings spring back after contact; the sword's blade carries through in a flat slash.
     gear.racket.rotation.z=fxU<1&&s.weapon==='racket'?Math.sin(fxAge*34)*.16*(1-fxU)*strong:0;
     gear.sword.rotation.y=s.weapon==='sword'?-punch*.35*strong:0;
@@ -193,9 +206,9 @@ export function buildWorld(){
     goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
     const height=ballHeight(s);
     ball.position.set(s.ball.x,height,-s.ball.z);
-    const powered=s.power&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
+    const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
-    trail.forEach(m=>m.material.color.set(powered?'#ff6a2b':'#ffda7d'));ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
+    trail.forEach(m=>m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d'));ball.rotation.set(s.elapsed*2,s.elapsed*(spinning?16:1.7),s.elapsed*.7);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
@@ -213,11 +226,25 @@ export function buildWorld(){
     aim.visible=!!arrow&&showHints;
     if(arrow){aim.position.set(arrow.x,0,-arrow.z);aim.rotation.y=-arrow.angle;aimMat.color.set(arrow.kind==='perfect'?'#ff7a3d':arrow.kind==='soft'?'#d7d2b8':'#ffffff');aimMat.opacity=recent&&!(p.kind==='clean'||p.kind==='perfect')?.55:.85;}
     const outgoing=s.shot&&s.ball.vz>0&&(s.phase==='playing'||s.phase==='goal'||s.phase==='won');
-    if(outgoing){
-      const c=crossingFrom(s.shot.x,s.shot.z,Math.sin(s.shot.angle),Math.cos(s.shot.angle),s),slope=Math.tan(s.shot.angle);
-      route.forEach((d,i)=>{const zz=s.shot.z+(GOAL_Z-s.shot.z)*(i+1)/(route.length+1);d.position.set(foldX(s.shot.x+slope*(zz-s.shot.z)),.052,-zz);d.visible=zz>s.ball.z;});
-      target.position.set(c.x,.05,-GOAL_Z);target.material.color.set(!c.inMouth?'#c9c9b8':c.blocked?'#ff5a4a':'#5fe07a');target.visible=true;
+    const fl=outgoing?predictFlight(s):null;
+    if(fl){
+      // Red/green only says whether the keeper covers that line right now; it is not a promise of a goal.
+      route.forEach((d,i)=>{const on=i+1<fl.count&&fl.zs[i+1]>s.ball.z;d.visible=on;if(on)d.position.set(fl.xs[i+1],.052,-fl.zs[i+1]);});
+      const gx=fl.goal??fl.xs[fl.count-1];routeMat.color.set(s.ball.kind==='spin'?'#9df0e2':'#fff6d8');
+      target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':Math.abs(gx-s.keeper.x)<=KEEPER_REACH?'#ff5a4a':'#5fe07a');target.visible=true;
     }else{route.forEach(d=>d.visible=false);target.visible=false;}
+    const sp=incoming&&skillStatus(s,'spin').ok?spinPreview(s):null;
+    spinArc.forEach((d,i)=>{const on=!!sp&&i<sp.count;d.visible=on&&showHints;if(on)d.position.set(sp.xs[i],.055,-sp.zs[i]);});
+    const showBurst=incoming&&!s.swing&&!s.tutorial&&s.energy>=SKILLS.burst.cost;
+    if(showBurst){const bz=burstZone(s),be=.045;place(burstEdges[0],bz.left,bz.right,bz.near,bz.near+be);place(burstEdges[1],bz.left,bz.right,bz.far-be,bz.far);place(burstEdges[2],bz.left,bz.left+be,bz.near,bz.far);place(burstEdges[3],bz.right-be,bz.right,bz.near,bz.far);}
+    burstEdges.forEach(m=>m.visible=showBurst&&showHints);
+    // Cinematic weights: dim and key light for the whole lock, camera push only without reduced motion.
+    cine.dim=sk?(kp<.08?kp/.08:kp<.38?1:Math.max(0,1-(kp-.38)/.12)):0;
+    cine.w=sk&&!reduceMotion?(kp<.08?0:kp<.28?sm((kp-.08)/.2):kp<.38?1:sm(1-(kp-.38)/.12)):0;
+    if(sk){focus.set((s.player.x+sk.x)/2,.95,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
+    hemisphere.intensity=2*(1-.3*cine.dim);sun.intensity=3.1*(1-.22*cine.dim);
+    keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
+    chargeRing.visible=!!sk;if(sk){chargeRing.position.set(s.player.x,.055,-s.player.z);chargeRing.scale.setScalar(.7+.7*kp);chargeRing.material.opacity=.85*(1-kp*.5);}
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(s.ball.x,.035,-s.ball.z);ballMarker.visible=ball.visible&&s.phase==='playing';
@@ -246,7 +273,7 @@ export function buildWorld(){
     // goals, the side walls at the defender's depth and both players' heads in view. Only resize moves it.
     const wide=Math.min(1,Math.max(0,(aspect-.9)/.7));
     camera.fov=39+3*wide;camera.updateProjectionMatrix();
-    const target=new THREE.Vector3(0,.4+.1*wide,-4.4+.5*wide);
+    const target=aim0.set(0,.4+.1*wide,-4.4+.5*wide);
     const offset=new THREE.Vector3(0,10,6.6).lerp(new THREE.Vector3(0,7.6,8.3),wide).sub(target);
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
@@ -256,14 +283,17 @@ export function buildWorld(){
     const fits=()=>{camera.position.copy(target).addScaledVector(offset,distance);camera.lookAt(target);camera.updateMatrixWorld(true);
       return boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.97&&Math.abs(p.y)<.97;});};
     let distance=.3;while(!fits()&&distance<4)distance*=1.02;
-    base.copy(camera.position);
+    base.copy(camera.position);baseQuat.copy(camera.quaternion);
   }
   // Camera shake is a pure render offset around the framed position.
-  const base=new THREE.Vector3(),jolt=new THREE.Vector3();
-  function shake(amount=0){camera.position.copy(base);if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
+  const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3();
+  // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
+  // always comes from the latest resize, so a close-up never restores an old screen shape.
+  function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
+    if(cine.w>0){closePos.set(focus.x+cine.side*2.2,focus.y+.85,focus.z+1.5);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,update,project,resize,shake};
+  return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,cine,update,project,resize,shake};
 }
 
 export function create3DRenderer(canvas){

@@ -1,8 +1,8 @@
-import {LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX} from './core.mjs';
+import {SKILLS,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX} from './core.mjs';
 import {createInput} from './input.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 let canvas=$('court'),ctx=null,court3D=null;
@@ -10,7 +10,7 @@ const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,weapon='glove',game=createGame(),uiPhase='',soundOn=true,audio=null;
-let lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false;
+let lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const icons=Object.fromEntries(['glove','racket','sword'].map(id=>[id,icon(id)]));
 let matchStats=createMatchStats();
@@ -48,6 +48,10 @@ const cues={
   string:i=>{tone(360,640,.1,'triangle',.13*i);tone(760,1280,.12,'sine',.05*i,.012);noise(.04,.1*i,3600);},
   blade:i=>{noise(.17,.16*i,5400);tone(1600,880,.15,'sine',.05*i);tone(190,80,.08,'sine',.16*i);},
   impact:()=>{tone(72,36,.3,'sine',.38);tone(1320,1760,.18,'triangle',.06,.04);},
+  // Skill cues: burst charge rises over the 0.5s lock; spin adds a short whirl; a refused request blips low.
+  charge:()=>{tone(180,620,.42,'sawtooth',.035);tone(90,140,.42,'sine',.12);},
+  whirl:()=>{tone(520,980,.16,'triangle',.05);tone(980,560,.14,'triangle',.04,.08);},
+  deny:()=>tone(240,180,.07,'square',.025),
   start:()=>tone(350,700,.12,'triangle',.07)
 };
 function sound(kind,intensity=1){
@@ -118,6 +122,12 @@ function hud(){
   const teaching=!!game.tutorial&&[...ACTIVE_PHASES,'paused'].includes(game.phase);document.body.dataset.tutorial=teaching?'on':'';
   $('tutorial-bar').hidden=!teaching;if(teaching){$('tutorial-step').textContent=`${game.tutorial.step+1}/3`;$('tutorial-tip').textContent=TUTORIAL_TIPS[game.tutorial.step];}
   $('practice').hidden=!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching;$('practice').textContent=`练习 ×${game.practiceLeft}`;
+  // Energy bar and skill buttons: state in words, spin direction as an arrow, disabled-looking only via class.
+  $('energy-fill').style.width=`${game.energy}%`;$('energy-value').textContent=game.energy;$('energy').setAttribute('aria-valuenow',game.energy);
+  for(const kind of ['spin','burst']){const st=skillStatus(game,kind),b=$(`skill-${kind}`),label=SKILL_STATE[st.ok?'ok':st.reason];
+    b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');$(`${kind}-state`).textContent=label;
+    b.setAttribute('aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
+  const pv=game.phase==='playing'&&game.ball.vz<0?spinPreview(game):null;$('spin-dir').textContent=pv?(pv.dir==='left'?' ↺':' ↻'):'';
   $('combo').style.opacity=game.combo>1?'1':'0';$('combo').querySelector('b').textContent=game.combo;
   $('move-knob').style.transform=`translateX(${input.axis()*30}px)`;
 }
@@ -125,6 +135,12 @@ function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.class
 // Shot quality pops mid-court; what the shot achieved gets its own banner at the top.
 function verdict(text,kind){const el=$('result-pop');el.textContent=text;el.className=`result-pop ${kind}`;void el.offsetWidth;el.classList.add('show');}
 function swing(){if(attack(game))sound('swing');}
+// A refused request costs nothing and says why; acceptance is announced by the core's own events.
+function trySkill(kind){
+  if(!ACTIVE_PHASES.includes(game.phase))return;
+  const r=useSkill(game,kind);
+  if(!r.ok){sound('deny');pop(SKILL_STATE[r.reason]||'现在不行',true);}
+}
 // Finished or skipped: remember it and start the real level 1 from a brand-new state.
 function finishTutorial(completed){
   progress.tutorialDone=true;progress.saved=saveProgress(storage,progress);
@@ -166,6 +182,11 @@ $('tutorial-skip').addEventListener('click',()=>{if(game.tutorial)finishTutorial
 $('replay-tutorial').addEventListener('click',()=>{$('help-dialog').close();beginTutorial();});
 $('attack').addEventListener('pointerdown',e=>{if(!e.isPrimary&&e.pointerType==='mouse')return;e.preventDefault();swing();});
 $('attack').addEventListener('click',e=>{if(e.detail===0)swing();});
+// Skill buttons take their own pointer, so a finger holding the move pad keeps moving.
+for(const [id,kind] of [['skill-spin','spin'],['skill-burst','burst']]){
+  $(id).addEventListener('pointerdown',e=>{if(!e.isPrimary&&e.pointerType==='mouse')return;e.preventDefault();trySkill(kind);});
+  $(id).addEventListener('click',e=>{if(e.detail===0)trySkill(kind);});
+}
 const move=$('move-control');
 move.addEventListener('pointerdown',e=>{e.preventDefault();input.down(e.pointerId,e.clientX);move.setPointerCapture(e.pointerId);});
 move.addEventListener('pointermove',e=>input.move(e.pointerId,e.clientX));
@@ -176,6 +197,7 @@ window.addEventListener('keydown',e=>{
   if(document.querySelector('dialog[open]'))return;
   if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)&&ACTIVE_PHASES.includes(game.phase)){e.preventDefault();input.key(e.key,true);}
   if(e.code==='Space'&&game.phase==='playing'){e.preventDefault();if(!e.repeat)swing();}
+  if((e.code==='KeyJ'||e.code==='KeyK')&&ACTIVE_PHASES.includes(game.phase)){e.preventDefault();if(!e.repeat)trySkill(e.code==='KeyJ'?'spin':'burst');}
   if(e.code==='Escape'&&ACTIVE_PHASES.includes(game.phase))suspend();
 });
 window.addEventListener('keyup',e=>input.key(e.key,false));
@@ -259,11 +281,17 @@ function hints(){
   polygon(quad(r.left,r.right,r.near,r.far),'#e5efac22',tone[0],1.6);polygon(quad(r.left,r.right,r.sweetNear,r.sweetFar),tone[1]);
   const k=project(game.keeper.x-KEEPER_REACH,KEEPER_Z),k2=project(game.keeper.x+KEEPER_REACH,KEEPER_Z);line(k.x,k.y+3,k2.x,k2.y+3,game.keeper.dive>0?'#ff5a4acc':'#9cc8ea88',5);
   if(p.kind==='clean'||p.kind==='perfect'){const a=project(p.x,p.z),b=project(p.x+Math.sin(p.angle)*2,p.z+Math.cos(p.angle)*2);line(a.x,a.y,b.x,b.y,p.kind==='perfect'?'#ff7a3d':'#ffffff',3);}
-  if(game.shot&&game.ball.vz>0&&['playing','goal','won'].includes(game.phase)){
-    const s=game.shot,c=crossingFrom(s.x,s.z,Math.sin(s.angle),Math.cos(s.angle),game),slope=Math.tan(s.angle);
-    for(let i=1;i<=18;i++){const zz=s.z+(GOAL_Z-s.z)*i/19;if(zz<=game.ball.z)continue;const q=project(foldX(s.x+slope*(zz-s.z)),zz);ellipse(q.x,q.y,2,1.4,'#fff6d8cc');}
-    const t=project(c.x,GOAL_Z);ctx.beginPath();ctx.ellipse(t.x,t.y,9,5,0,0,Math.PI*2);ctx.strokeStyle=!c.inMouth?'#c9c9b8':c.blocked?'#ff5a4a':'#5fe07a';ctx.lineWidth=3;ctx.stroke();
+  const fl=game.ball.vz>0&&['playing','goal','won'].includes(game.phase)?predictFlight(game):null;
+  if(fl){
+    for(let i=1;i<fl.count;i++){if(fl.zs[i]<=game.ball.z)continue;const q=project(fl.xs[i],fl.zs[i]);ellipse(q.x,q.y,2,1.4,game.ball.kind==='spin'?'#37d6c0dd':'#fff6d8cc');}
+    const gx=fl.goal??fl.xs[fl.count-1],t=project(gx,GOAL_Z),open=Math.abs(gx)<=game.level.goalHalf,blocked=Math.abs(gx-game.keeper.x)<=KEEPER_REACH;
+    ctx.beginPath();ctx.ellipse(t.x,t.y,9,5,0,0,Math.PI*2);ctx.strokeStyle=!open?'#c9c9b8':blocked?'#ff5a4a':'#5fe07a';ctx.lineWidth=3;ctx.stroke();
   }
+  if(incoming&&skillStatus(game,'spin').ok){const sp=spinPreview(game);for(let i=1;i<sp.count;i++){const q=project(sp.xs[i],sp.zs[i]);ellipse(q.x,q.y,2.4,1.6,'#37d6c0ee');}}
+  if(incoming&&!game.swing&&game.energy>=SKILLS.burst.cost){const z=burstZone(game);polygon(quad(z.left,z.right,z.near,z.far),null,'#ff9a3caa',1.4);}
+  if(game.skill){const p=project(game.player.x,game.player.z),k=Math.min(1,game.skill.time/SKILLS.burst.duration);
+    ctx.fillStyle=`rgba(20,45,36,${.18*Math.sin(Math.PI*k)})`;ctx.fillRect(0,0,450,540);
+    ctx.beginPath();ctx.ellipse(p.x,p.y,26+30*k,10+12*k,0,0,Math.PI*2);ctx.strokeStyle='#ff8a3c';ctx.lineWidth=3;ctx.stroke();}
 }
 function keeper(){
   const k=game.keeper,p=project(k.x,KEEPER_Z),s=p.scale,lean=k.diveDir*(k.dive/.35)*14;
@@ -306,6 +334,12 @@ function frame(time){
     if(['hit','perfect','soft'].includes(e)){const f=hitFeel(game.weapon,e);sound(f.sound,f.intensity);if(e==='perfect')sound('impact');}
     if(e==='whiff')sound('whiff');
     if(e==='serve'&&!lessonShown&&!teaching){say(game.level.lesson);lessonShown=true;}
+    if(e==='serve'&&!teaching&&!skillIntroShown){verdict('能量 50 放「旋转」改路线 · 满 100 放「爆发」','info');skillIntroShown=true;}
+    if(e==='energy50'||e==='energy100'){const el=$('energy');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+    if(e==='energy100'&&!fullHintShown){say('能量满了：等球进框按「爆发」（K）打出强力回击，或先用「旋转」（J）。');fullHintShown=true;}
+    if(e==='spin'){const f=hitFeel(game.weapon,'spin');sound(f.sound,f.intensity);sound('whirl');pop(game.ball.curve?.k>0?'右旋 ↻':'左旋 ↺');say('旋转球会沿弧线拐弯，撞到侧墙后变回直线。');}
+    if(e==='burstStart'){sound('charge');$('feedback').textContent='蓄力爆发……';}
+    if(e==='burst'){const f=hitFeel(game.weapon,'burst');sound(f.sound,f.intensity);sound('impact');pop('爆发！');shake=Math.max(shake,.08);say('爆发球很快，但正对门将一样会被扑住。');}
     if(e==='hit'){pop(aim[game.lastShot]||'好球！');if(!teaching)say('早打往左，晚打往右。看红绿终点判断门将有没有封住。');}
     if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.06);}
     if(e==='soft'){pop('软球',true);say('挥早了：球自己撞上来，只能打出慢速直球。等框变亮再按。');}

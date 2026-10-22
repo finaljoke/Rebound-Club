@@ -57,3 +57,24 @@ body[data-tutorial=on] .court-badge{display:none}
   body[data-screen=match] .game-footer,body[data-screen=paused] .game-footer{grid-area:foot}
 }
 @media(max-height:570px) and (min-width:701px){body[data-screen=match] .court-stamp{display:none}}
+
+/* Skill dock: energy bar with a 50 mark above two 44px+ skill buttons, next to the big swing button. */
+.skill-dock{display:flex;flex-direction:column;gap:6px;width:104px}
+.energy{position:relative;height:13px;border-radius:7px;background:#e3e7d6;border:1px solid #d3dac4;overflow:hidden}
+.energy i{position:absolute;left:0;top:0;bottom:0;width:50%;background:linear-gradient(90deg,#3aa58a,#ee6943);transition:width .15s}
+.energy-tick{position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;background:#233b31;opacity:.55}
+#energy-value{position:absolute;right:5px;top:0;font-size:8px;font-weight:800;line-height:13px;color:#233b31}
+.energy.flash{animation:energyFlash .55s}
+@keyframes energyFlash{0%{box-shadow:0 0 0 0 #ee6943aa}100%{box-shadow:0 0 0 9px #ee694300}}
+.skill-buttons{display:flex;gap:8px}
+.skill-button{flex:1;min-width:46px;min-height:48px;border-radius:12px;border:1px solid #d6ddc5;background:#fffcf4;color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;touch-action:none;box-shadow:0 3px 0 #d6ddc5;transition:transform .08s}
+.skill-button b{font-size:11px;font-weight:800}.skill-button em{font-style:normal;margin-left:1px}
+.skill-button small{font-size:8px;opacity:.65}.skill-state{font-size:8px;color:#7c8879;white-space:nowrap}
+.skill-button.spin.ready{background:#dcf5ee;border-color:#3aa58a;box-shadow:0 3px 0 #2c8a72}
+.skill-button.burst.ready{background:#ffe6d8;border-color:var(--orange);box-shadow:0 3px 0 #bf4f2f}
+.skill-button.ready .skill-state{color:#1f5a46;font-weight:800}
+.skill-button.low{opacity:.72}
+.skill-button:active{transform:translateY(2px)}
+body[data-tutorial=on] .skill-dock{visibility:hidden}
+@media(max-width:380px){.skill-dock{width:96px}.skill-button{min-width:44px}.move-control{width:44%}.attack-button{width:64px;height:64px}}
+@media(max-height:570px) and (min-width:701px){body[data-screen=match] .attack-wrap,body[data-screen=paused] .attack-wrap{flex-direction:column;gap:8px}}
