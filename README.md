@@ -34,6 +34,7 @@ node scripts/ui-qa.mjs --play
 node scripts/control-qa.mjs
 node scripts/lobby-qa.mjs
 node scripts/skill-qa.mjs
+node scripts/audio-qa.mjs
 ```
 
 核心物理、计分、结算、暂停、输入触点隔离、存储降级均有独立测试；挥击提示与真实判定逐帧对照（`tests/readability.test.mjs`），打法平衡用只通过移动/挥击输入驱动的模拟玩家回归（`tests/strategy.test.mjs`）。生产代码没有作弊入口，也不挂载游戏状态；浏览器 QA 只在测试浏览器里拦截加载的脚本读取状态。`scripts/browser-qa.mjs` 是旧版规则的脚本，已不适用。

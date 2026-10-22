@@ -56,13 +56,22 @@ const cues={
   deny:()=>tone(240,180,.07,'square',.025),
   start:()=>tone(350,700,.12,'triangle',.07)
 };
+// Phones only let audio start inside a real tap, and iOS mutes Web Audio with the ringer switch unless the audio session
+// is 'playback': navigator.audioSession on Safari 17+, a silent <audio> played once on older iOS. Every tap also resumes a
+// context the system suspended or interrupted (lock screen, call, app switch).
+const SILENT_WAV='data:audio/wav;base64,UklGRkwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSgAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+let silentPlayed=false;
+function audioReady(){
+  const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return false;
+  if(navigator.audioSession)navigator.audioSession.type='playback';
+  audio??=new Context();if(audio.state!=='running')audio.resume().catch(()=>{});
+  if(!silentPlayed){silentPlayed=true;const el=new window.Audio(SILENT_WAV);el.setAttribute('playsinline','');el.play().catch(()=>{});}
+  return true;
+}
+for(const type of ['pointerdown','touchend','click','keydown'])document.addEventListener(type,()=>{if(soundOn)try{audioReady();}catch{}},{capture:true,passive:true});
 function sound(kind,intensity=1){
   if(!soundOn||!cues[kind])return;
-  try{
-    const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
-    audio??=new Audio();if(audio.state==='suspended')audio.resume().catch(()=>{});
-    cues[kind](intensity);
-  }catch{/* Audio is optional; play remains available. */}
+  try{if(audioReady())cues[kind](intensity);}catch{/* Audio is optional; play remains available. */}
 }
 
 function selections(){
@@ -215,7 +224,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>input.key(e.key,false));
 window.addEventListener('blur',suspend);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)suspend();lastTime=0;});
-$('sound').addEventListener('click',()=>{soundOn=!soundOn;$('sound').setAttribute('aria-pressed',String(soundOn));$('sound').setAttribute('aria-label',soundOn?'关闭音效':'开启音效');$('sound').innerHTML=`${soundOn?'♪':'♩'} <span>音效${soundOn?'开':'关'}</span>`;if(soundOn)sound('start');});
+$('sound').addEventListener('click',()=>{soundOn=!soundOn;$('sound').setAttribute('aria-pressed',String(soundOn));$('sound').setAttribute('aria-label',soundOn?'关闭音效':'开启音效');$('sound').innerHTML=`${soundOn?'♪':'♩'} <span>音效${soundOn?'开':'关'}</span>`;if(soundOn)sound('start');else if(navigator.audioSession)navigator.audioSession.type='auto';});
 $('help').addEventListener('click',()=>{suspend();$('help-dialog').showModal();});
 for(const b of [$('help-close'),document.querySelector('.dialog-close')])b.addEventListener('click',()=>$('help-dialog').close());
 
