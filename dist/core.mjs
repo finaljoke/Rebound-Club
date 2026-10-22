@@ -324,6 +324,8 @@ export function stepGame(s,dt,axis=0){
   axis=Number.isFinite(axis)?clamp(axis,-1,1):0;
   s.accumulator+=Math.min(dt,1);
   while(s.accumulator>=1/120&&ACTIVE_PHASES.includes(s.phase)){
+    // Positions before each step: the renderer carries motion across the unspent part of the next step.
+    const pose=s.pose??={};pose.px=s.player.x;pose.kx=s.keeper.x;pose.bx=s.ball.x;pose.bz=s.ball.z;
     tick(s,1/120,axis);s.accumulator-=1/120;
   }
 }

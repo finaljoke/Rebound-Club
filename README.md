@@ -35,6 +35,7 @@ node scripts/control-qa.mjs
 node scripts/lobby-qa.mjs
 node scripts/skill-qa.mjs
 node scripts/audio-qa.mjs
+node scripts/perf-qa.mjs
 ```
 
 核心物理、计分、结算、暂停、输入触点隔离、存储降级均有独立测试；挥击提示与真实判定逐帧对照（`tests/readability.test.mjs`），打法平衡用只通过移动/挥击输入驱动的模拟玩家回归（`tests/strategy.test.mjs`）。生产代码没有作弊入口，也不挂载游戏状态；浏览器 QA 只在测试浏览器里拦截加载的脚本读取状态。`scripts/browser-qa.mjs` 是旧版规则的脚本，已不适用。
@@ -50,6 +51,7 @@ node scripts/audio-qa.mjs
 - `dist/game.js`：Canvas 画面、DOM、音效和实际输入。
 - `dist/lobby.css`：只作用于准备状态的简洁游戏大厅；球场居中，关卡/装备入口与开始游戏按钮位于底部，矮横屏并列摆放。
 - `dist/scene3d.mjs`：立体场景、人物、光影与设备适配；`dist/vendor/`：Three.js固定版本及MIT授权。
+- 渲染预算（手机）：静态场景与球员零件在搭建时按材质合并（无贴图的哑光材质改用顶点颜色共用一个材质，`art.mjs` 的 `mergeRigidParts`），每帧绘制调用（含阴影）约 80–90；不保留画面缓冲；画布尺寸只在变化时读取；持续掉帧时自动逐级降低像素比与阴影贴图（`QUALITY_TIERS`）；渲染位置在两个 1/120 秒模拟步之间按速度外推。音效经一个总音量和压缩器输出，噪声缓冲只生成一次。`scripts/perf-qa.mjs` 检查这些约束。
 - `dist/art.mjs`：潮玩球员、拳套、细节贴花、确定性草地与铺装纹理、立体球网；全部本地生成。`vendor/RoundedBoxGeometry.js`来自同版本Three.js官方插件，沿用MIT许可。
 - `scripts/art-qa.mjs`：使用实际3D素材渲染人物近景预览，输出到忽略的 `artifacts/`，不向游戏加入测试入口。
 - `dist/input.mjs`、`storage.mjs`：输入隔离与保存降级。

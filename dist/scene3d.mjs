@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry} from './art.mjs';
+import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
 import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 
@@ -15,26 +15,29 @@ export function buildWorld(){
   const softBox=(sx,sy,sz,color,parent,x,y,z,r=.06)=>mesh(softBoxGeometry(sx,sy,sz,r),color,parent,x,y,z);
   const sphere=(r,color,parent,x,y,z,sx=1,sy=1,sz=1)=>{const m=mesh(new THREE.SphereGeometry(r,20,14),color,parent,x,y,z);m.scale.set(sx,sy,sz);return m;};
   const rod=(a,b,r,color,parent=scene)=>{const v1=new THREE.Vector3(...a),v2=new THREE.Vector3(...b),delta=v2.clone().sub(v1);const m=mesh(new THREE.CylinderGeometry(r,r,delta.length(),8),color,parent);m.position.copy(v1).add(v2).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());return m;};
-  const floorLine=(x,z,width,depth,color='#e0e6c3')=>box(width,.016,depth,color,scene,x,.022,z);
+  // Court markings sit just above the stripe tops (y .030) so they never depth-fight with them, whatever the draw order.
+  const floorLine=(x,z,width,depth,color='#e0e6c3')=>box(width,.016,depth,color,scene,x,.027,z);
   const hemisphere=new THREE.HemisphereLight('#fff3d7','#516a5a',2.0);scene.add(hemisphere);
   const sun=new THREE.DirectionalLight('#fff0cc',3.1);sun.position.set(-7,15,5);sun.target.position.set(0,0,-4);scene.add(sun.target);scene.add(sun);
   sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-10;sun.shadow.camera.right=10;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-10;sun.shadow.camera.near=1;sun.shadow.camera.far=40;sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;
   const fill=new THREE.DirectionalLight('#dce9ee',.75);fill.position.set(7,8,-10);scene.add(fill);
-  const ground=mesh(new THREE.PlaneGeometry(200,200),'#d7dfc5',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;
-  const platform=softBox(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6,.13);
+  const ground=mesh(new THREE.PlaneGeometry(200,200),'#d7dfc5',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;ground.name='ground';
+  const platform=softBox(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6,.13);platform.name='platform';
   const stone=makeSurfaceTexture('stone');
   softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#e5dfc5',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
   const turf=makeSurfaceTexture('turf'),turfMaterials=new Map();
   function fieldMaterial(color){if(!turfMaterials.has(color))turfMaterials.set(color,new THREE.MeshStandardMaterial({color,map:turf,bumpMap:turf,bumpScale:.012,roughness:.94}));return turfMaterials.get(color);}
-  const court=box(8.25,.06,10.2,fieldMaterial('#286659'),scene,0,-.015,-4.9);
-  const stripes=[];for(let i=0;i<10;i++)stripes.push(box(8,.016,.97,fieldMaterial(i%2?'#286659':'#2c6c5e'),scene,0,.022,-.45-i));
+  const court=box(8.25,.06,10.2,fieldMaterial('#286659'),scene,0,-.015,-4.9);court.name='court';
+  // Ten stripes, two tints: one mesh per tint, re-tinted per level (stripes[0] even rows, stripes[1] odd rows).
+  const stripes=[0,1].map(parity=>{const rows=[];for(let i=parity;i<10;i+=2)rows.push(new THREE.Mesh(new THREE.BoxGeometry(8,.016,.97)).translateZ(-.45-i).translateY(.022));
+    const m=new THREE.Mesh(mergeMeshGeometry(rows),fieldMaterial(parity?'#286659':'#2c6c5e'));rows.forEach(r=>r.geometry.dispose());m.name=`stripes-${parity}`;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;});
   const paving=[];for(let z=-10.4;z<2;z+=1.45)for(const side of [-1,1])paving.push(new THREE.Vector3(side*4.35,-.008,z),new THREE.Vector3(side*5.07,-.008,z));
   scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#c9c6ac',transparent:true,opacity:.5})));
   for(const x of [-3.75,3.75])floorLine(x,-4.9,.035,9.6);
   for(const z of [-.25,-4.9,-9.55])floorLine(0,z,7.5,.035);
   floorLine(-2.4,-1.25,.035,2);floorLine(2.4,-1.25,.035,2);floorLine(0,-2.25,4.8,.035);
-  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#e0e6c3',scene,0,.03,-4.9,false);centerRing.rotation.x=-Math.PI/2;
-  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#e0e6c3',scene,0,.035,-4.9,false);centerDot.rotation.x=-Math.PI/2;
+  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#e0e6c3',scene,0,.036,-4.9,false);centerRing.rotation.x=-Math.PI/2;
+  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#e0e6c3',scene,0,.038,-4.9,false);centerDot.rotation.x=-Math.PI/2;
   // Rails have real front/back faces; the lower beams don't hide the incoming ball.
   for(const x of [-4.2,4.2]){
     box(.18,.27,10.6,'#a6b599',scene,x,.15,-4.9);
@@ -58,6 +61,7 @@ export function buildWorld(){
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
     farGoal.add(new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet));
     if(sign){sign.position.set(0,1.62,-.5);farGoal.add(sign);}
+    mergeRigidParts(farGoal);
   }
   function label(value,width,height,color='#2c5745',background=null){
     if(typeof document==='undefined')return null;
@@ -96,6 +100,8 @@ export function buildWorld(){
     }
   }
   for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
+  // Everything above is static scenery: bake it into one mesh per material before any animated or pooled object exists.
+  mergeRigidParts(scene);
   const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
   // Shared articulated collectible athletes; visual parts stay under their joints.
   const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
@@ -109,14 +115,16 @@ export function buildWorld(){
   for(const g of Object.values(gear)){g.position.set(.02,-.43,-.025);arms[1].add(g);}
   gear.glove.add(buildGlove('#ed6941').group);
   rod([0,-.06,0],[0,.45,0],.045,'#c99d60',gear.racket);
-  const racket=mesh(new THREE.TorusGeometry(.3,.035,8,36),'#edb85f',gear.racket,0,.65,0);racket.scale.set(1,1.3,1);
+  const racket=mesh(new THREE.TorusGeometry(.3,.035,8,36),'#edb85f',gear.racket,0,.65,0);racket.scale.set(1,1.3,1);racket.name='racket-head';
   for(let y=.02;y<.24;y+=.055)mesh(new THREE.CylinderGeometry(.048,.048,.022,10),'#345c4a',gear.racket,0,y,0,false);
   for(let p=-.2;p<=.201;p+=.1){rod([p,.43,-.005],[p,.87,-.005],.006,'#e9e4c4',gear.racket);rod([-.24,.65+p,-.005],[.24,.65+p,-.005],.006,'#e9e4c4',gear.racket);}
   rod([0,-.09,0],[0,.2,0],.055,'#345c4a',gear.sword);softBox(.38,.06,.12,'#e9c56f',gear.sword,0,.22,0,.025);
   for(let y=-.05;y<.16;y+=.06)mesh(new THREE.CylinderGeometry(.058,.058,.014,10),'#d5ba78',gear.sword,0,y,0,false);
-  const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;
+  const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;blade.name='sword-blade';
   box(.025,.82,.054,'#f5f1d7',gear.sword,-.007,.68,0).castShadow=false;
   const tip=mesh(new THREE.ConeGeometry(.073,.23,4),material('#d8e6df',.25),gear.sword,0,1.24,0);tip.rotation.y=Math.PI/4;
+  const lookedUp=new Set(['jersey-body','jersey-number','shoulder-sleeve','glove-body','racket-head','sword-blade']);
+  for(const athlete of [hero,keeper])mergeRigidParts(athlete,{keep:o=>lookedUp.has(o.name)});
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
   const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
@@ -190,12 +198,25 @@ export function buildWorld(){
   // Ring buffer for the ball trail: positions are copied into fixed vectors, never allocated per frame.
   const history=Array.from({length:trail.length},()=>new THREE.Vector3());let historyCount=0,historyHead=0;
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
+  // Render pose: the sim runs in fixed 1/120 s steps, the screen at 60/90/120/144 Hz. Positions are carried forward by
+  // the unspent part of the next step at the last step's velocity (no added latency); a jump (serve, reset) snaps.
+  const posed={px:0,kx:0,bx:0,bz:0},heightProbe={ball:{z:0,z0:0,z1:0}};
+  function renderPose(s){
+    const p=s.pose,a=p?s.accumulator*120:0,on=a>1e-6;
+    const carry=(cur,prev)=>on&&Math.abs(cur-prev)<.5?cur+(cur-prev)*a:cur;
+    posed.px=p?carry(s.player.x,p.px):s.player.x;posed.kx=p?carry(s.keeper.x,p.kx):s.keeper.x;
+    const jump=!p||Math.abs(s.ball.x-p.bx)>=.5||Math.abs(s.ball.z-p.bz)>=.5;
+    posed.bx=jump?s.ball.x:Math.max(-SIDE,Math.min(SIDE,carry(s.ball.x,p.bx)));posed.bz=jump?s.ball.z:carry(s.ball.z,p.bz);
+    heightProbe.ball.z=posed.bz;heightProbe.ball.z0=s.ball.z0;heightProbe.ball.z1=s.ball.z1;
+    return posed;
+  }
   function update(s,axis=0,reduceMotion=false,time){
     clock=time??clock+1/60;const now=clock;
     if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
-    hero.position.set(s.player.x,0,-s.player.z);
+    const pose=renderPose(s);
+    hero.position.set(pose.px,0,-s.player.z);
     hero.rotation.z=s.phase==='playing'?-axis*.075:0;
     const moving=s.phase==='playing'&&Math.abs(axis)>.05;
     const stride=moving?Math.sin(s.elapsed*16):0;
@@ -223,12 +244,12 @@ export function buildWorld(){
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
     leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
     const k=s.keeper,dive=k.dive/.35;
-    keeper.position.set(k.x,0,-KEEPER_Z);keeper.rotation.z=k.diveDir*dive*.85;
+    keeper.position.set(pose.kx,0,-KEEPER_Z);keeper.rotation.z=k.diveDir*dive*.85;
     goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);
     const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
     goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
-    const height=ballHeight(s);
-    ball.position.set(s.ball.x,height,-s.ball.z);
+    const height=ballHeight(heightProbe);
+    ball.position.set(pose.bx,height,-pose.bz);
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
@@ -293,8 +314,8 @@ export function buildWorld(){
     kick=!reduceMotion&&fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:0;
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
-    ballMarker.position.set(s.ball.x,.035,-s.ball.z);ballMarker.visible=ball.visible&&s.phase==='playing';
-    ballShadow.position.set(s.ball.x,.038,-s.ball.z);ballShadow.scale.setScalar(1.25-(height-.73)*.35);ballShadow.visible=ball.visible;
+    ballMarker.position.set(pose.bx,.035,-pose.bz);ballMarker.visible=ball.visible&&s.phase==='playing';
+    ballShadow.position.set(pose.bx,.038,-pose.bz);ballShadow.scale.setScalar(1.25-(height-.73)*.35);ballShadow.visible=ball.visible;
     if(s.phase!=='playing'&&s.phase!=='paused'){historyCount=0;lastBall=null;}
     else if(s.phase==='playing'&&!reduceMotion&&s.ball!==lastBall){lastBall=s.ball;}
     if(s.phase==='playing'&&!reduceMotion){history[historyHead].copy(ball.position);historyHead=(historyHead+1)%history.length;historyCount=Math.min(history.length,historyCount+1);}
@@ -343,23 +364,46 @@ export function buildWorld(){
     if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,cine,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,cine,update,project,resize,shake};
 }
 
+// Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
+// session, so it cannot oscillate; single spikes and tab-switch gaps (>100 ms) are ignored.
+export const QUALITY_TIERS=[{pixelRatio:1.6,shadowMap:1024},{pixelRatio:1.25,shadowMap:1024},{pixelRatio:1,shadowMap:512}];
+export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
+  let ema=16.7,slow=0;
+  return {tier:0,sample(ms){
+    if(!(ms>0)||ms>100)return false;
+    ema=ema*.9+ms*.1;if(ema<=slowMs){slow=0;return false;}
+    slow+=ms;if(slow<holdMs||this.tier>=QUALITY_TIERS.length-1)return false;
+    this.tier++;slow=0;ema=16.7;return true;
+  }};
+}
 export function create3DRenderer(canvas){
-  const context=canvas.getContext('webgl2',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+  // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
+  const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
   if(!context)throw new Error('WebGL2 is unavailable');
-  const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true,preserveDrawingBuffer:true});
-  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,1.6));
+  const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true});
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-  const world=buildWorld();let width=0,height=0;
+  const world=buildWorld(),governor=createQualityGovernor();let width=0,height=0,size=null,last=0;
+  function applyQuality(){
+    const q=QUALITY_TIERS[governor.tier];renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,q.pixelRatio));
+    const shadow=world.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}
+    width=0;
+  }
+  applyQuality();
+  // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
+  const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
+  const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
   return {
+    get quality(){return governor.tier;},
     render(state,axis,reduceMotion,shake=0){
-      const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
-      if(rect.width!==width||rect.height!==height){width=rect.width;height=rect.height;renderer.setSize(width,height,false);world.resize(width/height);}
-      world.update(state,axis,reduceMotion,performance.now()/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
+      if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
+      const now=performance.now();if(last&&governor.sample(now-last))applyQuality();last=now;
+      if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);world.resize(width/height);}
+      world.update(state,axis,reduceMotion,now/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
     },
-    dispose(){world.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    dispose(){observer?.disconnect();world.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
   };
 }

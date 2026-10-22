@@ -17,18 +17,26 @@ let matchStats=createMatchStats();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 // Every cue is synthesized: a low sine thump for weight layered with a short filtered noise burst for the crack.
+// All cues share one master gain into a compressor, so stacked cues (hit + impact + goal) duck instead of clipping.
+let master=null,noiseBuffer=null;
+function bus(){
+  if(master)return master;
+  const comp=audio.createDynamicsCompressor();comp.threshold.value=-10;comp.knee.value=8;comp.ratio.value=4;comp.attack.value=.003;comp.release.value=.18;
+  master=audio.createGain();master.gain.value=.9;master.connect(comp);comp.connect(audio.destination);return master;
+}
 function tone(a,b,d,type='sine',vol=.1,delay=0){
   const at=audio.currentTime+delay,osc=audio.createOscillator(),gain=audio.createGain();
   osc.type=type;osc.frequency.setValueAtTime(a,at);osc.frequency.exponentialRampToValueAtTime(b,at+d);
   gain.gain.setValueAtTime(vol,at);gain.gain.exponentialRampToValueAtTime(.001,at+d);
-  osc.connect(gain);gain.connect(audio.destination);osc.start(at);osc.stop(at+d);
+  osc.connect(gain);gain.connect(bus());osc.start(at);osc.stop(at+d);
 }
+// One second of white noise is generated once; each burst plays a random slice with a linear fade (same envelope as before).
 function noise(d,vol,freq,delay=0){
-  const at=audio.currentTime+delay,buffer=audio.createBuffer(1,Math.ceil(audio.sampleRate*d),audio.sampleRate),data=buffer.getChannelData(0);
-  for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*(1-i/data.length);
-  const src=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();
-  src.buffer=buffer;filter.type='bandpass';filter.frequency.value=freq;filter.Q.value=.9;gain.gain.value=vol;
-  src.connect(filter);filter.connect(gain);gain.connect(audio.destination);src.start(at);
+  if(!noiseBuffer){noiseBuffer=audio.createBuffer(1,audio.sampleRate,audio.sampleRate);const data=noiseBuffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;}
+  const at=audio.currentTime+delay,src=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();
+  src.buffer=noiseBuffer;filter.type='bandpass';filter.frequency.value=freq;filter.Q.value=.9;
+  gain.gain.setValueAtTime(vol,at);gain.gain.linearRampToValueAtTime(0,at+d);
+  src.connect(filter);filter.connect(gain);gain.connect(bus());src.start(at,Math.random()*Math.max(0,1-d),d);
 }
 const cues={
   swing:()=>noise(.09,.05,1700),
