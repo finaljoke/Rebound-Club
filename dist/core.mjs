@@ -1,11 +1,13 @@
 // goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude.
+// practice: misses forgiven at the start of a level. Levels 1-3 keep ball speed and goal width fixed so
+// each one teaches a single thing through the keeper alone; later levels change one variable at a time.
 export const LEVELS = [
-  {name:'初次交锋',tag:'找到击球的节奏',goals:3,speed:4.3,goalHalf:2.4,keeper:{delay:.55,speed:.6,error:.6},color:'#286659'},
-  {name:'左右开弓',tag:'早打往左，晚打往右',goals:3,speed:4.6,goalHalf:2.3,keeper:{delay:.5,speed:.7,error:.55},color:'#316988'},
-  {name:'预判时刻',tag:'站到边路再起重炮',goals:4,speed:4.9,goalHalf:2.2,keeper:{delay:.46,speed:.8,error:.5},color:'#5c5a8b'},
-  {name:'节奏大师',tag:'越打越快，稳住节奏',goals:4,speed:5.2,goalHalf:2.1,keeper:{delay:.42,speed:.9,error:.45},color:'#867045'},
-  {name:'全场奔袭',tag:'借侧墙绕过门将',goals:5,speed:5.5,goalHalf:2,keeper:{delay:.38,speed:1,error:.4},color:'#8b574d'},
-  {name:'守门王牌',tag:'每一脚都要有想法',goals:5,speed:5.8,goalHalf:1.9,keeper:{delay:.34,speed:1.1,error:.35},color:'#285b54'}
+  {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。门将很慢，别直接打到它身上就能进。',goals:2,practice:3,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
+  {name:'左右开弓',tag:'早打往左，晚打往右',lesson:'门将守住了正中。提早挥打向左，晚一点挥打向右，看准它站哪边。',goals:3,practice:2,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
+  {name:'预判时刻',tag:'甜点重炮与借墙',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或斜打侧墙绕过门将。',goals:3,practice:1,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#5c5a8b'},
+  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'只有球速变快。提前看影子移动到位。',goals:4,practice:0,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#867045'},
+  {name:'全场奔袭',tag:'球门变窄，选好路线',lesson:'球门变窄了。看清门将位置，再决定打哪条线。',goals:4,practice:0,speed:4.7,goalHalf:2.2,keeper:{delay:.42,speed:1.35,error:.4},color:'#8b574d'},
+  {name:'守门王牌',tag:'综合运用，攻破王牌',lesson:'更快的球、更强的门将。变向、重炮、借墙都要用上。',goals:5,practice:0,speed:5.2,goalHalf:2.1,keeper:{delay:.38,speed:1.4,error:.35},color:'#285b54'}
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
@@ -28,7 +30,7 @@ export function createGame(level=0,weapon='glove'){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
   return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',phase:'ready',
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
-    keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},
+    keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
     rally:1,power:false,shots:0,hitstop:0,lastShot:'',
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
@@ -40,11 +42,31 @@ export function attack(s){
 }
 export function pauseGame(s){if(ACTIVE_PHASES.includes(s.phase)){s.previousPhase=s.phase;s.phase='paused';}}
 export function resumeGame(s){if(s.phase==='paused'){s.phase=s.previousPhase||'playing';s.previousPhase=null;}}
-export function inHitRange(s){
-  const w=WEAPONS[s.weapon],b=s.ball;
-  return s.phase==='playing'&&b.vz<0&&b.z>=s.player.z-.12&&
-    b.z<=s.player.z+w.reach&&Math.abs(b.x-s.player.x)<=w.width;
+// The exact rectangle a swing can connect in, and the band inside it that yields a power shot.
+export function hitZone(s){
+  const w=WEAPONS[s.weapon],sweet=sweetZ(s,w),band=PERFECT_BAND*w.reach*.5;
+  return {left:s.player.x-w.width,right:s.player.x+w.width,near:s.player.z-.12,far:s.player.z+w.reach,sweetNear:sweet-band,sweetFar:sweet+band};
 }
+export function inHitRange(s){
+  const b=s.ball,r=hitZone(s);
+  return s.phase==='playing'&&b.vz<0&&b.x>=r.left&&b.x<=r.right&&b.z>=r.near&&b.z<=r.far;
+}
+// What pressing swing right now would produce if the player stood still: runs the real rules on a copy.
+export function swingPreview(s){
+  if(s.phase!=='playing'||s.swing||s.ball.vz>=0)return {kind:'none'};
+  const c=structuredClone(s);c.events=[];c.hitstop=0;attack(c);
+  for(let i=0;i<240&&c.swing&&!c.swing.hit&&c.phase==='playing'&&c.ball.vz<0;i++)tick(c,1/120,0);
+  if(!c.swing?.hit)return {kind:'whiff'};
+  return {kind:c.lastShot==='soft'?'soft':c.lastShot==='perfect'?'perfect':'clean',angle:Math.atan2(c.ball.vx,c.ball.vz),x:c.ball.x,z:c.ball.z};
+}
+// Where an outgoing ball will cross the goal line, folding in side-wall bounces (which the keeper ignores).
+export function crossingFrom(x,z,vx,vz,s){
+  const raw=x+vx/vz*(GOAL_Z-z),period=4*SIDE;
+  let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;
+  const at=u-SIDE;
+  return {x:at,viaWall:Math.abs(raw)>SIDE,inMouth:Math.abs(at)<=s.level.goalHalf,blocked:Math.abs(at-s.keeper.x)<=KEEPER_REACH};
+}
+export function predictCrossing(s){const b=s.ball;return b.vz>0?crossingFrom(b.x,b.z,b.vx,b.vz,s):null;}
 // Visual height only: each leg of flight is a parabola that starts and ends at hitting height.
 export function ballHeight(s){
   const b=s.ball,span=(b.z1??PLAYER_Z)-(b.z0??b.z);
@@ -64,6 +86,7 @@ function strike(s,w,sw){
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
   s.lastShot=soft?'soft':perfect?'perfect':angle<-.1?'left':angle>.1?'right':'straight';
+  s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   if(perfect)s.hitstop=.07;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
@@ -103,7 +126,7 @@ function farEnd(s,prevZ){
   if(b.z>FAR_WALL){
     b.z=2*FAR_WALL-b.z;
     const angle=clamp(Math.atan2(b.vx,b.vz)+s.boardAngle,-.76,.76),speed=s.level.speed*s.rally;
-    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));s.power=false;s.events.push('wall');
+    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));s.power=false;s.events.push('wide');
   }
 }
 function tick(s,dt,axis){
@@ -136,7 +159,10 @@ function tick(s,dt,axis){
     if(inHitRange(s)){strike(s,w,sw);return;}
   }
   if(b.z<=0){
-    s.misses++;s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;s.events.push('miss');
+    s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;
+    // Practice balls keep the real feel but don't cost a life.
+    if(s.practiceLeft>0){s.practiceLeft--;s.events.push('practice');}
+    else{s.misses++;s.events.push('miss');}
     if(s.misses>=3){s.phase='lost';s.events.push('lose');}
     else{s.phase='miss';s.countdown=1.1;}
   }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createGame,startGame,stepGame,attack,pauseGame,resumeGame,LEVELS,WEAPONS} from '../dist/core.mjs';
 import * as core from '../dist/core.mjs';
 
-function play(level=0,weapon='glove') {const s=createGame(level,weapon);startGame(s);stepGame(s,1,0);return s;}
+function play(level=0,weapon='glove') {const s=createGame(level,weapon);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=2.3) {s.ball={x,z,vx:0,vz:-4};s.player.x=x;}
 
 test('挥中来球反弹向前且同一挥击只计一次',()=>{const s=play();incoming(s);assert.equal(attack(s),true);stepGame(s,.12,0);assert.equal(s.hits,1);assert.ok(s.ball.vz>0);stepGame(s,.05,0);assert.equal(s.hits,1);});

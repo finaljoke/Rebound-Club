@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGame,startGame,stepGame,attack,ballHeight,WEAPONS,LEVELS,PLAYER_Z,PERFECT_BAND,RALLY_CAP,POWER,SOFT,RALLY_STEP} from '../dist/core.mjs';
 
-function play(level=0,weapon='glove'){const s=createGame(level,weapon);startGame(s);stepGame(s,1,0);return s;}
+function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const sweet=s=>PLAYER_Z+WEAPONS[s.weapon].reach*.5;
 // Opens the active window when the ball is at depth `z`, then lets the swing resolve.
