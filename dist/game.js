@@ -149,7 +149,7 @@ function trySkill(kind){
 // Finished or skipped: remember it and start the real level 1 from a brand-new state.
 function finishTutorial(completed){
   progress.tutorialDone=true;progress.saved=saveProgress(storage,progress);
-  selected=0;ready(false);startGame(game);sound('start');
+  selected=0;ready(false);startGame(game);sound('start');phaseUI();hud();
   verdict(completed?'教学完成 · 正式开始！':'已跳过教学 · 正式开始','info');$('feedback').textContent=game.level.lesson;lessonShown=true;
 }
 function beginTutorial(){selected=0;ready(true);startGame(game);sound('start');phaseUI();hud();}
