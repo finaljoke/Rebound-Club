@@ -1,4 +1,4 @@
-const KEY='rebound-club-v1';
+const KEY='rebound-club-v2';
 function clean(p){
   const result={unlocked:Math.max(0,Math.min(5,Math.floor(Number(p?.unlocked)||0))),scores:{},perfect:{},saved:true};
   for(let i=0;i<6;i++){
