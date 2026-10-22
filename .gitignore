@@ -2,3 +2,4 @@ node_modules/
 .sites-local/
 *.tar.gz
 artifacts/
+vendor-download/

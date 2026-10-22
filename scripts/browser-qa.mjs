@@ -2,7 +2,7 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
 const {chromium}=require('playwright');
-const browser=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true});
+const browser=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true,args:process.argv.includes('--fallback')?['--disable-webgl']:[]});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const results=[];
@@ -11,6 +11,9 @@ try{
   const response=await page.goto('http://localhost:4173');
   if(response.status()!==200)throw Error('Preview HTTP is not 200');
   await page.getByRole('button',{name:'开始挑战'}).waitFor();
+  const backend=await page.locator('#court').getAttribute('data-renderer');
+  if(backend!==(process.argv.includes('--fallback')?'2d':'3d'))throw Error('Unexpected rendering backend: '+backend);
+  results.push({backend});
   await page.screenshot({path:'artifacts/desktop.png',fullPage:true});
   for(const size of [{width:390,height:844},{width:360,height:640}]){
     await page.setViewportSize(size);
@@ -47,6 +50,14 @@ try{
     if(!/translateX\(0px\)/.test(await page.locator('#move-knob').getAttribute('style')))throw Error('Touch release left movement active');
     results.push({multitouch:'move + swing + independent release'});
   }
+  if(backend==='3d')await page.screenshot({path:'artifacts/3d-gameplay.png',fullPage:true});
+  if(process.argv.includes('--context-loss')){
+    await page.evaluate(()=>document.getElementById('court').getContext('webgl2').getExtension('WEBGL_lose_context').loseContext());
+    await page.waitForFunction(()=>document.getElementById('court').dataset.renderer==='2d');
+    await page.getByRole('button',{name:'继续防守'}).waitFor();
+    results.push({contextLoss:'paused and switched to 2d without a blank court'});
+    await page.getByRole('button',{name:'继续防守'}).click();
+  }
   await page.getByRole('button',{name:'暂停游戏'}).click();
   const paused=await page.locator('#court').screenshot();
   await page.waitForTimeout(250);
@@ -62,14 +73,26 @@ try{
     let held=null,lastShot=0,readings=[];const begin=Date.now();
     // Observe the rendered ball and jersey, then operate only the actual keyboard UI.
     while(Date.now()-begin<55000){
-      const observation=await page.evaluate(()=>{
-        const canvas=document.getElementById('court'),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
-        const data=ctx.getImageData(0,0,w,h).data;let bx=0,by=0,bn=0,px=0,pn=0;
+      const observation=await page.evaluate(async()=>{
+        const canvas=document.getElementById('court'),w=canvas.width,h=canvas.height,is3D=canvas.dataset.renderer==='3d';
+        const copy=document.createElement('canvas');copy.width=w;copy.height=h;const ctx=copy.getContext('2d');ctx.drawImage(canvas,0,0);
+        const data=ctx.getImageData(0,0,w,h).data;let bx=0,by=0,bn=0,px=0,py=0,pn=0;
         for(let y=Math.floor(h*.22);y<h*.88;y+=2){for(let x=0;x<w;x+=2){const i=(y*w+x)*4,r=data[i],g=data[i+1],b=data[i+2];
-          if(r>235&&g>185&&g<220&&b>65&&b<130){bx+=x;by+=y;bn++;}
-          if(y/h>.67&&y/h<.735&&r>228&&r<249&&g>222&&g<242&&b>182&&b<213){px+=x;pn++;}
+          if(is3D?(r>225&&g>170&&g<220&&b<115):(r>235&&g>185&&g<220&&b>65&&b<130)){bx+=x;by+=y;bn++;}
+          if(is3D?(y/h>.5&&r>200&&g>100&&g<170&&b<130):(y/h>.67&&y/h<.735&&r>228&&r<249&&g>222&&g<242&&b>182&&b<213)){px+=x;py+=y;pn++;}
         }}
-        return {bx:bn?bx/bn/w*450:null,by:bn?by/bn/h*540:null,px:pn?px/pn/w*450:null,progress:document.getElementById('progress').textContent,result:document.querySelector('#overlay-content h3')?.textContent,overlay:!document.getElementById('overlay').hidden};
+        let ballX=bn?bx/bn/w*450:null,ballY=bn?by/bn/h*540:null,playerX=pn?px/pn/w*450:null;
+        if(is3D){
+          // Invert the visible pixels through a separate observer camera. This
+          // observes rendering only; the running game's state is never exposed.
+          const T=await import('/vendor/three.module.min.js');
+          if(!window.qaObserver){const {buildWorld}=await import('/scene3d.mjs');window.qaObserver=buildWorld();}
+          const observer=window.qaObserver;observer.resize(w/h);
+          function point(x,y,height){const origin=observer.camera.position,dir=new T.Vector3(x/w*2-1,1-y/h*2,.5).unproject(observer.camera).sub(origin).normalize();return new T.Ray(origin,dir).intersectPlane(new T.Plane(new T.Vector3(0,1,0),-height),new T.Vector3());}
+          if(bn){const p=point(bx/bn,by/bn,.73);ballX=p.x*42+225;ballY=470+p.z*36.4;}
+          if(pn)playerX=point(px/pn,py/pn,.95).x*42+225;
+        }
+        return {bx:ballX,by:ballY,px:playerX,progress:document.getElementById('progress').textContent,result:document.querySelector('#overlay-content h3')?.textContent,overlay:!document.getElementById('overlay').hidden};
       });
       if(observation.overlay&&/守住了|完美防守/.test(observation.result)){results.push({uiWin:observation.progress,duration:Date.now()-begin});break;}
       if(observation.overlay&&/差一点/.test(observation.result))throw Error('Keyboard play lost: '+JSON.stringify(readings.slice(-12)));

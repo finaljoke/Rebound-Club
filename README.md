@@ -1,6 +1,6 @@
 # 反弹守卫 · Rebound Club
 
-手机优先的静态网页游戏。第三人称斜俯视球场，固定球门，唯一球反复回弹；主动挥击并左右补位。
+手机优先的静态网页游戏。第三人称3D球场，固定球门，唯一球反复回弹；主动挥击并左右补位。采用本地托管 Three.js 0.180.0（MIT），无运行时 CDN 请求；不支持 WebGL2 时回退原有2D画面。
 
 ## 本地运行
 
@@ -34,6 +34,7 @@ node --check dist/game.js
 - `dist/`：可独立部署的全部静态资源，无外部 CDN、字体、素材依赖。
 - `dist/core.mjs`：单球模拟、挥击及关卡状态。
 - `dist/game.js`：Canvas 画面、DOM、音效和实际输入。
+- `dist/scene3d.mjs`：立体场景、人物、光影与设备适配；`dist/vendor/`：Three.js固定版本及MIT授权。
 - `dist/input.mjs`、`storage.mjs`：输入隔离与保存降级。
 - `tests/`：Node 行为测试；`scripts/serve.mjs`：本地静态服务器。
 

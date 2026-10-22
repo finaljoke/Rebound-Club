@@ -1,9 +1,11 @@
 import {LEVELS,WEAPONS,createGame,startGame,stepGame,attack,pauseGame,resumeGame,inHitRange} from './core.mjs';
 import {createInput} from './input.mjs';
 import {loadProgress,saveProgress} from './storage.mjs';
+import {create3DRenderer} from './scene3d.mjs';
 
 const $=id=>document.getElementById(id);
-const canvas=$('court'),ctx=canvas.getContext('2d'),input=createInput();
+let canvas=$('court'),ctx=null,court3D=null;
+const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,weapon='glove',game=createGame(),uiPhase='',soundOn=true,audio=null;
@@ -73,6 +75,15 @@ function hud(){
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}
 function swing(){if(attack(game)){sound('swing');$('feedback').textContent='看准时机，漂亮出手。';}}
 function suspend(){pauseGame(game);input.reset();phaseUI();hud();}
+function fallbackRenderer(){
+  court3D?.dispose();court3D=null;
+  const replacement=canvas.cloneNode(false);canvas.replaceWith(replacement);canvas=replacement;
+  ctx=canvas.getContext('2d');canvas.dataset.renderer='2d';viewWidth=0;viewHeight=0;
+}
+try{
+  court3D=create3DRenderer(canvas);canvas.dataset.renderer='3d';
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();suspend();fallbackRenderer();$('feedback').textContent='已切换兼容画面，可以继续防守。';});
+}catch{fallbackRenderer();}
 
 $('overlay').addEventListener('click',e=>{
   const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
@@ -186,6 +197,7 @@ function ball(){
   ctx.beginPath();ctx.ellipse(p.x,y-1,r*.5,r,0,0,Math.PI*2);ctx.strokeStyle='#ac802b';ctx.lineWidth=.9;ctx.stroke();line(p.x-r,y-1,p.x+r,y-1,'#ac802b',.9);
 }
 function draw(dt){
+  if(court3D){court3D.render(game,input.axis(),reduceMotion);return;}
   const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);
   if(rect.width!==viewWidth||rect.height!==viewHeight){viewWidth=rect.width;viewHeight=rect.height;canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);}
   ctx.setTransform(canvas.width/450,0,0,canvas.height/540,0,0);ctx.lineCap='round';ctx.lineJoin='round';
@@ -202,11 +214,11 @@ function frame(time){
     if(['hit','perfect','wall','miss'].includes(e))sound(e);
     if(e==='hit'||e==='perfect'){
       pop(e==='perfect'?'漂亮回击！':'好球！');$('feedback').textContent=e==='perfect'?'漂亮！保持这个节奏。':'接得好，留意下一次回弹。';
-      if(!reduceMotion){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}
+      if(!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}
     }
     if(e==='miss'){pop('漏球了，再来！',true);$('feedback').textContent='提前补位，看准再挥击。';trail=[];}
   }
-  if(game.phase==='playing'&&!reduceMotion){trail.push({x:game.ball.x,z:game.ball.z});if(trail.length>7)trail.shift();}
+  if(game.phase==='playing'&&!reduceMotion&&!court3D){trail.push({x:game.ball.x,z:game.ball.z});if(trail.length>7)trail.shift();}
   phaseUI();hud();draw(dt);requestAnimationFrame(frame);
 }
 ready();requestAnimationFrame(frame);

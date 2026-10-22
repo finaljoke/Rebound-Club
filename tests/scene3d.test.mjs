@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from '../dist/vendor/three.module.min.js';
+import {buildWorld} from '../dist/scene3d.mjs';
+import {createGame,startGame,stepGame} from '../dist/core.mjs';
+
+test('球场、人物与球均为有厚度的3D对象，主要对象投射和接收阴影',()=>{
+  const w=buildWorld();assert.ok(w?.scene?.isScene);
+  for(const object of [w.hero,w.ball,w.platform]){w.scene.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(object),size=box.getSize(new THREE.Vector3());assert.ok(size.x>.15&&size.y>.15&&size.z>.15);}
+  assert.ok(w.scene.children.some(x=>x.isDirectionalLight&&x.castShadow));
+  assert.equal(w.platform.receiveShadow,true);assert.equal(w.ball.children[0].castShadow,true);
+  assert.ok(w.camera.isPerspectiveCamera);
+});
+test('3D人物和球与原有碰撞坐标保持一致，暂停时不会增加位移',()=>{
+  const w=buildWorld();assert.ok(w);const s=createGame();startGame(s);stepGame(s,1,0);s.player.x=2;s.ball.x=-1.5;s.ball.z=4;s.boardAngle=.2;
+  const before=JSON.stringify(s);w.update(s,.7,false);assert.equal(JSON.stringify(s),before);
+  assert.equal(w.hero.position.x,2);assert.equal(w.hero.position.z,-1.6);assert.equal(w.ball.position.x,-1.5);assert.equal(w.ball.position.z,-4);
+  assert.ok(w.paddles.every(p=>Math.abs(p.rotation.y-.2)<.00001));
+  const pose=w.hero.toJSON();w.update(s,.7,false);assert.deepEqual(w.hero.toJSON(),pose);
+});
+test('球拍和剑替换持有装备，球越过人物后命中提示不亮起',()=>{
+  const w=buildWorld();assert.ok(w);const s=createGame(0,'racket');startGame(s);stepGame(s,1,0);s.ball={x:0,z:1.4,vx:0,vz:-4};w.update(s,0,true);
+  assert.equal(w.gear.racket.visible,true);assert.equal(w.gear.glove.visible,false);assert.equal(w.range.material.opacity,.1);
+  s.weapon='sword';s.ball.z=2;w.update(s,0,true);assert.equal(w.gear.sword.visible,true);assert.equal(w.gear.racket.visible,false);assert.ok(w.range.material.opacity>.1);
+});
+test('常见手机比例下球场边界和球门完整进入镜头',()=>{
+  const w=buildWorld();assert.equal(typeof w.resize,'function');
+  for(const aspect of [.76,.85,.96]){w.resize(aspect);for(const x of [-5.2,5.2])for(const z of [-11.4,2.3]){const p=w.project(x,-z,0);assert.ok(p.x>=.015&&p.x<=.985&&p.y>=.015&&p.y<=.985,JSON.stringify({aspect,x,z,p}));}}
+});
