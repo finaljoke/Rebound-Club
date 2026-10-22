@@ -17,12 +17,30 @@ export const WEAPONS = {
 };
 export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=1.6,POWER=1.35,SOFT=.8,HIT_HEIGHT=.73,ARC=.9;
 export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
-export const ACTIVE_PHASES=['playing','serving','miss','goal'];
+export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
+// Active skills, all first-round playtest values in one place. Energy lives only in the match state.
+export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
+  spin:{cost:50,angle:.22,curve:.035,maxAngle:.65,curveShare:.7},
+  burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:.5}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 // Folds a straight-line x back between the side walls, as repeated bounces would.
 export function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
+// One fixed step of ball flight, shared by the simulation and every prediction. A spinning ball turns its
+// heading by curvature × distance until its stop depth; any side-wall bounce reflects it and ends the spin.
+// Returns -1/1 when a side wall was hit this step, else 0.
+export function advanceBall(b,dt){
+  const c=b.curve;
+  if(c){const v=Math.hypot(b.vx,b.vz),a=clamp(Math.atan2(b.vx,b.vz)+c.k*v*dt,-SKILLS.spin.maxAngle,SKILLS.spin.maxAngle);b.vx=Math.sin(a)*v;b.vz=Math.cos(a)*v;}
+  b.x+=b.vx*dt;b.z+=b.vz*dt;
+  if(c&&b.z>=c.stopZ)b.curve=null;
+  let wall=0;
+  if(b.x>SIDE){b.x=2*SIDE-b.x;b.vx=-Math.abs(b.vx);wall=1;}
+  if(b.x< -SIDE){b.x=-2*SIDE-b.x;b.vx=Math.abs(b.vx);wall=-1;}
+  if(wall)b.curve=null;
+  return wall;
+}
 // The keeper puts every new ball into play, alternating sides.
 // First-visit tutorial for level 1. Its slow serves, fixed keeper and forgiving outcomes live only on
 // s.tutorial; a finished or skipped tutorial is replaced by a fresh createGame(), so nothing carries over.
@@ -47,6 +65,7 @@ export function createGame(level=0,weapon='glove',options={}){
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
     rally:1,power:false,shots:0,hitstop:0,lastShot:'',
+    energy:options.tutorial&&levelIndex===0?0:SKILLS.start,skill:null,skillSeq:0,queued:[],
     whiff:null,tutorial:options.tutorial&&levelIndex===0?{step:0,attempt:0,shotStep:0,keeperX:0,done:false}:null,
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
 }
@@ -103,7 +122,90 @@ function strike(s,w,sw){
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   if(perfect)s.hitstop=.07;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
+  b.kind=perfect?'perfect':null;b.curve=null;
+  if(!s.tutorial)addEnergy(s,soft?0:perfect?SKILLS.gainPerfect:SKILLS.gainHit,s.events);
   const tu=s.tutorial;if(tu){tu.shotStep=tu.step;if(tu.step<2){tu.step++;s.events.push('tutorialStep');}}
+}
+// --- Active skills -------------------------------------------------------------------------------
+function addEnergy(s,n,events){
+  if(n<=0)return;const before=s.energy;s.energy=Math.min(SKILLS.max,before+n);events.push('energy');
+  if(before<SKILLS.spin.cost&&s.energy>=SKILLS.spin.cost)events.push('energy50');
+  if(before<SKILLS.max&&s.energy>=SKILLS.max)events.push('energy100');
+}
+const timingT=(s,w)=>clamp((s.ball.z-sweetZ(s,w))/(w.reach*.5),-1,1);
+const inRect=(b,r)=>b.x>=r.left&&b.x<=r.right&&b.z>=r.near&&b.z<=r.far;
+// Burst is a little more forgiving than the gear's own zone: wider and a touch further out, never further back.
+export function burstZone(s){
+  const w=WEAPONS[s.weapon],r=hitZone(s),half=w.width*SKILLS.burst.widthScale;
+  return {...r,left:s.player.x-half,right:s.player.x+half,far:r.far+SKILLS.burst.frontExtra};
+}
+// Read-only: whether a skill would be accepted right now, and if not, the reason to show the player.
+export function skillStatus(s,kind){
+  const cfg=SKILLS[kind];
+  if(!cfg||kind==='max')return {ok:false,reason:'state'};
+  if(s.tutorial)return {ok:false,reason:'tutorial'};
+  if(s.phase!=='playing')return {ok:false,reason:'state'};
+  if(s.swing||s.skill)return {ok:false,reason:'busy'};
+  if(s.energy<cfg.cost)return {ok:false,reason:'energy'};
+  if(!(s.ball.vz<0&&inRect(s.ball,kind==='burst'?burstZone(s):hitZone(s))))return {ok:false,reason:'window'};
+  return {ok:true};
+}
+// Shared bookkeeping for a skill contact: counted once, scored as a plain contact, never as a perfect.
+function registerContact(s,b,angle,kind,id,events){
+  s.shots++;s.power=false;s.flash=1;
+  s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
+  s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=100;
+  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id};events.push(kind);
+}
+// The first accepted action takes the lock: it spends energy exactly once. Spin strikes immediately;
+// burst freezes the rally and strikes when its own clock reaches the duration (see tick).
+export function useSkill(s,kind){
+  const status=skillStatus(s,kind);if(!status.ok)return status;
+  s.energy-=SKILLS[kind].cost;
+  const w=WEAPONS[s.weapon],t=timingT(s,w),id=++s.skillSeq,b=s.ball;
+  if(kind==='spin'){
+    const cfg=SKILLS.spin,dir=t<0?1:-1,angle=-t*cfg.angle;
+    s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=s.level.speed*s.rally;
+    b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
+    b.kind='spin';b.curve={k:dir*cfg.curve,stopZ:b.z+(KEEPER_Z-b.z)*cfg.curveShare};
+    registerContact(s,b,angle,'spin',id,s.queued);
+    s.swing={time:w.windup,hit:true,armed:true,whiffed:false,skill:'spin'};
+  }else{
+    s.skill={kind:'burst',id,time:0,x:b.x,z:b.z,angle:-t*MAX_AIM};s.phase='skill';s.swing=null;s.queued.push('burstStart');
+  }
+  return {ok:true,id};
+}
+function launchBurst(s){
+  const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;
+  s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=Math.min(cfg.maxSpeed,s.level.speed*s.rally*cfg.speedScale);
+  b.x=k.x;b.z=k.z;b.vx=Math.sin(k.angle)*v;b.vz=Math.cos(k.angle)*v;launch(b,KEEPER_Z);b.kind='burst';b.curve=null;
+  registerContact(s,b,k.angle,'burst',k.id,s.events);
+  s.skill=null;s.phase='playing';s.swing={time:w.windup+w.active,hit:true,armed:true,whiffed:false,skill:'burst'};
+}
+// Pure prediction of the current outgoing flight, using advanceBall on a copy. Point buffers are reused.
+const FLIGHT_X=new Float32Array(48),FLIGHT_Z=new Float32Array(48),SPIN_X=new Float32Array(16),SPIN_Z=new Float32Array(16);
+export function predictFlight(s){
+  const r=s.ball;if(!(r.vz>0))return null;
+  const b={x:r.x,z:r.z,vx:r.vx,vz:r.vz,curve:r.curve?{...r.curve}:null},out={keeper:null,goal:null,wall:null,xs:FLIGHT_X,zs:FLIGHT_Z,count:0};
+  const every=Math.max(1,Math.ceil((GOAL_Z-b.z)/b.vz*120/(FLIGHT_X.length-2)));
+  FLIGHT_X[0]=b.x;FLIGHT_Z[0]=b.z;out.count=1;
+  for(let i=0;i<2400&&b.vz>0;i++){
+    const px=b.x,pz=b.z,wall=advanceBall(b,1/120),at=line=>wall?b.x:px+(b.x-px)*(line-pz)/(b.z-pz);
+    if(wall&&!out.wall)out.wall={x:wall*SIDE,z:b.z};
+    if(out.keeper===null&&pz<KEEPER_Z&&b.z>=KEEPER_Z)out.keeper=at(KEEPER_Z);
+    if(pz<GOAL_Z&&b.z>=GOAL_Z){out.goal=at(GOAL_Z);FLIGHT_X[out.count]=out.goal;FLIGHT_Z[out.count]=GOAL_Z;out.count++;break;}
+    if(i%every===every-1&&out.count<FLIGHT_X.length-1){FLIGHT_X[out.count]=b.x;FLIGHT_Z[out.count]=b.z;out.count++;}
+  }
+  return out;
+}
+// Short arc a spin taken right now would follow (same step function), for the pre-swing hint.
+export function spinPreview(s,length=2.6){
+  const r=s.ball;if(!(r.vz<0))return null;
+  const w=WEAPONS[s.weapon],cfg=SKILLS.spin,t=timingT(s,w),dir=t<0?1:-1,angle=-t*cfg.angle,v=s.level.speed*Math.min(RALLY_CAP,s.rally*RALLY_STEP);
+  const b={x:r.x,z:r.z,vx:Math.sin(angle)*v,vz:Math.cos(angle)*v,curve:{k:dir*cfg.curve,stopZ:r.z+(KEEPER_Z-r.z)*cfg.curveShare}};
+  SPIN_X[0]=b.x;SPIN_Z[0]=b.z;let count=1;const end=r.z+length,step=length/(SPIN_X.length-1);
+  for(let i=0;i<1200&&count<SPIN_X.length&&b.z<end;i++){advanceBall(b,1/120);if(b.z>=SPIN_Z[count-1]+step){SPIN_X[count]=b.x;SPIN_Z[count]=b.z;count++;}}
+  return {dir:dir<0?'left':'right',angle,xs:SPIN_X,zs:SPIN_Z,count};
 }
 function moveKeeper(s,dt){
   const k=s.keeper,K=s.level.keeper,b=s.ball,g=s.level.goalHalf;
@@ -136,23 +238,26 @@ function whiffReason(s,w,sw){
   return {reason:'unclear'};
 }
 // The keeper gets one chance as the ball crosses its line; the goal itself is the drawn mouth further back.
-function farEnd(s,prevZ){
+function farEnd(s,prevZ,prevX,wall){
   const b=s.ball,k=s.keeper,g=s.level.goalHalf;
-  if(s.tutorial&&prevZ<KEEPER_Z&&b.z>=KEEPER_Z&&Math.abs(b.x-k.x)<=KEEPER_REACH){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.tutorial.attempt++;tutorialReset(s,'save');return;}
-  if(s.tutorial&&prevZ<GOAL_Z&&b.z>=GOAL_Z&&Math.abs(b.x)<=g){
+  // Fast balls cover ~0.1 per step, so lines are judged where the path actually crossed them.
+  const at=line=>wall?b.x:prevX+(b.x-prevX)*(line-prevZ)/(b.z-prevZ);
+  const keeperX=prevZ<KEEPER_Z&&b.z>=KEEPER_Z?at(KEEPER_Z):null,goalX=prevZ<GOAL_Z&&b.z>=GOAL_Z?at(GOAL_Z):null;
+  if(s.tutorial&&keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.tutorial.attempt++;tutorialReset(s,'save');return;}
+  if(s.tutorial&&goalX!==null&&Math.abs(goalX)<=g){
     if(s.tutorial.shotStep===2){s.tutorial.done=true;s.swing=null;s.phase='tutorial-done';s.events.push('goal','tutorialDone');}
     else tutorialReset(s,'goal');
     return;
   }
   if(s.tutorial&&b.z>FAR_WALL){s.tutorial.attempt+=s.tutorial.shotStep===2?1:0;tutorialReset(s,'wide');return;}
-  if(prevZ<KEEPER_Z&&b.z>=KEEPER_Z&&Math.abs(b.x-k.x)<=KEEPER_REACH){
-    // Saves come back at varied angles, so the defender still has to move.
-    const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
-    b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
+  if(keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH){
+    // Saves come back at varied angles, so the defender still has to move. Returns are never skill shots.
+    b.x=keeperX;const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
+    b.curve=null;b.kind=null;b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
     k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.events.push('save');
     return;
   }
-  if(prevZ<GOAL_Z&&b.z>=GOAL_Z&&Math.abs(b.x)<=g){
+  if(goalX!==null&&Math.abs(goalX)<=g){
     s.goals++;s.score+=1000+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
@@ -161,12 +266,14 @@ function farEnd(s,prevZ){
   if(b.z>FAR_WALL){
     b.z=2*FAR_WALL-b.z;
     const angle=clamp(Math.atan2(b.vx,b.vz)+s.boardAngle,-.76,.76),speed=s.level.speed*s.rally;
-    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));s.power=false;s.events.push('wide');
+    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));b.curve=null;b.kind=null;s.power=false;s.events.push('wide');
   }
 }
 function tick(s,dt,axis){
   s.flash=Math.max(0,s.flash-dt*2);
   if(s.hitstop>0){s.hitstop=Math.max(0,s.hitstop-dt);return;}
+  // Burst cinematic: its own clock runs while the ball, both players and match time stay frozen.
+  if(s.phase==='skill'){s.skill.time+=dt;if(s.skill.time>=SKILLS.burst.duration-1e-9)launchBurst(s);return;}
   s.elapsed+=dt;
   // Small deterministic deflection off the far wall outside the goal mouth.
   s.boardAngle=Math.sin(s.elapsed*.65+s.levelIndex*.8)*.15;
@@ -183,16 +290,14 @@ function tick(s,dt,axis){
     if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');}
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
-  const b=s.ball,prevZ=b.z;
-  b.x+=b.vx*dt;b.z+=b.vz*dt;
-  if(b.x>SIDE){b.x=2*SIDE-b.x;b.vx=-Math.abs(b.vx);s.events.push('wall');}
-  if(b.x< -SIDE){b.x=-2*SIDE-b.x;b.vx=Math.abs(b.vx);s.events.push('wall');}
+  const b=s.ball,prevZ=b.z,prevX=b.x;
+  const wall=advanceBall(b,dt);if(wall)s.events.push('wall');
   if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // What the ball was doing while the window was open, so a whiff can be explained honestly.
     const r=hitZone(s),dx=b.x-s.player.x,inc=b.vz<0;sw.first??={z:b.z,dx,inc};sw.last={z:b.z,dx,inc};
     if(inc&&b.z>=r.near&&b.z<=r.far&&Math.abs(dx)>w.width)sw.side=Math.sign(dx);
   }
-  if(b.vz>0){farEnd(s,prevZ);return;}
+  if(b.vz>0){farEnd(s,prevZ,prevX,wall);return;}
   if(s.swing&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // Whether the ball was already in range when the window opened decides clean hit vs. soft contact.
     if(sw.armed===null)sw.armed=inHitRange(s);
@@ -210,7 +315,8 @@ function tick(s,dt,axis){
 }
 export function stepGame(s,dt,axis=0){
   if(!ACTIVE_PHASES.includes(s.phase)||!Number.isFinite(dt)||dt<=0)return;
-  s.events=[];
+  // Events raised by commands between frames (skill acceptance) are delivered with this step's events.
+  s.events=s.queued?.length?s.queued.splice(0):[];
   axis=Number.isFinite(axis)?clamp(axis,-1,1):0;
   s.accumulator+=Math.min(dt,1);
   while(s.accumulator>=1/120&&ACTIVE_PHASES.includes(s.phase)){

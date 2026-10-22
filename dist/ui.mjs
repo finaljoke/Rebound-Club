@@ -1,8 +1,12 @@
 export function screenFor(phase){return phase==='ready'?'ready':phase==='paused'?'paused':['won','lost'].includes(phase)?'result':'match';}
-export function createMatchStats(){return {powerHits:0,powerGoals:0,saves:0,whiffs:0,practiceConceded:0};}
+export function createMatchStats(){return {powerHits:0,powerGoals:0,saves:0,whiffs:0,practiceConceded:0,spinShots:0,spinGoals:0,burstShots:0,burstGoals:0};}
 export function recordMatchEvent(stats,event,state){
   if(event==='perfect')stats.powerHits++;
   if(event==='goal'&&state.lastShot==='perfect')stats.powerGoals++;
+  if(event==='spin')stats.spinShots++;
+  if(event==='burst')stats.burstShots++;
+  if(event==='goal'&&state.lastShot==='spin')stats.spinGoals++;
+  if(event==='goal'&&state.lastShot==='burst')stats.burstGoals++;
   if(event==='save')stats.saves++;
   if(event==='whiff')stats.whiffs++;
   if(event==='practice')stats.practiceConceded++;
@@ -11,7 +15,7 @@ export function matchSummary(s,stats){
   const won=s.phase==='won';let advice=s.level.lesson;
   if(!won&&stats.whiffs>=3)advice='下局先等击球框亮起，再出手。把第一球接稳。';
   else if(!won&&stats.saves>=3)advice='试试换个方向，或借侧墙绕过门将的封堵。';
-  const highlight=stats.powerGoals>0?`重炮破门 ${stats.powerGoals} 次`:s.bestCombo>=3?`连续回击 ${s.bestCombo} 次`:s.goals>0?`攻破球门 ${s.goals} 次`:'下一球，稳稳接住。';
+  const highlight=stats.powerGoals>0?`重炮破门 ${stats.powerGoals} 次`:stats.burstGoals>0?`爆发破门 ${stats.burstGoals} 次`:stats.spinGoals>0?`旋转绕过门将 ${stats.spinGoals} 次`:s.bestCombo>=3?`连续回击 ${s.bestCombo} 次`:s.goals>0?`攻破球门 ${s.goals} 次`:'下一球，稳稳接住。';
   return {won,title:won?(s.misses===0&&stats.practiceConceded===0?'零失球，漂亮拿下！':'好球，这局拿下！'):'差一点，再来一球。',
     action:won&&s.levelIndex<5?'next':'retry',actionLabel:won&&s.levelIndex<5?'挑战下一关':'再来一局',
     advice,highlight,goals:s.goals,target:s.level.goals,misses:s.misses,bestCombo:s.bestCombo,score:s.score,powerHits:stats.powerHits};
