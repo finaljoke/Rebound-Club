@@ -21,7 +21,8 @@ export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 // Active skills, all first-round playtest values in one place. Energy lives only in the match state.
 export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
   spin:{cost:50,angle:.22,curve:.06,maxAngle:.65,curveShare:.7},
-  burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:.5}};
+  // Burst show beats in seconds (user-requested longer, punchier show): freeze → push in → hold → strike → return → launch.
+  burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:1.1,freeze:.12,push:.45,strike:.75,release:.85}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 // Folds a straight-line x back between the side walls, as repeated bounces would.
@@ -274,7 +275,9 @@ function tick(s,dt,axis){
   s.flash=Math.max(0,s.flash-dt*2);
   if(s.hitstop>0){s.hitstop=Math.max(0,s.hitstop-dt);return;}
   // Burst cinematic: its own clock runs while the ball, both players and match time stay frozen.
-  if(s.phase==='skill'){s.skill.time+=dt;if(s.skill.time>=SKILLS.burst.duration-1e-9)launchBurst(s);return;}
+  if(s.phase==='skill'){const B=SKILLS.burst,before=s.skill.time;s.skill.time+=dt;
+    if(before<B.strike&&s.skill.time>=B.strike)s.events.push('burstStrike');
+    if(s.skill.time>=B.duration-1e-9)launchBurst(s);return;}
   s.elapsed+=dt;
   // Small deterministic deflection off the far wall outside the goal mouth.
   s.boardAngle=Math.sin(s.elapsed*.65+s.levelIndex*.8)*.15;

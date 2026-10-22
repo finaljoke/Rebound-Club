@@ -145,7 +145,29 @@ export function buildWorld(){
   // Burst cinematic pieces: a charge ring at the defender's feet and a warm key light; both built once.
   const chargeRing=flat(new THREE.RingGeometry(.55,.66,40),'#ff8a3c',0,.055);chargeRing.visible=false;
   const keyLight=new THREE.PointLight('#ffd7a0',0,6,1.6);scene.add(keyLight);
-  const cine={w:0,dim:0,side:1},focus=new THREE.Vector3(),closePos=new THREE.Vector3(),lookAt=new THREE.Vector3();
+  const cine={w:0,dim:0,side:1,theta:0,r:1},focus=new THREE.Vector3(),closePos=new THREE.Vector3(),lookAt=new THREE.Vector3();
+  // Burst show, all built once: rising aura hoops and sparks round the defender, a glow on the striking hand,
+  // a halo on the locked ball, a ground shockwave, and screen layers carried by the camera (vignette, speed
+  // lines, a cut-in banner, a short flash). Everything is driven by the core's skill clock and hidden after.
+  const glow=(color,extra={})=>new THREE.MeshBasicMaterial({color,transparent:true,opacity:0,depthWrite:false,...extra});
+  const aura=new THREE.Group();aura.visible=false;scene.add(aura);
+  const hoops=[0,1,2].map(()=>{const m=new THREE.Mesh(new THREE.TorusGeometry(.62,.035,6,44),glow('#ffb347'));m.rotation.x=Math.PI/2;aura.add(m);return m;});
+  const sparks=new THREE.Group();sparks.visible=false;scene.add(sparks);
+  const sparkGeo=new THREE.CircleGeometry(.06,4),sparkMat=glow('#ffd36b');
+  const sparkList=Array.from({length:22},(_,i)=>{const m=new THREE.Mesh(sparkGeo,sparkMat);m.userData={a:i*2.39996,r:.42+(i*37%10)/22,o:i*.137%1};sparks.add(m);return m;});
+  const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.position.set(.02,-.43,-.025);handGlow.visible=false;arms[1].add(handGlow);
+  const halo=new THREE.Mesh(new THREE.RingGeometry(.36,.46,36),glow('#fff1b0',{depthTest:false}));halo.renderOrder=7;halo.visible=false;scene.add(halo);
+  const shock=new THREE.Mesh(new THREE.RingGeometry(.8,.98,56),glow('#ffb347'));shock.rotation.x=-Math.PI/2;shock.visible=false;scene.add(shock);
+  function screenTexture(draw,w=512,h=512){if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const tx=new THREE.CanvasTexture(c);tx.colorSpace=THREE.SRGBColorSpace;return tx;}
+  const screenLayer=(map,color,order)=>{const m=new THREE.Mesh(unit,glow(color,{map,depthTest:false}));m.renderOrder=order;m.frustumCulled=false;m.visible=false;return m;};
+  const hud=new THREE.Group();hud.position.z=-.5;camera.add(hud);scene.add(camera);
+  const vignette=screenLayer(screenTexture((g,w,h)=>{const r=g.createRadialGradient(w/2,h/2,w*.22,w/2,h/2,w*.72);r.addColorStop(0,'rgba(13,42,34,0)');r.addColorStop(1,'rgba(13,42,34,0.92)');g.fillStyle=r;g.fillRect(0,0,w,h);}),'#ffffff',20);
+  const lines=screenLayer(screenTexture((g,w,h)=>{g.translate(w/2,h/2);for(let i=0;i<56;i++){const a=i/56*Math.PI*2+(i%3)*.03,l=w*(.18+(i*7%5)*.03);g.rotate(Math.PI*2/56);g.fillStyle=i%2?'rgba(255,240,205,0.85)':'rgba(255,190,120,0.7)';g.beginPath();g.moveTo(w*.36,-1.5-(i%3));g.lineTo(w*.36+l,0);g.lineTo(w*.36,1.5+(i%3));g.fill();}}),'#ffffff',21);
+  const banner=screenLayer(screenTexture((g,w,h)=>{g.fillStyle='#ee6943';g.beginPath();g.moveTo(w*.06,h*.12);g.lineTo(w,h*.12);g.lineTo(w*.94,h*.88);g.lineTo(0,h*.88);g.fill();
+    g.fillStyle='#bf4f2f';g.fillRect(0,h*.82,w,h*.06);g.fillStyle='#fff3d7';g.font=`900 ${h*.52}px "PingFang SC","Microsoft YaHei",Arial`;g.textBaseline='middle';g.fillText('爆发',w*.14,h*.5);
+    g.font=`800 ${h*.2}px Arial`;g.fillStyle='#ffe2b8';g.fillText('B U R S T',w*.47,h*.5);g.fillStyle='#fff3d7';for(let i=0;i<3;i++){const x=w*(.8+i*.045);g.beginPath();g.moveTo(x,h*.3);g.lineTo(x+h*.12,h*.5);g.lineTo(x,h*.7);g.lineTo(x+h*.05,h*.5);g.fill();}},1024,256),'#ffffff',22);
+  const flash=screenLayer(null,'#fff6dc',23);hud.add(vignette,lines,banner,flash);
+  const burstFx={aura,sparks,hand:handGlow,halo,shock,vignette,lines,banner,flash};let kick=0,lastReduce=false;
   const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
@@ -188,9 +210,10 @@ export function buildWorld(){
     }
     // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
-    const sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(SKILLS.burst.duration,sk.time):0,kp=kt/SKILLS.burst.duration,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
-    const wind=sk?(kt<.28?sm((kt-.08)/.2):Math.max(0,1-sm((kt-.28)/.06))):0,blow=sk?(kt<.28?0:kt<.38?sm((kt-.28)/.1):1-sm((kt-.38)/.12)):0;
-    if(sk){arms[1].rotation.x=.32-wind*.75+blow*1.5;arms[0].rotation.x=.32-wind*.3+blow*.4;torso.rotation.y=-wind*.38+blow*.3;torso.rotation.x=blow*.1;}
+    const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
+    lastReduce=reduceMotion;
+    if(sk){arms[1].rotation.x=.32-wind*.85+blow*1.6;arms[0].rotation.x=.32-wind*.35+blow*.45;torso.rotation.y=-wind*.45+blow*.35;torso.rotation.x=blow*.12-wind*.05;}
     for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch-blow;
     // Racket strings spring back after contact; the sword's blade carries through in a flat slash.
     gear.racket.rotation.z=fxU<1&&s.weapon==='racket'?Math.sin(fxAge*34)*.16*(1-fxU)*strong:0;
@@ -208,7 +231,8 @@ export function buildWorld(){
     ball.position.set(s.ball.x,height,-s.ball.z);
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
-    trail.forEach(m=>m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d'));ball.rotation.set(s.elapsed*2,s.elapsed*(spinning?16:1.7),s.elapsed*.7);
+    const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
+    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035);m.scale.setScalar(burstTrail?1.9:1);});ball.rotation.set(s.elapsed*2,s.elapsed*(spinning?16:1.7),s.elapsed*.7);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
@@ -239,12 +263,34 @@ export function buildWorld(){
     if(showBurst){const bz=burstZone(s),be=.045;place(burstEdges[0],bz.left,bz.right,bz.near,bz.near+be);place(burstEdges[1],bz.left,bz.right,bz.far-be,bz.far);place(burstEdges[2],bz.left,bz.left+be,bz.near,bz.far);place(burstEdges[3],bz.right-be,bz.right,bz.near,bz.far);}
     burstEdges.forEach(m=>m.visible=showBurst&&showHints);
     // Cinematic weights: dim and key light for the whole lock, camera push only without reduced motion.
-    cine.dim=sk?(kt<.08?kt/.08:kt<.38?1:Math.max(0,1-(kt-.38)/.12)):0;
-    cine.w=sk&&!reduceMotion?(kt<.08?0:kt<.28?sm((kt-.08)/.2):kt<.38?1:sm(1-(kt-.38)/.12)):0;
-    if(sk){focus.set((s.player.x+sk.x)/2,.95,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
-    hemisphere.intensity=2*(1-.3*cine.dim);sun.intensity=3.1*(1-.22*cine.dim);
+    cine.dim=sk?(kt<B.freeze?kt/B.freeze:kt<B.release?1:Math.max(0,1-(kt-B.release)/(D-B.release))):0;
+    cine.w=sk&&!reduceMotion?(kt<B.freeze?0:kt<B.push?sm((kt-B.freeze)/(B.push-B.freeze)):kt<B.release?1:sm(1-(kt-B.release)/(D-B.release))):0;
+    // The push-in sweeps ~50° round the defender, then the hold keeps easing closer until the strike.
+    cine.theta=sk&&kt<B.push?(1-sm((kt-B.freeze)/(B.push-B.freeze)))*.9:0;cine.r=1-.04*sm((kt-B.push)/(B.strike-B.push));
+    if(sk){focus.set((s.player.x+sk.x)/2,1.02,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
+    hemisphere.intensity=2*(1-.42*cine.dim);sun.intensity=3.1*(1-.3*cine.dim);
     keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
     chargeRing.visible=!!sk;if(sk){chargeRing.position.set(s.player.x,.055,-s.player.z);chargeRing.scale.setScalar(.7+.7*kp);chargeRing.material.opacity=.85*(1-kp*.5);}
+    // Aura: hoops rise and fade on a loop, sparks stream upward; static when motion is reduced.
+    const auraOn=!!sk&&kt>=B.freeze&&kt<B.release+.05,auraW=sk?sm((kt-B.freeze)/.1)*(1-sm((kt-B.release)/.05)):0;
+    aura.visible=sparks.visible=auraOn;handGlow.visible=!!sk&&kt>=B.freeze&&kt<B.release+.1;
+    if(auraOn){aura.position.set(s.player.x,0,-s.player.z);
+      hoops.forEach((m,i)=>{const ph=reduceMotion?i/3:(kt*1.4+i/3)%1;m.position.y=.12+ph*2.1;m.scale.setScalar(1+.25*ph);m.material.opacity=(1-ph)*.85*auraW;});
+      sparkMat.opacity=.9*auraW;sparkList.forEach(m=>{const u=m.userData,ph=reduceMotion?u.o:(kt*1.8+u.o)%1;m.position.set(s.player.x+Math.cos(u.a)*u.r,ph*2.3,-s.player.z+Math.sin(u.a)*u.r);m.quaternion.copy(camera.quaternion);m.scale.set(1-ph*.5,(1-ph*.5)*1.8,1);});}
+    if(handGlow.visible){handGlow.material.opacity=Math.min(.85,.6*wind+.9*blow);handGlow.scale.setScalar(1+(reduceMotion?0:.22*Math.sin(kt*28))*wind+.5*blow);}
+    // The locked ball charges from the hold onward and trembles after the strike, still at its frozen spot.
+    halo.visible=!!sk&&kt>=B.push;if(halo.visible){halo.position.copy(ball.position);halo.quaternion.copy(camera.quaternion);halo.material.opacity=.4+.5*sm((kt-B.push)/.2);halo.scale.setScalar(1+(reduceMotion?0:.12*Math.sin(kt*22))+.5*blow);
+      if(!reduceMotion&&kt>=B.strike)ball.position.x+=Math.sin(kt*95)*.025;}
+    shock.visible=!!sk&&kt>=B.strike&&kt<B.strike+.3;if(shock.visible){const u=(kt-B.strike)/.3;shock.position.set(s.player.x,.06,-s.player.z);shock.scale.setScalar(reduceMotion?2:1+4.5*u);shock.material.opacity=(1-u)*.9;}
+    // Screen layers: vignette for the whole lock, speed lines while pushing/holding, the cut-in banner, a short flash.
+    vignette.visible=!!sk;vignette.material.opacity=.95*cine.dim;
+    lines.visible=!!sk&&!reduceMotion&&kt>=B.freeze&&kt<B.release;if(lines.visible){lines.material.opacity=.4*sm((kt-B.freeze)/.15)*(1-sm((kt-B.strike)/.1));lines.rotation.z=kt*.5;}
+    banner.visible=!!sk&&kt>=.02&&kt<D-.1;if(banner.visible){const inn=sm((kt-.02)/.12),out=sm((kt-B.release+.05)/.15),span=hudSize.w*1.25;
+      banner.position.x=reduceMotion?0:(1-inn)*-span+out*span;banner.material.opacity=reduceMotion?Math.min(inn,1-out):1;}
+    const opening=kt<.07,striking=kt>=B.strike&&kt<B.strike+.12;
+    flash.visible=!!sk&&!reduceMotion&&(opening||striking);if(flash.visible)flash.material.opacity=opening?.4*(1-kt/.07):.5*(1-(kt-B.strike)/.12);
+    // A short kick when the burst actually leaves (camera shake, skipped with reduced motion).
+    kick=!reduceMotion&&fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:0;
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(s.ball.x,.035,-s.ball.z);ballMarker.visible=ball.visible&&s.phase==='playing';
@@ -284,16 +330,20 @@ export function buildWorld(){
       return boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.97&&Math.abs(p.y)<.97;});};
     let distance=.3;while(!fits()&&distance<4)distance*=1.02;
     base.copy(camera.position);baseQuat.copy(camera.quaternion);
+    // Screen layers sit 0.5 in front of the lens, sized to the new frustum.
+    hudSize.h=2*.5*Math.tan(camera.fov*Math.PI/360);hudSize.w=hudSize.h*aspect;
+    for(const m of [vignette,lines,flash])m.scale.set(hudSize.w*1.02,hudSize.h*1.02,1);lines.scale.setScalar(Math.max(hudSize.w,hudSize.h)*1.25);
+    banner.scale.set(hudSize.w*.82,hudSize.w*.82/4,1);banner.position.y=hudSize.h*.36;
   }
   // Camera shake is a pure render offset around the framed position.
-  const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3();
+  const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3(),hudSize={w:1,h:1};
   // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
   // always comes from the latest resize, so a close-up never restores an old screen shape.
   function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
-    if(cine.w>0){closePos.set(focus.x+cine.side*3.4,focus.y+1.2,focus.z+2.4);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
+    if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,cine,update,project,resize,shake};
+  return {scene,camera,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,cine,update,project,resize,shake};
 }
 
 export function create3DRenderer(canvas){
