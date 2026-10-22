@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import {WEAPONS,inHitRange} from './core.mjs';
+import {LEVELS,WEAPONS,inHitRange,ballHeight,KEEPER_Z,FAR_WALL,SIDE} from './core.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 export function buildWorld(){
@@ -33,15 +33,26 @@ export function buildWorld(){
     rod([x,.65,.4],[x,.65,-10.2],.045,'#ece9d5');
     for(let z=.3;z>=-10.3;z-=1.8)rod([x,.05,z],[x,.68,z],.045,'#eee9cf');
   }
-  // The return wall stays aligned with the collision boundary. Individual fins
-  // communicate its changing angle without moving the entire collision plane.
-  const board=new THREE.Group();board.position.set(0,0,-10.1);scene.add(board);
-  box(8.6,.32,.65,'#244d40',board,0,.17,0);
-  box(8.6,.95,.32,'#cfdda8',board,0,.82,-.13);
-  const paddles=[];
-  for(let x=-3.7;x<=3.8;x+=.8){const p=box(.65,.66,.1,'#ebefc8',board,x,.84,.12);paddles.push(p);}
-  for(const x of [-3.5,3.5])rod([x,0,-.2],[x,1.55,-.2],.055,'#617b57',board);
-  box(3.2,.6,.12,'#f5efd5',board,0,1.65,-.2);
+  // The far wall is split around the goal mouth; both are rebuilt whenever the level's goal width changes.
+  const farGoal=new THREE.Group();farGoal.position.set(0,0,-FAR_WALL);scene.add(farGoal);
+  const farNet=new THREE.LineBasicMaterial({color:'#e4e3c7',transparent:true,opacity:.5});
+  function buildFarGoal(g){
+    for(const child of [...farGoal.children]){farGoal.remove(child);child.geometry?.dispose();}
+    const edge=SIDE+.4,span=edge-g;
+    for(const side of [-1,1]){
+      box(span,.32,.65,'#244d40',farGoal,side*(g+span/2),.17,-.3);
+      box(span,.95,.32,'#cfdda8',farGoal,side*(g+span/2),.82,-.42);
+      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#fff2db',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
+      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#fff2db',farGoal);
+    }
+    rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
+    rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
+    const points=[];
+    for(let x=-g;x<=g+.01;x+=.24)points.push(new THREE.Vector3(x,.02,-.75),new THREE.Vector3(x,.9,-.75));
+    for(let y=.02;y<=.91;y+=.16)points.push(new THREE.Vector3(-g,y,-.75),new THREE.Vector3(g,y,-.75));
+    farGoal.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),farNet));
+    if(sign){sign.position.set(0,1.62,-.5);farGoal.add(sign);}
+  }
   function label(value,width,height,color='#2c5745',background=null){
     if(typeof document==='undefined')return null;
     const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');
@@ -49,7 +60,7 @@ export function buildWorld(){
     const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
     return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({map:texture,transparent:!background,depthWrite:false}));
   }
-  const sign=label('REBOUND CLUB',2.9,.45);if(sign){sign.position.set(0,1.65,-.13);board.add(sign);}
+  const sign=label('REBOUND CLUB',2.9,.45);
   // A low transparent goal leaves the defender and the interception area visible.
   const goal=new THREE.Group();scene.add(goal);
   for(const x of [-4,4]){
@@ -78,30 +89,39 @@ export function buildWorld(){
   }
   for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
   const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
-  // Rounded, articulated full-body character; hands and equipment have volume.
-  const hero=new THREE.Group();hero.position.set(0,0,-1.6);hero.scale.setScalar(1.16);scene.add(hero);
-  const torso=new THREE.Group();hero.add(torso);
-  const skin=material('#b98460'),jersey=material('#f6e9ce'),shorts=material('#263f38');
-  mesh(new THREE.CylinderGeometry(.31,.28,.64,10),jersey,torso,0,.97,0);
-  box(.63,.1,.45,'#ed774b',torso,0,1.17,0);
-  box(.58,.29,.4,shorts,hero,0,.57,0);
-  sphere(.29,'#bb865f',torso,0,1.53,-.015,1,1.12,.95);
-  sphere(.295,'#303d31',torso,0,1.66,.025,1,.7,1);
-  sphere(.075,'#bb865f',torso,-.285,1.5,0);sphere(.075,'#bb865f',torso,.285,1.5,0);
-  const number=label('01',.35,.25,'#31513f');if(number){number.position.set(0,1.0,.306);torso.add(number);}
-  const legs=[];
-  for(const side of [-1,1]){
-    const leg=new THREE.Group();leg.position.set(side*.18,.48,0);hero.add(leg);legs.push(leg);
-    mesh(new THREE.CapsuleGeometry(.105,.19,4,10),skin,leg,0,-.15,0);
-    const shoe=sphere(.14,'#f4e8ce',leg,0,-.37,-.06,1, .5,1.65);
-    box(.24,.05,.39,'#c1cbb2',leg,0,-.415,-.05);shoe.castShadow=true;
+  // Rounded, articulated full-body character shared by the defender and the keeper.
+  const skin=material('#b98460'),shorts=material('#263f38');
+  function person(jerseyColor,trim,numberText){
+    const group=new THREE.Group();group.scale.setScalar(1.16);scene.add(group);
+    const torso=new THREE.Group();group.add(torso);
+    mesh(new THREE.CylinderGeometry(.31,.28,.64,10),material(jerseyColor),torso,0,.97,0);
+    box(.63,.1,.45,trim,torso,0,1.17,0);
+    box(.58,.29,.4,shorts,group,0,.57,0);
+    sphere(.29,'#bb865f',torso,0,1.53,-.015,1,1.12,.95);
+    sphere(.295,'#303d31',torso,0,1.66,.025,1,.7,1);
+    sphere(.075,'#bb865f',torso,-.285,1.5,0);sphere(.075,'#bb865f',torso,.285,1.5,0);
+    const number=label(numberText,.35,.25,'#31513f');if(number){number.position.set(0,1.0,.306);torso.add(number);}
+    const legs=[];
+    for(const side of [-1,1]){
+      const leg=new THREE.Group();leg.position.set(side*.18,.48,0);group.add(leg);legs.push(leg);
+      mesh(new THREE.CapsuleGeometry(.105,.19,4,10),skin,leg,0,-.15,0);
+      const shoe=sphere(.14,'#f4e8ce',leg,0,-.37,-.06,1, .5,1.65);
+      box(.24,.05,.39,'#c1cbb2',leg,0,-.415,-.05);shoe.castShadow=true;
+    }
+    const arms=[];
+    for(const side of [-1,1]){
+      const arm=new THREE.Group();arm.position.set(side*.36,1.2,0);torso.add(arm);arms.push(arm);
+      sphere(.13,material(jerseyColor),arm,0,-.03,0);
+      mesh(new THREE.CapsuleGeometry(.1,.22,4,10),skin,arm,side*.02,-.22,0);
+    }
+    return {group,torso,legs,arms};
   }
-  const arms=[];
-  for(const side of [-1,1]){
-    const arm=new THREE.Group();arm.position.set(side*.36,1.2,0);torso.add(arm);arms.push(arm);
-    sphere(.13,'#f6e9ce',arm,0,-.03,0);
-    mesh(new THREE.CapsuleGeometry(.1,.22,4,10),skin,arm,side*.02,-.22,0);
-  }
+  const player=person('#f6e9ce','#ed774b','01'),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
+  hero.position.set(0,0,-1.6);
+  // The keeper faces the defender, wears big gloves on both hands and dives sideways on a save.
+  const goalie=person('#3d6f95','#f2c14e','1'),keeper=goalie.group;
+  keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
+  for(const arm of goalie.arms)sphere(.2,material('#f2c14e',.45),arm,0,-.44,-.015,1,1.05,1.1);
   const leftGlove=sphere(.19,material('#ed6941',.4),arms[0],-.015,-.44,-.015,1,1.05,1.1);
   const gear={glove:new THREE.Group(),racket:new THREE.Group(),sword:new THREE.Group()};
   for(const g of Object.values(gear)){g.position.set(.02,-.43,-.025);arms[1].add(g);}
@@ -118,10 +138,12 @@ export function buildWorld(){
   for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.225,.008,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
   const range=mesh(new THREE.RingGeometry(.8,.84,48),new THREE.MeshBasicMaterial({color:'#e5efac',transparent:true,opacity:.1,depthWrite:false}),scene,0,.045,-2.3,false);range.rotation.x=-Math.PI/2;
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
+  // A ground shadow under the airborne ball makes its depth and landing point readable.
+  const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
   const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false}),scene,0,.68,-5,false);m.visible=false;return m;});
   let lastBall=null,history=[],lastLevel=-1;
   function update(s,axis=0,reduceMotion=false){
-    if(lastLevel!==s.levelIndex){court.material=material(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=material('#'+tint.getHexString());});lastLevel=s.levelIndex;}
+    if(lastLevel!==s.levelIndex){court.material=material(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=material('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
     hero.position.set(s.player.x,0,-s.player.z);
     hero.rotation.z=s.phase==='playing'?-axis*.065:0;
     const moving=s.phase==='playing'&&Math.abs(axis)>.05;
@@ -131,21 +153,28 @@ export function buildWorld(){
     arms[1].rotation.x=.22+punch*1.9;arms[0].rotation.x=.28+punch*.5;torso.rotation.y=punch*-.24;
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
     leftGlove.material=s.weapon==='glove'?material('#ed6941',.4):skin;
-    ball.position.set(s.ball.x,.73,-s.ball.z);ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
+    const k=s.keeper,dive=k.dive/.35;
+    keeper.position.set(k.x,0,-KEEPER_Z);keeper.rotation.z=k.diveDir*dive*.85;
+    goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);
+    const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
+    goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
+    const height=ballHeight(s);
+    ball.position.set(s.ball.x,height,-s.ball.z);ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
     ball.visible=!['miss','lost'].includes(s.phase);
-    paddles.forEach(p=>p.rotation.y=s.boardAngle);
     range.position.set(s.player.x,.045,-(s.player.z+w.reach*.5));range.scale.set(w.width,w.reach*.5,1);
     range.material.opacity=inHitRange(s)?.46:.1;
     range.visible=s.phase==='playing'&&s.ball.vz<0&&s.ball.z<3.7;
     ballMarker.position.set(s.ball.x,.035,-s.ball.z);ballMarker.visible=ball.visible&&s.phase==='playing';
-    if(s.phase==='ready'||s.phase==='serving'||s.phase==='miss'){history=[];lastBall=null;}
+    ballShadow.position.set(s.ball.x,.038,-s.ball.z);ballShadow.scale.setScalar(1.25-(height-.73)*.35);ballShadow.visible=ball.visible;
+    if(s.phase!=='playing'&&s.phase!=='paused'){history=[];lastBall=null;}
     else if(s.phase==='playing'&&!reduceMotion&&s.ball!==lastBall){lastBall=s.ball;}
     if(s.phase==='playing'&&!reduceMotion){history.push(ball.position.clone());if(history.length>trail.length)history.shift();}
     trail.forEach((m,i)=>{m.visible=!reduceMotion&&ball.visible&&history.length>i;m.position.copy(history[i]||ball.position);});
   }
   function resize(aspect){
     camera.aspect=aspect;camera.updateProjectionMatrix();
-    const target=new THREE.Vector3(-.3,.15,-4.6),offset=new THREE.Vector3(2.8,18.5,9.8).sub(target);
+    // Lower than a top-down view so the ball's arc and both goals read at once.
+    const target=new THREE.Vector3(0,.2,-4.9),offset=new THREE.Vector3(1.3,12.8,9.6).sub(target);
     const boundary=[];
     for(const x of [-5.2,5.2])for(const z of [-11.4,2.3])boundary.push(new THREE.Vector3(x,0,z));
     for(const x of [-4.3,4.3])boundary.push(new THREE.Vector3(x,1.95,-10.1),new THREE.Vector3(x,1.1,.1));
@@ -155,10 +184,14 @@ export function buildWorld(){
       if(boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.95&&Math.abs(p.y)<.95;}))break;
       distance*=1.035;
     }
+    base.copy(camera.position);
   }
+  // Camera shake is a pure render offset around the framed position.
+  const base=new THREE.Vector3();
+  function shake(amount=0){camera.position.copy(base);if(amount>0)camera.position.add(new THREE.Vector3(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
-  resize(.85);
-  return {scene,camera,hero,ball,board,paddles,platform,gear,range,update,project,resize};
+  buildFarGoal(LEVELS[0].goalHalf);resize(.85);
+  return {scene,camera,hero,keeper,farGoal,ball,platform,gear,range,update,project,resize,shake};
 }
 
 export function create3DRenderer(canvas){
@@ -170,10 +203,10 @@ export function create3DRenderer(canvas){
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
   const world=buildWorld();let width=0,height=0;
   return {
-    render(state,axis,reduceMotion){
+    render(state,axis,reduceMotion,shake=0){
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
       if(rect.width!==width||rect.height!==height){width=rect.width;height=rect.height;renderer.setSize(width,height,false);world.resize(width/height);}
-      world.update(state,axis,reduceMotion);renderer.render(world.scene,world.camera);
+      world.update(state,axis,reduceMotion);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
     },
     dispose(){world.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
   };
