@@ -1,8 +1,8 @@
 import {LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX} from './core.mjs';
 import {createInput} from './input.mjs';
-import {loadProgress,saveProgress} from './storage.mjs';
+import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 let canvas=$('court'),ctx=null,court3D=null;
@@ -43,14 +43,19 @@ const cues={
   win:()=>[523,659,784,1046,1318].forEach((f,i)=>tone(f,f,i===4?.5:.14,'triangle',.08,i*.1)),
   wide:()=>{tone(180,110,.12,'sine',.14);noise(.07,.1,900);},
   practice:()=>tone(440,330,.16,'triangle',.06),
+  // Contact sounds per gear, scaled by hitFeel intensity: glove thumps, racket strings spring, sword rings.
+  punch:i=>{tone(170,55,.14,'sine',.3*i);noise(.05,.24*i,1500);},
+  string:i=>{tone(360,640,.1,'triangle',.13*i);tone(760,1280,.12,'sine',.05*i,.012);noise(.04,.1*i,3600);},
+  blade:i=>{noise(.17,.16*i,5400);tone(1600,880,.15,'sine',.05*i);tone(190,80,.08,'sine',.16*i);},
+  impact:()=>{tone(72,36,.3,'sine',.38);tone(1320,1760,.18,'triangle',.06,.04);},
   start:()=>tone(350,700,.12,'triangle',.07)
 };
-function sound(kind){
+function sound(kind,intensity=1){
   if(!soundOn||!cues[kind])return;
   try{
     const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
     audio??=new Audio();if(audio.state==='suspended')audio.resume().catch(()=>{});
-    cues[kind]();
+    cues[kind](intensity);
   }catch{/* Audio is optional; play remains available. */}
 }
 
@@ -65,14 +70,14 @@ function selections(){
   $('weapon-note').textContent=progress.unlocked===0?'完成第一关，解锁球拍和剑。':'三种装备各有手感，找到自己的节奏。';
   $('prep-level-name').textContent=LEVELS[selected].name;
   $('prep-rule').textContent=`进 ${LEVELS[selected].goals} 球通关 · 丢 3 球结束`;
-  $('prep-lesson').textContent=LEVELS[selected].practice?`${LEVELS[selected].tag}。提供 ${LEVELS[selected].practice} 次练习保护。`:LEVELS[selected].tag+'。';
+  $('prep-lesson').textContent=(LEVELS[selected].practice?`${LEVELS[selected].tag}。提供 ${LEVELS[selected].practice} 次练习保护。`:LEVELS[selected].tag+'。')+(selected===0&&needsTutorial(progress)?'首次上场先做 3 步小教学。':'');
   $('prep-stage').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
   $('prep-weapon').textContent=WEAPONS[weapon].name;$('prep-weapon-icon').innerHTML=icons[weapon];
   $('attack').querySelector('svg').outerHTML=icons[weapon];
   $('best').textContent=progress.scores[selected]??'—';
   $('save-note').innerHTML=`<span class='live-dot'></span>${progress.saved?'本机进度已保存':'当前进度未保存'}`;
 }
-function ready(){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,weapon);trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,weapon,{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;uiPhase=game.phase;
@@ -96,7 +101,7 @@ function phaseUI(){
   if(previous!==screen){window.scrollTo(0,0);queueMicrotask(()=>{if(screen==='paused'||screen==='result')$('overlay-content').querySelector('.primary-button')?.focus({preventScroll:true});else if(screen==='match')canvas.focus({preventScroll:true});else $('start-match').focus({preventScroll:true});});}
 }
 function hud(){
-  $('progress').textContent=`${game.goals} / ${game.level.goals}`;
+  $('progress').textContent=game.tutorial?`教学 ${game.tutorial.step+1} / 3`:`${game.goals} / ${game.level.goals}`;
   $('progress-bar').style.width=`${game.goals/game.level.goals*100}%`;
   $('hearts').innerHTML=[0,1,2].map(i=>`<span class="life ${i>=3-game.misses?'spent':''}">${icon('shield')}</span>`).join('');
   $('hearts').setAttribute('aria-label',`剩余${3-game.misses}次机会`);
@@ -110,7 +115,9 @@ function hud(){
   $('attack-hint').textContent=game.swing?'收招中':cue.kind==='perfect'?'重炮时机！':cue.kind==='clean'?'现在可以挥击':'看准再出手';
   const status={ready:'热身准备',serving:'发球准备',playing:'对决进行中',miss:'稳住，再来',goal:'进球！',paused:'已暂停',won:'本关完成',lost:'挑战结束'};
   $('court-status').textContent=game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase];
-  $('practice').hidden=!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase));$('practice').textContent=`练习 ×${game.practiceLeft}`;
+  const teaching=!!game.tutorial&&[...ACTIVE_PHASES,'paused'].includes(game.phase);document.body.dataset.tutorial=teaching?'on':'';
+  $('tutorial-bar').hidden=!teaching;if(teaching){$('tutorial-step').textContent=`${game.tutorial.step+1}/3`;$('tutorial-tip').textContent=TUTORIAL_TIPS[game.tutorial.step];}
+  $('practice').hidden=!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching;$('practice').textContent=`练习 ×${game.practiceLeft}`;
   $('combo').style.opacity=game.combo>1?'1':'0';$('combo').querySelector('b').textContent=game.combo;
   $('move-knob').style.transform=`translateX(${input.axis()*30}px)`;
 }
@@ -118,6 +125,13 @@ function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.class
 // Shot quality pops mid-court; what the shot achieved gets its own banner at the top.
 function verdict(text,kind){const el=$('result-pop');el.textContent=text;el.className=`result-pop ${kind}`;void el.offsetWidth;el.classList.add('show');}
 function swing(){if(attack(game))sound('swing');}
+// Finished or skipped: remember it and start the real level 1 from a brand-new state.
+function finishTutorial(completed){
+  progress.tutorialDone=true;progress.saved=saveProgress(storage,progress);
+  selected=0;ready(false);startGame(game);sound('start');
+  verdict(completed?'教学完成 · 正式开始！':'已跳过教学 · 正式开始','info');$('feedback').textContent=game.level.lesson;lessonShown=true;
+}
+function beginTutorial(){selected=0;ready(true);startGame(game);sound('start');phaseUI();hud();}
 function suspend(){pauseGame(game);input.reset();phaseUI();hud();}
 function fallbackRenderer(){
   court3D?.dispose();court3D=null;
@@ -137,9 +151,9 @@ document.querySelector('.app').addEventListener('click',e=>{
     dialog.querySelector(action==='choose-level'?'.level-button.selected':'.weapon-button.selected')?.focus();return;
   }
   if(action==='help'){suspend();$('help-dialog').showModal();return;}
-  if(action==='start'){startGame(game);sound('start');}
+  if(action==='start'){if(selected===0&&needsTutorial(progress)&&!game.tutorial){beginTutorial();return;}startGame(game);sound('start');}
   if(action==='resume')resumeGame(game);
-  if(action==='retry'){ready();startGame(game);sound('start');}
+  if(action==='retry'){ready(!!game.tutorial);startGame(game);sound('start');}
   if(action==='ready')ready();
   if(action==='next'){selected=Math.min(5,selected+1);ready();startGame(game);sound('start');}
   phaseUI();hud();
@@ -148,6 +162,8 @@ $('levels').addEventListener('click',e=>{const b=e.target.closest('[data-level]'
 $('weapons').addEventListener('click',e=>{const b=e.target.closest('[data-weapon]');if(b&&!b.disabled){weapon=b.dataset.weapon;ready();$('weapons').querySelector('.selected')?.focus();}});
 for(const id of ['selection-close','selection-done'])$(id).addEventListener('click',()=>$('selection-dialog').close());
 $('pause').addEventListener('click',suspend);
+$('tutorial-skip').addEventListener('click',()=>{if(game.tutorial)finishTutorial(false);});
+$('replay-tutorial').addEventListener('click',()=>{$('help-dialog').close();beginTutorial();});
 $('attack').addEventListener('pointerdown',e=>{if(!e.isPrimary&&e.pointerType==='mouse')return;e.preventDefault();swing();});
 $('attack').addEventListener('click',e=>{if(e.detail===0)swing();});
 const move=$('move-control');
@@ -283,19 +299,25 @@ function frame(time){
   const events=game.events;game.events=[];
   const aim={left:'偏左 ←',right:'偏右 →',straight:'直线 ↑'},say=text=>$('feedback').textContent=text;
   for(const e of events){
-    recordMatchEvent(matchStats,e,game);
-    if(['hit','perfect','soft','whiff','wall','wide','save','goal','miss','practice'].includes(e))sound(e);
-    if(e==='serve'&&!lessonShown){say(game.level.lesson);lessonShown=true;}
-    if(e==='hit'){pop(aim[game.lastShot]||'好球！');say('早打往左，晚打往右。看红绿终点判断门将有没有封住。');}
-    if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.12);}
+    if(e==='tutorialDone'){finishTutorial(true);break;}
+    const teaching=!!game.tutorial;
+    if(!teaching)recordMatchEvent(matchStats,e,game);
+    if(['wall','wide','save','goal','miss','practice'].includes(e))sound(e);
+    if(['hit','perfect','soft'].includes(e)){const f=hitFeel(game.weapon,e);sound(f.sound,f.intensity);if(e==='perfect')sound('impact');}
+    if(e==='whiff')sound('whiff');
+    if(e==='serve'&&!lessonShown&&!teaching){say(game.level.lesson);lessonShown=true;}
+    if(e==='hit'){pop(aim[game.lastShot]||'好球！');if(!teaching)say('早打往左，晚打往右。看红绿终点判断门将有没有封住。');}
+    if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.06);}
     if(e==='soft'){pop('软球',true);say('挥早了：球自己撞上来，只能打出慢速直球。等框变亮再按。');}
-    if(e==='whiff'){pop('挥空',true);say('挥空要多收招一会儿。框亮起来再出手。');}
-    if(e==='save'){verdict(game.lastShot==='perfect'?'重炮被扑住 · 门将封住了这条线':'被扑住 · 门将封住了这条线','bad');shake=Math.max(shake,.05);say('终点变红说明门将挡在那条线上。换个方向，或借侧墙绕开它。');}
-    if(e==='goal'){verdict(game.lastShot==='perfect'?'重炮破门！':'进球！','good');shake=Math.max(shake,.22);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
-    if(e==='wide'){verdict('打偏了 · 球出了门框','bad');say('角度太大会打到门外的墙。出手时机往中间收一点。');}
+    if(e==='whiff'){pop(whiffHint(game.whiff),true);say({early:'球还没到框里就挥了，等影子进框再按。',late:'球已经过了身位，下次早一点出手。',reach:'球在框外，先移到影子上再挥击。',none:'现在没有来球，等球飞回来。'}[game.whiff?.reason]||'这次没碰到球，看框亮起再出手。');}
+    if(e==='tutorialStep'){verdict('好球！下一步','good');}
+    if(e==='tutorialRetry'){verdict('再来一球','info');}
+    if(e==='save'){verdict(teaching?'门将挡住了 · 换到空的一侧':game.lastShot==='perfect'?'重炮被扑住 · 门将封住了这条线':'被扑住 · 门将封住了这条线','bad');shake=Math.max(shake,.03);if(!teaching)say('终点变红说明门将挡在那条线上。换个方向，或借侧墙绕开它。');}
+    if(e==='goal'&&!teaching){verdict(game.lastShot==='perfect'?'重炮破门！':'进球！','good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
+    if(e==='wide'){verdict('打偏了 · 球出了门框','bad');if(!teaching)say('角度太大会打到门外的墙。出手时机往中间收一点。');}
     if(e==='practice'){verdict(`练习球 · 不扣机会（还剩 ${game.practiceLeft}）`,'info');say('看地上的影子，移动到亮框里再挥击。');trail=[];}
     if(['hit','perfect','goal'].includes(e)&&!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}
-    if(e==='miss'){verdict('丢球！','bad');shake=Math.max(shake,.15);say('提前看影子，移动到位再出手。');trail=[];}
+    if(e==='miss'){verdict('丢球！','bad');shake=Math.max(shake,.08);say('提前看影子，移动到位再出手。');trail=[];}
   }
   if(reduceMotion){game.hitstop=0;shake=0;}
   shake*=Math.exp(-dt*9);if(shake<.005)shake=0;

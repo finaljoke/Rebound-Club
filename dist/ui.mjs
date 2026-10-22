@@ -29,9 +29,9 @@ const paths={
 };
 export function icon(name){return `<svg viewBox="0 0 48 44" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.glove}"/></svg>`;}
 // Per-gear contact feel: glove = punchy burst, racket = springy rings, sword = a slash arc.
-const gearFeel={glove:{flash:'burst',color:'#ff8a4c',sound:'punch',motion:1},racket:{flash:'ring',color:'#ffe08a',sound:'string',motion:.8},sword:{flash:'slash',color:'#e9fbff',sound:'blade',motion:.9}};
+const gearFeel={glove:{flash:'burst',color:'#ff6a2b',sound:'punch',motion:1},racket:{flash:'ring',color:'#ffd23f',sound:'string',motion:.8},sword:{flash:'slash',color:'#bff4ff',sound:'blade',motion:.9}};
 export function hitFeel(weapon,kind){
-  const g=gearFeel[weapon]||gearFeel.glove,k={soft:[.45,.14,.6],hit:[1,.18,1],perfect:[1.9,.26,1.5]}[kind]||[1,.18,1];
+  const g=gearFeel[weapon]||gearFeel.glove,k={soft:[.45,.16,.6],hit:[1,.22,1],perfect:[1.9,.28,1.5]}[kind]||[1,.18,1];
   return {...g,intensity:k[0],life:k[1],motion:g.motion*k[2]};
 }
 export function whiffHint(w){

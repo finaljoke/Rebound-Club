@@ -30,3 +30,30 @@ body[data-screen=result] .game-shell{grid-template-rows:34px minmax(0,1fr)}
 @media(max-width:700px){body[data-screen=result] .game-shell{grid-template-rows:29px minmax(0,1fr)}}
 @media(max-width:380px){body[data-screen=result] .game-shell{grid-template-rows:27px minmax(0,1fr)}body[data-screen=result] .overlay-symbol{display:none}body[data-screen=result] .result-subtitle{margin-bottom:12px}}
 @media(max-height:570px) and (min-width:701px){body[data-screen=result] .game-shell{grid-template-rows:24px minmax(0,1fr)}body[data-screen=result] .overlay-content{max-width:560px;padding:15px 24px}body[data-screen=result] .overlay-symbol,body[data-screen=result] .result-subtitle,body[data-screen=result] .result-highlight,body[data-screen=result] .result-advice{display:none}body[data-screen=result] .overlay-content h3{font-size:22px;margin:7px 0}body[data-screen=result] .result-score{font-size:28px;margin:6px 0}body[data-screen=result] .result-stats{margin:8px 0 12px}body[data-screen=result] .result-stats b{font-size:17px}body[data-screen=result] .primary-button{padding:10px 17px}body[data-screen=result] .secondary-button{padding-top:9px}}
+
+/* Contact pops sit in the upper court, clear of the defender and the incoming ball. */
+.hit-pop{top:44%;font-size:20px}
+.tutorial-bar{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:9px;max-width:calc(100% - 20px);width:max-content;padding:7px 8px 7px 9px;border-radius:16px;background:#fffaf0f2;border:1px solid #e3e3d2;box-shadow:0 6px 18px #1d3a2c22}
+.tutorial-bar[hidden]{display:none}
+.tutorial-step{flex-shrink:0;font-size:10px;font-weight:800;color:#fff8e8;background:var(--green);border-radius:10px;padding:3px 7px}
+.tutorial-tip{font-size:12px;font-weight:700;color:var(--ink);line-height:1.4}
+.tutorial-skip{flex-shrink:0;border:0;background:transparent;font-size:10px;color:#77856d;text-decoration:underline;text-underline-offset:3px;padding:4px}
+body[data-tutorial=on] .court-badge{display:none}
+.replay-tutorial{display:block;margin:12px auto 0}
+@media(max-width:380px){.tutorial-tip{font-size:11px}.tutorial-bar{gap:6px;padding:6px}}
+
+/* Short landscape screens: the court takes the full middle height; left thumb moves, right thumb swings. */
+@media(max-height:570px) and (min-width:701px){
+  body[data-screen=match] .site-header,body[data-screen=paused] .site-header{display:none}
+  body[data-screen=match] .game-shell,body[data-screen=paused] .game-shell{height:calc(100dvh - 12px);grid-template-columns:170px minmax(0,1fr) 170px;grid-template-rows:26px minmax(0,1fr) minmax(0,1fr) 22px;
+    grid-template-areas:"top top top" "move court hud" "move court atk" "foot foot foot";column-gap:12px}
+  body[data-screen=match] .game-top,body[data-screen=paused] .game-top{grid-area:top}
+  body[data-screen=match] .hud,body[data-screen=paused] .hud{grid-area:hud;flex-direction:column;align-items:stretch;gap:8px;align-self:start}
+  body[data-screen=match] .hud-divider,body[data-screen=paused] .hud-divider{display:none}
+  body[data-screen=match] .court-wrap,body[data-screen=paused] .court-wrap{grid-area:court;height:auto;min-height:0}
+  body[data-screen=match] .controls,body[data-screen=paused] .controls{display:contents}
+  body[data-screen=match] .move-control,body[data-screen=paused] .move-control{grid-area:move;align-self:center;width:auto}
+  body[data-screen=match] .attack-wrap,body[data-screen=paused] .attack-wrap{grid-area:atk;align-self:end;justify-self:center;padding-bottom:6px}
+  body[data-screen=match] .game-footer,body[data-screen=paused] .game-footer{grid-area:foot}
+}
+@media(max-height:570px) and (min-width:701px){body[data-screen=match] .court-stamp{display:none}}

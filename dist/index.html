@@ -31,6 +31,7 @@
       <div class="court-stamp" aria-hidden="true">REBOUND<br><span>CLUB COURT</span></div>
       <div class="result-pop" id="result-pop" aria-live="polite"></div>
       <div class="hit-pop" id="hit-pop" aria-live="polite"></div>
+      <div class="tutorial-bar" id="tutorial-bar" hidden><span class="tutorial-step" id="tutorial-step">1/3</span><span class="tutorial-tip" id="tutorial-tip" aria-live="polite"></span><button class="tutorial-skip" id="tutorial-skip">跳过教学</button></div>
       <div class="combo" id="combo"><b>0</b><span>连击</span></div>
       <div class="overlay" id="overlay" hidden><div class="overlay-content" id="overlay-content"></div></div>
     </div>
@@ -58,7 +59,7 @@
 <dialog id="help-dialog" aria-labelledby="help-title">
   <button class="dialog-close" aria-label="关闭玩法说明">×</button><span class="eyebrow">上场指南</span><h2 id="help-title">守住自家，攻破对面。</h2>
   <ol><li><b>先移动到位</b><p>手机左侧滑动；电脑按 A / D 或方向键。地上的影子就是球的位置。</p></li><li><b>看框出手</b><p>人物前方方框是击球范围，橙色横条是重炮甜点。框变亮时挥击：早打往左，晚打往右，箭头显示击球方向。</p></li><li><b>找到门将的空当</b><p>射门终点变绿是空当，变红是门将封住了路线。尝试变向或借侧墙，进满目标球数即可通关。</p></li></ol>
-  <p class="dialog-tip">挥空需要收招，连按容易漏球。前几关提供练习保护，对局内会显示剩余练习次数。</p><button class="primary-button" id="help-close">明白了</button>
+  <p class="dialog-tip">挥空需要收招，连按容易漏球。前几关提供练习保护，对局内会显示剩余练习次数。</p><button class="primary-button" id="help-close">明白了</button><button class="text-button replay-tutorial" id="replay-tutorial">重新体验第一关教学</button>
 </dialog>
 <noscript>请开启 JavaScript 以游玩反弹守卫。</noscript>
 <script type="module" src="./game.js"></script>
