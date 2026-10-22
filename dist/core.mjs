@@ -14,7 +14,7 @@ export const WEAPONS = {
   sword:{name:'剑',subtitle:'长距离 · 提前拦截',width:.95,reach:1.6,windup:.06,active:.14,recovery:.28,whiff:.55}
 };
 export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=1.6,POWER=1.35,SOFT=.8,HIT_HEIGHT=.73,ARC=.9;
-export const KEEPER_Z=9.3,FAR_WALL=9.8,SIDE=3.82,KEEPER_REACH=.55;
+export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal'];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
@@ -72,7 +72,10 @@ function moveKeeper(s,dt){
   const k=s.keeper,K=s.level.keeper,b=s.ball,g=s.level.goalHalf;
   k.dive=Math.max(0,k.dive-dt);
   let target=0,speed=K.speed*.35;
-  if(s.phase==='playing'&&b.vz>0){
+  if(s.phase==='playing'&&b.vz>0&&b.z>=KEEPER_Z){
+    // Beaten: a last lunge straight at the ball, no misread left to apply.
+    target=clamp(b.x,-g,g);speed=K.speed;
+  }else if(s.phase==='playing'&&b.vz>0){
     if(k.delay>0){k.delay-=dt;return;}
     // Straight-line read only: shots banked off a side wall fool the keeper.
     // The misread fades over the last 0.6s, so slow balls get corrected and fast ones don't.
@@ -81,16 +84,17 @@ function moveKeeper(s,dt){
   }
   k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
 }
-function farEnd(s){
+// The keeper gets one chance as the ball crosses its line; the goal itself is the drawn mouth further back.
+function farEnd(s,prevZ){
   const b=s.ball,k=s.keeper,g=s.level.goalHalf;
-  if(b.z>=KEEPER_Z&&Math.abs(b.x)<=g){
-    if(Math.abs(b.x-k.x)<=KEEPER_REACH){
-      // Saves come back at varied angles, so the defender still has to move.
-      const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
-      b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
-      k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.events.push('save');
-      return;
-    }
+  if(prevZ<KEEPER_Z&&b.z>=KEEPER_Z&&Math.abs(b.x-k.x)<=KEEPER_REACH){
+    // Saves come back at varied angles, so the defender still has to move.
+    const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
+    b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
+    k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.events.push('save');
+    return;
+  }
+  if(prevZ<GOAL_Z&&b.z>=GOAL_Z&&Math.abs(b.x)<=g){
     s.goals++;s.score+=1000+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
@@ -121,11 +125,11 @@ function tick(s,dt,axis){
     if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.events.push('whiff');}
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
-  const b=s.ball;
+  const b=s.ball,prevZ=b.z;
   b.x+=b.vx*dt;b.z+=b.vz*dt;
   if(b.x>SIDE){b.x=2*SIDE-b.x;b.vx=-Math.abs(b.vx);s.events.push('wall');}
   if(b.x< -SIDE){b.x=-2*SIDE-b.x;b.vx=Math.abs(b.vx);s.events.push('wall');}
-  if(b.vz>0){farEnd(s);return;}
+  if(b.vz>0){farEnd(s,prevZ);return;}
   if(s.swing&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // Whether the ball was already in range when the window opened decides clean hit vs. soft contact.
     if(sw.armed===null)sw.armed=inHitRange(s);

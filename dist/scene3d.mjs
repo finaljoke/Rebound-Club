@@ -134,7 +134,9 @@ export function buildWorld(){
   const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;
   const tip=mesh(new THREE.ConeGeometry(.073,.23,4),material('#d8e6df',.25),gear.sword,0,1.24,0);tip.rotation.y=Math.PI/4;
   const ball=new THREE.Group();scene.add(ball);
-  mesh(new THREE.SphereGeometry(.225,24,18),material('#ffbd35',.33),ball);
+  // A power shot swells and burns orange-red for its whole flight, trail included.
+  const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
+  const ballBody=mesh(new THREE.SphereGeometry(.225,24,18),ballMat,ball);
   for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.225,.008,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
   const range=mesh(new THREE.RingGeometry(.8,.84,48),new THREE.MeshBasicMaterial({color:'#e5efac',transparent:true,opacity:.1,depthWrite:false}),scene,0,.045,-2.3,false);range.rotation.x=-Math.PI/2;
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
@@ -159,7 +161,9 @@ export function buildWorld(){
     const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
     goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
     const height=ballHeight(s);
-    ball.position.set(s.ball.x,height,-s.ball.z);ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
+    ball.position.set(s.ball.x,height,-s.ball.z);
+    const powered=s.power&&s.ball.vz>0;ball.scale.setScalar(powered?1.25:1);ballBody.material=powered?powerMat:ballMat;
+    trail.forEach(m=>m.material.color.set(powered?'#ff6a2b':'#ffda7d'));ball.rotation.set(s.elapsed*2,s.elapsed*1.7,s.elapsed*.7);
     ball.visible=!['miss','lost'].includes(s.phase);
     range.position.set(s.player.x,.045,-(s.player.z+w.reach*.5));range.scale.set(w.width,w.reach*.5,1);
     range.material.opacity=inHitRange(s)?.46:.1;

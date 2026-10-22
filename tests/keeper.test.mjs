@@ -54,3 +54,17 @@ test('关卡参数：进球目标、球速与门宽逐关收紧',()=>{
   assert.deepEqual(LEVELS.map(l=>l.goals),[3,3,4,4,5,5]);assert.deepEqual(LEVELS.map(l=>l.speed),[4.3,4.6,4.9,5.2,5.5,5.8]);
   for(let i=1;i<6;i++){assert.ok(LEVELS[i].goalHalf<LEVELS[i-1].goalHalf);assert.ok(LEVELS[i].keeper.speed>LEVELS[i-1].keeper.speed);assert.ok(LEVELS[i].keeper.delay<LEVELS[i-1].keeper.delay);}
 });
+test('进球在画出来的门线上判定，而不是守门员所在的线',()=>{
+  const s=play();s.keeper.x=-2;s.ball={x:1,z:9,vx:0,vz:5,z0:2,z1:KEEPER_Z};
+  for(let i=0;i<120&&s.goals===0;i++){stepGame(s,1/120,0);if(s.goals===0)assert.ok(s.ball.z<FAR_WALL-.1+1e-9);}
+  assert.equal(s.goals,1);assert.ok(s.ball.z>=FAR_WALL-.1-1e-9,`进球时 z=${s.ball.z}`);
+});
+test('贴门柱向外斜出的球打在墙上，不算进球',()=>{
+  const s=play();s.keeper.x=-2;s.ball={x:2.3,z:9.29,vx:2.4,vz:5,z0:2,z1:KEEPER_Z};
+  for(let i=0;i<60&&s.ball.vz>0;i++)stepGame(s,1/120,0);assert.equal(s.goals,0);assert.ok(s.ball.vz<0);
+});
+test('球越过守门员后，守门员不会被误差拉向反方向',()=>{
+  // A large misread exaggerates the sign flip of the fading error once the ball is behind the keeper.
+  const s=play();s.keeper.x=.3;s.keeper.err=20;s.ball={x:1,z:9.4,vx:0,vz:3,z0:2,z1:KEEPER_Z};
+  const x=s.keeper.x;stepGame(s,1/120,0);assert.ok(s.keeper.x>x,`守门员从 ${x} 移到 ${s.keeper.x}`);
+});

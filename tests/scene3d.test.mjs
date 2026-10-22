@@ -39,3 +39,8 @@ test('远端门宽随关卡即时更新',()=>{
     assert.ok(Math.abs(w.farGoal.getObjectByName('post-right').position.x-LEVELS[level].goalHalf)<1e-9);
     assert.ok(Math.abs(w.farGoal.getObjectByName('post-left').position.x+LEVELS[level].goalHalf)<1e-9);}
 });
+test('重炮在飞行中有专属外观',()=>{
+  const w=buildWorld(),s=createGame();startGame(s);stepGame(s,1,0);s.ball={x:0,z:5,vx:0,vz:6,z0:2,z1:9.3};
+  s.power=false;w.update(s,0,true);const normal=w.ball.scale.x,color=w.ball.children[0].material.color.getHex();
+  s.power=true;w.update(s,0,true);assert.ok(w.ball.scale.x>normal);assert.notEqual(w.ball.children[0].material.color.getHex(),color);
+});
