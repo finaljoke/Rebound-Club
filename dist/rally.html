@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f1e8"><title>墙网球对打 · REBOUND CLUB</title><link rel="stylesheet" href="./rally.css"><link rel="icon" href="data:,"></head>
+<body>
+<main class="rally-app">
+ <header class="rally-header"><a href="./" class="rally-brand">REBOUND <span>RALLY LAB</span></a><nav><a id="power-contact" href="./rally.html">精准接触</a><a id="power-apex" href="./rally.html?power=apex">最高点</a><button id="rally-sound" aria-label="关闭音效" aria-pressed="true">♪</button><button id="rally-pause" aria-label="暂停对打" disabled>Ⅱ</button></nav></header>
+ <section class="rally-score" aria-label="比赛计分"><div><small>你</small><b id="player-score">0</b></div><span>抢 5 分<small id="rally-status">准备开场</small></span><div><small>强攻手</small><b id="opponent-score">0</b></div></section>
+ <section class="rally-arena" aria-label="隔网对打球场">
+  <canvas id="rally-court" tabindex="0" aria-label="A、D或左右键移动，空格挥拍，Esc暂停"></canvas>
+  <div id="rally-tell" class="rally-tell" hidden>重炮蓄力！准备反制</div>
+  <div id="rally-notice" class="rally-notice" aria-live="polite"></div>
+  <div id="rally-overlay" class="rally-overlay"><div id="rally-card" class="rally-card"></div></div>
+ </section>
+ <section class="rally-controls" aria-label="对打操作">
+  <div class="rally-move" role="group" aria-label="左右移动"><div><button id="rally-left" aria-label="向左移动" aria-pressed="false">←</button><button id="rally-right" aria-label="向右移动" aria-pressed="false">→</button></div><small>按住移动 · 前后自动补位</small></div>
+  <div class="rally-strike"><span id="rally-hit-hint">等球落地再出手</span><button id="rally-hit" aria-label="挥拍" disabled>挥拍<small>SPACE</small></button></div>
+ </section>
+ <footer class="rally-footer"><span id="rally-feedback">早打向左，晚打向右。侧墙可以反弹。</span><span id="rally-rule">精准接触</span></footer>
+</main>
+<script type="module" src="./rally.js"></script>
+</body></html>
+

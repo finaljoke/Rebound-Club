@@ -18,6 +18,7 @@ async function* walk(dir){for(const e of await readdir(dir,{withFileTypes:true})
 const rewrite=text=>text.replace(/(['"])(\.{1,2}\/[^'"]+?)\.mjs\1/g,'$1$2.js$1');
 const files=[];
 for await(const src of walk(path.join(root,'dist'))){
+  if(path.basename(src).startsWith('rally'))continue; // Local-only prototype, never shipped.
   const rel=path.relative(path.join(root,'dist'),src).replace(/\\/g,'/'),target=rel.replace(/\.mjs$/,'.js'),dest=path.join(site,target);
   await mkdir(path.dirname(dest),{recursive:true});
   if(/\.(m?js|html|css)$/.test(rel))await writeFile(dest,rewrite(await readFile(src,'utf8')));else await copyFile(src,dest);
