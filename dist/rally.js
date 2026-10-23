@@ -1,19 +1,24 @@
 import {RALLY,createRally,startRally,stepRally,attackRally,pauseRally,resumeRally,attackPreview,inHitRange} from './rally-core.mjs';
 import {createInput} from './input.mjs';
 import {createRallyRenderer} from './rally-scene.mjs';
-const $=id=>document.getElementById(id),input=createInput(),power=new URLSearchParams(location.search).get('power')==='apex'?'apex':'contact';
-let game=createRally({power}),renderer=null,lastTime=0,uiPhase='',noticeUntil=0,notice='',soundOn=true,audio=null;
+const $=id=>document.getElementById(id),input=createInput(),params=new URLSearchParams(location.search),power=params.get('power')==='apex'?'apex':'contact',hint=params.get('hint')==='practice'?'practice':'challenge';
+let game=createRally({power,hint}),renderer=null,lastTime=0,uiPhase='',noticeUntil=0,notice='',soundOn=true,audio=null;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const REASONS={net:'下网',out:'底线出界','own-half':'首次落在己方半场','double-bounce':'二次弹地',whiff:'挥空'};
 $('power-'+power).setAttribute('aria-current','page');$('rally-rule').textContent=power==='apex'?'最高点奖励':'精准接触奖励';
+$('rally-hint-mode').textContent=hint==='practice'?'教学档':'挑战档';
+document.body.dataset.hint=hint;
+const toggleURL=new URL(location.href);if(hint==='practice')toggleURL.searchParams.delete('hint');else toggleURL.searchParams.set('hint','practice');
+$('rally-hint-toggle').href=toggleURL.href;$('rally-hint-toggle').setAttribute('aria-label',hint==='practice'?'切换为挑战档':'切换为教学档');
+for(const rule of ['contact','apex']){const url=new URL(location.href);if(rule==='apex')url.searchParams.set('power','apex');else url.searchParams.delete('power');$('power-'+rule).href=url.href;}
 function sound(kind){
  if(!soundOn)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume().catch(()=>{});
  const [from,to,duration]=kind==='charge'?[180,650,.5]:kind==='counter'?[450,950,.18]:kind==='point'?[660,880,.22]:kind==='bounce'?[240,180,.04]:[180,80,.1];
  const oscillator=audio.createOscillator(),gain=audio.createGain();oscillator.type=kind==='charge'?'triangle':'sine';oscillator.frequency.setValueAtTime(from,audio.currentTime);oscillator.frequency.exponentialRampToValueAtTime(to,audio.currentTime+duration);gain.gain.setValueAtTime(kind==='charge'?.055:.10,audio.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);oscillator.connect(gain);gain.connect(audio.destination);oscillator.start();oscillator.stop(audio.currentTime+duration);
  }catch{/* Optional audio. */}}
 function label(text){notice=text;noticeUntil=game.elapsed+.8;}
-function recordsJSON(){return JSON.stringify({powerRule:game.powerRule,score:game.score,winner:game.winner,points:game.records},null,2);}
-function reset(){game=createRally({power});input.reset();notice='';noticeUntil=0;lastTime=0;uiPhase='';startRally(game);sound('hit');screen();}
+function recordsJSON(){return JSON.stringify({powerRule:game.powerRule,hintMode:game.hintMode,score:game.score,winner:game.winner,points:game.records},null,2);}
+function reset(){game=createRally({power,hint});input.reset();notice='';noticeUntil=0;lastTime=0;uiPhase='';startRally(game);sound('hit');screen();}
 function screen(){
  if(uiPhase===game.phase)return;uiPhase=game.phase;document.body.dataset.phase=game.phase;
  const overlay=$('rally-overlay'),card=$('rally-card');overlay.hidden=!['ready','paused','finished'].includes(game.phase);
@@ -60,8 +65,9 @@ function hud(){
  $('rally-pause').disabled=['ready','finished'].includes(game.phase);$('rally-hit').disabled=game.phase!=='playing';
  for(const [id,direction] of [['rally-left',-1],['rally-right',1]]){$(id).setAttribute('aria-pressed',String(input.pressed(direction)));$(id).disabled=!['playing','serving'].includes(game.phase);}
  const cue=attackPreview(game,input.axis()),charging=game.opponent.heavy&&game.opponent.chargeAt!==null&&['playing','paused'].includes(game.phase);
- $('rally-tell').hidden=!charging;$('rally-hit').classList.toggle('ready',inHitRange(game));$('rally-hit').classList.toggle('counter',cue.kind==='counter');
- $('rally-hit-hint').textContent=game.swing?'收招中':cue.kind==='counter'?'现在反制！':inHitRange(game)?'可以挥拍':'等球落地再出手';
+ const counterHint=hint==='practice'&&cue.kind==='counter';
+ $('rally-tell').hidden=hint!=='practice'||!charging;$('rally-hit').classList.toggle('ready',inHitRange(game));$('rally-hit').classList.toggle('counter',counterHint);
+ $('rally-hit-hint').textContent=game.swing?'收招中':counterHint?'现在反制！':inHitRange(game)?'可以挥拍':'等球落地再出手';
  $('rally-status').textContent=game.phase==='serving'?(game.point.server==='player'?'你方发球':'对手发球')+' · '+Math.max(1,Math.ceil(game.countdown)):game.phase==='playing'?'第 '+(game.records.length+1)+' 分':game.phase==='paused'?'已暂停':game.phase==='finished'?'本局结束':game.phase==='point'?'下一分准备':'准备开场';
  $('rally-notice').textContent=noticeUntil>game.elapsed?notice:'';
 }

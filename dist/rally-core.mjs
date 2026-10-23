@@ -1,11 +1,12 @@
 // Pure, deterministic wall-tennis rules. Rendering never decides collisions.
 export const RALLY={
  side:3.82,netZ:5,netHeight:.62,gravity:6,radius:.14,bounceY:.72,bounceXZ:.9,dt:1/120,
- targetScore:5,serveDelay:.8,pointDelay:1.2,playerSpeed:6.2,depthSpeed:3.8,aiSpeed:2.6,aiDelay:.25,aiRecovery:.45,
+ targetScore:5,serveDelay:.8,pointDelay:1.2,playerSpeed:6.2,depthSpeed:3.8,aiChaseSpeed:3.8,aiRecoverSpeed:1.3,aiWideX:1.8,aiStagger:.3,aiDelay:.25,
  width:1.08,aiWidth:.40,reach:1.2,near:.12,minHeight:.2,maxHeight:1.7,windup:.05,active:.13,recovery:.2,whiff:.5,
- perfect:.3,counterWindow:.18,apexWindow:.08,counterScale:1.1,counterMax:12.5,counterDelay:.15,tell:.5,
+ perfect:.3,counterWindow:.18,apexWindow:.08,counterScale:1.1,counterMax:12.5,counterDelay:.25,tell:.5,tellMargin:.1,
  normalTime:1.65,powerTime:1.32,softTime:1.85,heavyTime:1.0,heavyMinSpeed:8,
  normalDepth:8.1,powerDepth:7.7,softDepth:6.8,counterDepth:9.2,aimSpan:5.8,
+ aiNormalCenterEvery:0,aiNormalDepth:1.65,aiCounterReplyDepth:1.65,aiCounterReplyCenter:0,
  playerMinZ:-2.1,playerMaxZ:3.3,aiMinZ:6.7,aiMaxZ:11.65
 };
 const EPS=1e-9,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),other=p=>p==='player'?'opponent':'player';
@@ -68,15 +69,15 @@ export function predictFlight(ball,{seconds=8,dt=1/120}={}){
 }
 function emit(s,type,details={}){s.events.push({type,at:s.elapsed,...details});}
 function actor(z){return {x:0,z,targetZ:z,swing:0};}
-export function createRally({power='contact'}={}){
- return {phase:'ready',previousPhase:null,powerRule:power==='apex'?'apex':'contact',score:{player:0,opponent:0},
-  player:actor(1.1),opponent:{...actor(8.9),reaction:0,heavy:false,chargeAt:null,intentDecided:false,hits:0},
+export function createRally({power='contact',hint='challenge'}={}){
+ return {phase:'ready',previousPhase:null,powerRule:power==='apex'?'apex':'contact',hintMode:hint==='practice'?'practice':'challenge',score:{player:0,opponent:0},
+  player:actor(1.1),opponent:{...actor(8.9),reaction:0,stagger:0,heavy:false,chargeAt:null,intentDecided:false,hits:0},
   ball:{x:0,y:.95,z:1.7,vx:0,vy:0,vz:0,age:0,bounces:0,hitter:'player',crossedNet:false,kind:'serve'},
   flight:null,swing:null,whiffed:false,elapsed:0,accumulator:0,countdown:0,events:[],queued:[],records:[],point:null,lastShot:null,winner:null};
 }
 function newPoint(s){
  const server=s.records.length%2?'opponent':'player';s.phase='serving';s.countdown=RALLY.serveDelay;
- s.player.x=0;s.player.z=s.player.targetZ=1.1;Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,reaction:0,heavy:false,chargeAt:null,intentDecided:false,hits:0,swing:0});
+ s.player.x=0;s.player.z=s.player.targetZ=1.1;Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,reaction:0,stagger:0,heavy:false,chargeAt:null,intentDecided:false,hits:0,swing:0});
  s.swing=null;s.whiffed=false;s.lastShot=null;s.flight=null;
  s.point={server,hits:0,opponentHeavy:0,facedHeavy:0,counters:0,counterAttempts:0};
  s.ball={x:0,y:.95,z:server==='player'?1.7:8.3,vx:0,vy:0,vz:0,age:0,bounces:0,hitter:server,crossedNet:false,kind:'serve'};
@@ -121,6 +122,7 @@ function launched(s,b,kind,hitter){
   s.opponent.reaction=RALLY.aiDelay+(kind==='counter'?RALLY.counterDelay:0);
  }else{
   s.opponent.heavy=false;s.opponent.chargeAt=null;s.opponent.intentDecided=false;s.opponent.swing=.28;
+  s.opponent.stagger=Math.abs(b.x)>RALLY.aiWideX?RALLY.aiStagger:0;
   if(kind==='heavy'){s.point.opponentHeavy++;s.point.facedHeavy++;}
  }
  emit(s,hitter==='player'?'playerHit':'opponentHit',{kind});if(kind==='counter')emit(s,'counter');
@@ -129,15 +131,22 @@ function finishPoint(s,reason,loser){
  if(s.phase!=='playing')return;
  const winner=other(loser);s.score[winner]++;
  const record={number:s.records.length+1,server:s.point.server,hits:s.point.hits,reason,loser,winner,
-  opponentHeavy:s.point.opponentHeavy,facedHeavy:s.point.facedHeavy,counters:s.point.counters,counterAttempts:s.point.counterAttempts,powerRule:s.powerRule};
+  opponentHeavy:s.point.opponentHeavy,facedHeavy:s.point.facedHeavy,counters:s.point.counters,counterAttempts:s.point.counterAttempts,powerRule:s.powerRule,hintMode:s.hintMode};
  s.records.push(record);s.swing=null;s.opponent.chargeAt=null;s.opponent.heavy=false;s.countdown=RALLY.pointDelay;
  if(s.score[winner]>=RALLY.targetScore){s.phase='finished';s.winner=winner;emit(s,'finished',{winner});}else s.phase='point';
  emit(s,'point',{reason,loser,winner});
 }
 function decideOpponent(s){
  const a=s.opponent;if(a.intentDecided||s.ball.hitter!=='player')return;
- a.intentDecided=true;a.heavy=s.ball.kind==='soft'||(s.flight?.firstBounce?.z??s.ball.target?.z??9)<7.2||(a.hits+1)%4===0;
- if(a.heavy){a.chargeAt=s.elapsed;emit(s,'heavyTell');}
+ a.intentDecided=true;const wantsHeavy=s.ball.kind==='soft'||(s.flight?.firstBounce?.z??s.ball.target?.z??9)<7.2||(a.hits+1)%4===0;
+ if(!wantsHeavy)return;
+ const contact=s.flight?.contact,remaining=contact?contact.age-s.ball.age:0,chaseTime=Math.max(0,remaining-a.reaction);
+ const distance=contact?Math.abs(contact.x-a.x):Infinity;
+ const depth=contact?Math.abs(clamp(contact.z+RALLY.reach*.5,RALLY.aiMinZ,RALLY.aiMaxZ)-a.z):Infinity;
+ const enoughTime=remaining+EPS>=RALLY.tell+RALLY.tellMargin;
+ const reachable=distance<=RALLY.aiChaseSpeed*chaseTime+RALLY.aiWidth+EPS&&depth<=RALLY.depthSpeed*chaseTime+EPS;
+ if(!enoughTime||!reachable){emit(s,'heavySkipped',{reason:enoughTime?'unreachable':'time',remaining,chaseDistance:distance});return;}
+ a.heavy=true;a.chargeAt=s.elapsed;emit(s,'heavyTell');
 }
 function flightEvent(s,e){
  const b=s.ball;
@@ -169,7 +178,8 @@ function playerStrike(s){
 }
 function opponentStrike(s){
  const a=s.opponent,b=s.ball,kind=a.heavy?'heavy':'normal',out=a.heavy&&b.z>10.3;
- const target={x:clamp((s.player.x>=0?-2.8:2.8)+.12*Math.sin((a.hits+1)*2.3),-3.4,3.4),z:out?-.7:1.65};
+ const center=kind==='normal'&&((b.kind==='counter'&&RALLY.aiCounterReplyCenter>0)||(RALLY.aiNormalCenterEvery>0&&(a.hits+1)%RALLY.aiNormalCenterEvery===0));
+ const target={x:center?0:clamp((s.player.x>=0?-2.8:2.8)+.12*Math.sin((a.hits+1)*2.3),-3.4,3.4),z:out?-.7:kind==='heavy'?1.65:b.kind==='counter'?RALLY.aiCounterReplyDepth:RALLY.aiNormalDepth};
  const distance=Math.hypot(target.x-b.x,target.z-b.z);
  const time=kind==='heavy'?Math.min(RALLY.heavyTime,distance/RALLY.heavyMinSpeed):RALLY.normalTime;
  const next=solveShot(b,target,{hitter:'opponent',kind,flightTime:time});
@@ -185,12 +195,14 @@ function moveActors(s,dt,axis){
   a.reaction=Math.max(0,a.reaction-dt);
   if(a.reaction<=EPS){
    const c=s.flight?.contact;if(c)a.targetZ=clamp(c.z+RALLY.reach*.5,RALLY.aiMinZ,RALLY.aiMaxZ);
-   const x=c?.x??a.x;a.x+=clamp(x-a.x,-RALLY.aiSpeed*dt,RALLY.aiSpeed*dt);
+   const x=c?.x??a.x;a.x+=clamp(x-a.x,-RALLY.aiChaseSpeed*dt,RALLY.aiChaseSpeed*dt);
    a.z+=clamp(a.targetZ-a.z,-RALLY.depthSpeed*dt,RALLY.depthSpeed*dt);
   }
  }else{
-  a.x+=clamp(-a.x,-RALLY.aiSpeed*RALLY.aiRecovery*dt,RALLY.aiSpeed*RALLY.aiRecovery*dt);
-  a.z+=clamp(8.9-a.z,-RALLY.depthSpeed*RALLY.aiRecovery*dt,RALLY.depthSpeed*RALLY.aiRecovery*dt);
+  const frozen=Math.min(dt,a.stagger);a.stagger=Math.max(0,a.stagger-frozen);const moving=dt-frozen;
+  a.x+=clamp(-a.x,-RALLY.aiRecoverSpeed*moving,RALLY.aiRecoverSpeed*moving);
+  // Preserve the prototype's depth recovery; only lateral speeds are balanced here.
+  a.z+=clamp(8.9-a.z,-RALLY.depthSpeed*.45*moving,RALLY.depthSpeed*.45*moving);
  }
 }
 function tick(s,dt,axis){
