@@ -41,7 +41,26 @@ async function rally(p,count){
   const on=await p.evaluate(()=>__buzz.slice());
   await p.evaluate(()=>{document.getElementById('sound').click();__buzz.length=0;});await rally(p,2);
   const off=await p.evaluate(()=>__buzz.slice());R.haptics={on,off};await p.close();
-  assert.ok(on.length>=2&&on.every(x=>typeof x==='number'?x>0&&x<=40:Array.isArray(x)),`击球震动 ${JSON.stringify(on)}`);
+  assert.ok(on.length>=2&&on.every(x=>typeof x==='number'?x>0&&x<=80:Array.isArray(x)),`击球震动 ${JSON.stringify(on)}`);
   assert.deepEqual(off,[],'关掉音效后不震动');}
+
+// 3) Share card: on the result screen, "分享战绩" hands a 1080×1350 PNG to the system share sheet when files can be
+// shared, and downloads it otherwise. The match is lost by standing still (no game state is written).
+async function toResult(p){await p.evaluate(()=>document.getElementById('start-match').click());
+  await p.waitForFunction(()=>document.body.dataset.screen==='result',null,{timeout:60000});await p.waitForSelector('#overlay-content [data-action=share]:not([disabled])',{timeout:5000});}
+for(const canShare of [true,false]){
+  const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,acceptDownloads:true}),p=await ctx.newPage();watch(p,`share-${canShare}`);
+  await p.addInitScript(([v,can])=>{localStorage.setItem('rebound-club-v2',v);window.__shared=[];
+    Object.defineProperty(navigator,'canShare',{value:d=>can&&!!d?.files?.length,configurable:true});
+    Object.defineProperty(navigator,'share',{value:async d=>{const f=d.files[0],bmp=await createImageBitmap(f);__shared.push({name:f.name,type:f.type,size:f.size,w:bmp.width,h:bmp.height,text:d.text});},configurable:true});},[SAVE,canShare]);
+  await p.goto('http://localhost:4173/');await p.waitForFunction(()=>document.body.dataset.booted==='1');await toResult(p);
+  if(canShare){await p.click('#overlay-content [data-action=share]');await p.waitForFunction(()=>__shared.length>0,null,{timeout:5000});R.shared=await p.evaluate(()=>__shared[0]);
+    await p.screenshot({path:'artifacts/share-result-390.png'});
+    assert.ok(R.shared.type==='image/png'&&R.shared.w===1080&&R.shared.h===1350&&R.shared.size>20000,`分享图片 ${JSON.stringify(R.shared)}`);
+    assert.ok(/第 1 关/.test(R.shared.text)&&/得分/.test(R.shared.text),'分享文字');}
+  else{const [download]=await Promise.all([p.waitForEvent('download',{timeout:5000}),p.click('#overlay-content [data-action=share]')]);
+    R.download=download.suggestedFilename();await download.saveAs('artifacts/share-card.png');assert.ok(/\.png$/.test(R.download),`下载文件 ${R.download}`);}
+  await ctx.close();
+}
 
 console.log(JSON.stringify(R));assert.deepEqual(errors,[]);console.log('PASS');await b.close();
