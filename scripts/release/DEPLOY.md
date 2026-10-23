@@ -11,7 +11,9 @@ SHA256SUMS.txt        site/ 内每个文件的校验值
 site/                 网站根目录（上传这个目录里的全部内容）
   index.html          入口
   game.js、core.js 等  游戏脚本（ES Module）
-  styles.css
+  styles.css、lobby.css
+  sw.js               离线缓存脚本（不要让它被长时间缓存）
+  manifest.webmanifest、icons/  添加到主屏幕用的清单和图标
   vendor/             Three.js 0.180.0 本地副本（MIT 许可见 vendor/LICENSE）
   version.json        版本号与对应源码提交
 ```
@@ -45,6 +47,15 @@ site/                 网站根目录（上传这个目录里的全部内容）
 5. 出问题时，把备份目录整体换回即可回滚。
 
 升级不影响玩家进度：进度存在玩家浏览器里，只要域名不变就会保留。
+
+## 离线与添加到主屏幕
+
+这个版本起，玩家用 HTTPS 打开过一次后，可以把游戏「添加到主屏幕」，之后断网也能玩。
+
+- `sw.js` 是离线缓存脚本，`manifest.webmanifest` 和 `icons/` 是安装用的清单和图标，三者都要上传，并和 `index.html` 放在同一目录。
+- **`sw.js` 一定不能被长时间缓存**（`Cache-Control: no-cache`，CDN 也不要缓存它）。浏览器正是靠重新获取它来发现新版本的。
+- 每个版本整套缓存：上线新版本后，玩家下一次打开时会在后台下载新版整套文件，再下一次打开就是新版。不会出现新旧文件混用。
+- 离线缓存要求 HTTPS（`localhost` 除外）。用 HTTP 部署时游戏照常可玩，只是没有离线和安装功能。
 
 ## 缓存建议
 

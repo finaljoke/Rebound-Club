@@ -1,0 +1,17 @@
+{
+  "name": "反弹守卫 · REBOUND CLUB",
+  "short_name": "反弹守卫",
+  "description": "移动、挥击，守住自家球门，再打出一记漂亮进球。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f1e8",
+  "theme_color": "#f4f1e8",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

@@ -29,6 +29,10 @@ for(const f of files.filter(f=>/\.(js|html)$/.test(f))){
   if(/['"]\.{1,2}\/[^'"]+\.mjs['"]/.test(text))throw Error(`${f} still references .mjs`);
   for(const m of text.matchAll(/(?:from\s*|import\s*\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g)){const target=path.join(path.dirname(path.join(site,f)),m[1]);await stat(target).catch(()=>{throw Error(`${f}: missing ${m[1]}`);});}
 }
+// Offline cache: sw.js lists every file of this release (version.json excluded: it is always fetched fresh).
+const cached=['./',...files.filter(f=>f!=='version.json')];
+await writeFile(path.join(site,'sw.js'),(await readFile(path.join(root,'scripts','release','sw.js'),'utf8')).replace('__VERSION__',name).replace('__FILES__',JSON.stringify(cached)));
+files.push('sw.js');
 const sums=[];for(const f of files.sort()){sums.push(`${createHash('sha256').update(await readFile(path.join(site,f))).digest('hex')}  ${f}`);}
 await writeFile(path.join(site,'version.json'),JSON.stringify({name,commit,dirty,builtAt:new Date().toISOString()},null,2)+'\n');
 await writeFile(path.join(out,'SHA256SUMS.txt'),sums.join('\n')+'\n');
