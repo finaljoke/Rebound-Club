@@ -61,11 +61,11 @@ export function buildWorld(){
     rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
     farNetLines=new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
-    if(sign){sign.position.set(0,1.62,-.5);farGoal.add(sign);}
     mergeRigidParts(farGoal);
   }
   function label(value,width,height,color='#2c5745',background=null){
-    if(typeof document==='undefined')return null;
+    // Without a DOM (node tests) the same-sized plane is built untextured, so its placement can still be checked.
+    if(typeof document==='undefined')return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
     const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');
     if(background){ctx.fillStyle=background;ctx.fillRect(0,0,512,128);}ctx.fillStyle=color;ctx.font='bold 52px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(value,256,66);
     const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
@@ -101,9 +101,42 @@ export function buildWorld(){
     }
   }
   for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
+  // Far stands: three tiers behind the far wall and a back wall carrying the club sign, so the top of a tall screen
+  // shows a venue instead of bare ground. Built before the merge below, so they cost a couple of draws; no shadows.
+  const STAND_Z=11.9,TIER=[.15,.7,1.25];
+  TIER.forEach((top,i)=>{mesh(new THREE.BoxGeometry(13,top+.65,.9),i%2?'#d9d2b8':'#e2dcc4',scene,0,(top-.65)/2,-(STAND_Z+.9*i),false);mesh(new THREE.BoxGeometry(13,.06,.9),'#c9bf9e',scene,0,top+.03,-(STAND_Z+.9*i),false);});
+  mesh(new THREE.BoxGeometry(13.4,3.3,.3),'#cfd9c0',scene,0,1,-(STAND_Z+2.75),false);
+  for(const x of [-6.6,6.6])mesh(new THREE.BoxGeometry(.3,3.3,3),'#c3cfb2',scene,x,1,-(STAND_Z+1.35),false);
+  // The club banner hangs on two poles above the keeper's head. Only tall screens have room for it there; on wide ones
+  // the keeper's head sits near the top edge and every spot beside its range (±4 with a dive) is cut off by the stands,
+  // so it is not shown (the page header carries the name).
+  const signPoles=[0,1].map(()=>{const pole=mesh(new THREE.CylinderGeometry(.035,.035,1,8),'#8e9a80',scene,0,0,0,false);pole.name='sign-pole';return pole;});
+  if(sign)scene.add(sign);
+  function placeSign(aspect){
+    if(!sign)return;const shown=aspect<1;sign.visible=shown;signPoles.forEach(pole=>pole.visible=shown);if(!shown)return;
+    const [x,y,z,width]=[0,1.5,12,3.6],s=width/2.9,h=.45*s;
+    sign.scale.setScalar(s);sign.position.set(x,y,-z);
+    signPoles.forEach((pole,i)=>{const top=y-h/2,px=x+(i?1:-1)*width*.42;pole.scale.set(1,top+.65,1);pole.position.set(px,(top-.65)/2,-z-.02);});
+  }
+  // A cool rim light from the far end separates the players from the turf (no shadow, so no extra pass).
+  const rim=new THREE.DirectionalLight('#e6f0ff',.9);rim.name='rim';rim.position.set(3,6,-16);rim.target.position.set(0,0,-4);scene.add(rim,rim.target);
   // Everything above is static scenery: bake it into one mesh per material before any animated or pooled object exists.
   mergeRigidParts(scene);
   const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
+  // Crowd on the far stands: one instanced body mesh and one instanced head mesh (two draws for ~36 people), seated
+  // with deterministic gaps and colours. They bob a little and jump on every goal, back in their seats by the next serve.
+  const seats=[];for(let i=0;i<TIER.length;i++)for(let c=0;c<14;c++){const h=Math.sin(i*12.9898+c*78.233)*43758.5453,r=h-Math.floor(h);if(r<.15)continue;seats.push({x:-5.6+c*.86+(r-.5)*.2,y:TIER[i],z:-(STAND_Z+.9*i)+.12,phase:r*6.28,lift:.22+.12*r});}
+  const shirts=['#356f91','#ed774b','#f6e9ce','#e9c56f','#5c8a6a','#c96a5a'],skins=['#bd8b68','#8f5f43','#e0b48f','#a8724f'];
+  const crowd=new THREE.InstancedMesh(new THREE.CylinderGeometry(.16,.21,.5,10).translate(0,.25,0),new THREE.MeshStandardMaterial({roughness:.85}),seats.length);
+  const crowdHeads=new THREE.InstancedMesh(new THREE.SphereGeometry(.14,12,10).translate(0,.64,0),new THREE.MeshStandardMaterial({roughness:.85}),seats.length);
+  const seatAt=new THREE.Matrix4(),seatTint=new THREE.Color();
+  seats.forEach((p,i)=>{seatAt.makeTranslation(p.x,p.y,p.z);crowd.setMatrixAt(i,seatAt);crowdHeads.setMatrixAt(i,seatAt);crowd.setColorAt(i,seatTint.set(shirts[i%shirts.length]));crowdHeads.setColorAt(i,seatTint.set(skins[(i*7)%skins.length]));});
+  scene.add(crowd,crowdHeads);
+  function cheer(now,reduceMotion){
+    const since=goalCam.goalAt>=0?now-goalCam.goalAt:9,joy=since<1?Math.sin(Math.min(1,since/.15)*Math.PI/2)*(1-Math.max(0,(since-.55)/.45)):0;
+    seats.forEach((p,i)=>{const hop=reduceMotion?0:joy*p.lift*Math.abs(Math.sin(since*9+p.phase))+.012*Math.sin(now*2+p.phase);seatAt.makeTranslation(p.x,p.y+hop,p.z);crowd.setMatrixAt(i,seatAt);crowdHeads.setMatrixAt(i,seatAt);});
+    crowd.instanceMatrix.needsUpdate=true;crowdHeads.instanceMatrix.needsUpdate=true;
+  }
   // Shared articulated collectible athletes; visual parts stay under their joints.
   const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
   const skin=player.skin;scene.add(hero);hero.position.set(0,0,-1.6);
@@ -357,7 +390,7 @@ export function buildWorld(){
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
     // Speed reads in the trail: from 3 up to 10 it grows brighter and thicker (the gaps already widen with speed).
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
-    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);
+    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);cheer(now,reduceMotion);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
@@ -461,6 +494,7 @@ export function buildWorld(){
     base.copy(camera.position);baseQuat.copy(camera.quaternion);
     // Screen layers sit 0.5 in front of the lens, sized to the new frustum.
     hudSize.h=2*.5*Math.tan(camera.fov*Math.PI/360);hudSize.w=hudSize.h*aspect;
+    placeSign(aspect);
     for(const m of [vignette,lines,flash])m.scale.set(hudSize.w*1.02,hudSize.h*1.02,1);lines.scale.setScalar(Math.max(hudSize.w,hudSize.h)*1.25);
     banner.scale.set(hudSize.w*.82,hudSize.w*.82/4,1);banner.position.y=hudSize.h*.36;
   }
@@ -477,7 +511,7 @@ export function buildWorld(){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
