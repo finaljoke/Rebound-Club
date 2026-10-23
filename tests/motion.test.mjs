@@ -23,3 +23,33 @@ test('弧线两端都在击球高度，中途连续',()=>{
     let prev=null;for(let z=9;z>=PLAYER_Z;z-=.05){ball.z=z;const h=ballHeight({ball});if(prev!==null)assert.ok(Math.abs(h-prev)<.05,`速度${speed} z=${z.toFixed(2)} 跳变`);prev=h;}
   }
 });
+
+import * as THREE from '../dist/vendor/three.module.min.js';
+import {buildWorld} from '../dist/scene3d.mjs';
+import {createGame,startGame,stepGame,GOAL_Z} from '../dist/core.mjs';
+function playing(level=0){const s=createGame(level);startGame(s);for(let i=0;i<400&&s.phase!=='playing';i++)stepGame(s,1/60,0);return s;}
+// Rotation the ball mesh made between two updates, as world axis + angle.
+function turn(w,s,move){
+  s.accumulator=0;w.update(s,0,false,1);const q0=w.ball.quaternion.clone();
+  move(s);s.pose={px:s.player.x,kx:s.keeper.x,bx:s.ball.x,bz:s.ball.z};w.update(s,0,false,1+1/60);
+  const d=w.ball.quaternion.clone().multiply(q0.clone().invert()),angle=2*Math.acos(Math.min(1,Math.abs(d.w))),sn=Math.sqrt(Math.max(1e-12,1-d.w*d.w));
+  return {angle,axis:new THREE.Vector3(d.x,d.y,d.z).divideScalar(sn).multiplyScalar(Math.sign(d.w)||1)};
+}
+
+test('球按飞行方向滚动：转轴垂直于运动方向，转角等于滚过距离除以半径',()=>{
+  const w=buildWorld(),s=playing();s.power=false;s.ball.kind=null;s.ball.curve=null;s.ball.vx=0;s.ball.vz=5;
+  const r=turn(w,s,st=>{st.ball.z+=.3;});
+  assert.ok(Math.abs(r.angle-.3/.26)<1e-3,`转角 ${r.angle.toFixed(3)}`);
+  assert.ok(Math.abs(Math.abs(r.axis.x)-1)<1e-3&&Math.abs(r.axis.y)<1e-3,`转轴 ${r.axis.toArray().map(v=>v.toFixed(2))}`);
+  const side=turn(w,s,st=>{st.ball.x+=.2;});assert.ok(Math.abs(Math.abs(side.axis.z)-1)<1e-3,'横向移动绕前后轴转');
+  const still=turn(w,s,()=>{});assert.ok(still.angle<1e-9,'不动就不转');
+  const jump=turn(w,s,st=>{st.ball.z+=3;});assert.ok(jump.angle<1e-9,'瞬移不转');
+});
+
+test('旋转球带侧旋：绕竖直轴的转向和拐弯方向一致',()=>{
+  for(const k of [-1,1]){
+    const w=buildWorld(),s=playing();s.ball.kind='spin';s.ball.curve={k:k*.06,stopZ:9};s.ball.vx=0;s.ball.vz=5;
+    const r=turn(w,s,st=>{st.ball.z+=.3;});
+    assert.ok(Math.abs(r.axis.y)>.3,`侧旋分量 ${r.axis.y.toFixed(2)}`);assert.equal(Math.sign(r.axis.y*r.angle),Math.sign(-k),`k=${k}`);
+  }
+});

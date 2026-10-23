@@ -201,6 +201,18 @@ export function buildWorld(){
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
   // Render pose: the sim runs in fixed 1/120 s steps, the screen at 60/90/120/144 Hz. Positions are carried forward by
   // the unspent part of the next step at the last step's velocity (no added latency); a jump (serve, reset) snaps.
+  // Rolling: the ball turns about the axis across its travel by distance / radius, and spin shots add sidespin about the
+  // vertical the way they bend. A jump (serve, reset) is not rolled. Driven by the drawn motion, so pauses stop it.
+  const rolledFrom=new THREE.Vector3(),spinAxis=new THREE.Vector3(),spinTurn=new THREE.Quaternion();let rollReady=false,rollState=null;
+  function rollBall(size){
+    const dx=ball.position.x-rolledFrom.x,dz=ball.position.z-rolledFrom.z,dist=Math.hypot(dx,dz),c=rollState?.ball.curve;
+    if(rollReady&&dist>1e-9&&dist<.5){
+      const turn=dist/(.26*size),side=c&&rollState.ball.kind==='spin'?-Math.sign(c.k)*turn*.9:0;
+      spinAxis.set(dz/dist*turn,side,-dx/dist*turn);const angle=spinAxis.length();
+      ball.quaternion.premultiply(spinTurn.setFromAxisAngle(spinAxis.divideScalar(angle),angle));
+    }
+    rolledFrom.copy(ball.position);rollReady=true;
+  }
   const posed={px:0,kx:0,bx:0,bz:0},heightProbe={ball:{z:0,z0:0,z1:0,vz:0}};
   function renderPose(s){
     const p=s.pose,a=p?s.accumulator*120:0,on=a>1e-6;
@@ -283,7 +295,7 @@ export function buildWorld(){
     if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
-    const pose=renderPose(s);
+    const pose=renderPose(s);rollState=s;
     hero.position.set(pose.px,0,-s.player.z);
     hero.rotation.z=s.phase==='playing'?-axis*.075:0;
     const moving=s.phase==='playing'&&Math.abs(axis)>.05;
@@ -322,7 +334,7 @@ export function buildWorld(){
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
-    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035);m.scale.setScalar(burstTrail?1.9:1);});ball.rotation.set(s.elapsed*2,s.elapsed*(spinning?16:1.7),s.elapsed*.7);
+    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035);m.scale.setScalar(burstTrail?1.9:1);});rollBall(size);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
