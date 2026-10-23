@@ -77,6 +77,10 @@ function audioReady(){
   return true;
 }
 for(const type of ['pointerdown','touchend','click','keydown'])document.addEventListener(type,()=>{if(soundOn)try{audioReady();}catch{}},{capture:true,passive:true});
+// Haptics (Android browsers; iOS web has no vibration API): a tap on contact, a pattern on goals and conceded balls.
+// They follow the sound toggle, so one switch silences both.
+const HAPTICS={hit:12,soft:8,perfect:28,spin:18,burst:[25,30,60],goal:[30,50,70],save:45,miss:[70,40,70]};
+function buzz(kind){if(!soundOn||!HAPTICS[kind]||typeof navigator.vibrate!=='function')return;try{navigator.vibrate(HAPTICS[kind]);}catch{/* optional */}}
 function sound(kind,intensity=1){
   if(!soundOn||!cues[kind])return;
   try{if(audioReady())cues[kind](intensity);}catch{/* Audio is optional; play remains available. */}
@@ -370,6 +374,7 @@ function frame(time){
     if(['wall','wide','save','goal','miss','practice'].includes(e))sound(e);
     if(['hit','perfect','soft'].includes(e)){const f=hitFeel(game.weapon,e);sound(f.sound,f.intensity);if(e==='perfect')sound('impact');}
     if(e==='whiff')sound('whiff');
+    buzz(e);
     if(e==='serve'&&!lessonShown&&!teaching){say(game.level.lesson);lessonShown=true;}
     if(e==='serve'&&!teaching&&!skillIntroShown){verdict('能量 50 放「旋转」改路线 · 满 100 放「爆发」','info');skillIntroShown=true;}
     if(e==='energy50'||e==='energy100'){const el=$('energy');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}

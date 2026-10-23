@@ -22,4 +22,26 @@ const watch=(p,tag)=>{p.on('pageerror',e=>errors.push(`${tag}: ${e.message}`));p
   R.boot={during,after};await p.close();
   assert.ok(during.cover&&during.blocksStart,`载入期间遮罩 ${JSON.stringify(during)}`);assert.ok(/载入/.test(during.text),'载入文字');assert.ok(after.hidden,'载入后遮罩消失');}
 
+// Real keyboard rally on level 1; returns once `count` more hits have landed.
+async function rally(p,count){
+  let held=null;const hold=async k=>{if(held===k)return;if(held)await p.keyboard.up(held);held=k;if(k)await p.keyboard.down(k);};
+  const start=await p.evaluate(()=>__qa.game().hits),t0=Date.now();
+  while(Date.now()-t0<40000){const s=await p.evaluate(()=>{const g=__qa.game();const pv=g.phase==='playing'&&g.ball.vz<0&&!g.swing?__qa.preview().kind:'none';return {phase:g.phase,hits:g.hits,bx:g.ball.x,bz:g.ball.z,vx:g.ball.vx,vz:g.ball.vz,px:g.player.x,kind:pv};});
+    if(s.hits>=start+count)break;
+    if(s.phase==='playing'&&s.vz<0){const dx=s.bx+s.vx*(2.1-s.bz)/s.vz-s.px;await hold(Math.abs(dx)>.12?(dx>0?'ArrowRight':'ArrowLeft'):null);if(s.kind==='clean'||s.kind==='perfect')await p.keyboard.press('Space');}
+    else await hold(null);await p.waitForTimeout(5);}
+  await hold(null);
+}
+// 2) Haptics: contacts vibrate (navigator.vibrate stubbed and recorded); with the sound toggle off they stay quiet.
+{const p=await b.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});watch(p,'haptics');
+  await p.addInitScript(v=>{localStorage.setItem('rebound-club-v2',v);window.__buzz=[];Object.defineProperty(navigator,'vibrate',{value:x=>{__buzz.push(x);return true;},configurable:true});},SAVE);
+  await p.route('**/game.js',async r=>{const x=await r.fetch();await r.fulfill({response:x,body:(await x.text())+'\nwindow.__qa={game:()=>game,preview:()=>swingPreview(game)};'});});
+  await p.goto('http://localhost:4173/');await p.waitForFunction(()=>document.body.dataset.booted==='1');
+  await p.evaluate(()=>document.getElementById('start-match').click());await rally(p,2);
+  const on=await p.evaluate(()=>__buzz.slice());
+  await p.evaluate(()=>{document.getElementById('sound').click();__buzz.length=0;});await rally(p,2);
+  const off=await p.evaluate(()=>__buzz.slice());R.haptics={on,off};await p.close();
+  assert.ok(on.length>=2&&on.every(x=>typeof x==='number'?x>0&&x<=40:Array.isArray(x)),`击球震动 ${JSON.stringify(on)}`);
+  assert.deepEqual(off,[],'关掉音效后不震动');}
+
 console.log(JSON.stringify(R));assert.deepEqual(errors,[]);console.log('PASS');await b.close();
