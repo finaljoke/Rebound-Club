@@ -435,6 +435,7 @@ export function buildWorld(){
       fx.traverse(o=>{if(o.material)o.material.opacity=alpha;});
     }
   }
+  const PITCH_TALL=43;
   function resize(aspect){
     camera.aspect=aspect;camera.updateProjectionMatrix();
     // Lower than a top-down view so the ball's arc and both goals read at once.
@@ -443,10 +444,12 @@ export function buildWorld(){
     // Portrait looks down at ~37°, wide screens at ~30°, blended by aspect. The behind-the-defender view
     // shows bodies and swings instead of head-tops; the frame is the tightest one that still keeps both
     // goals, the side walls at the defender's depth and both players' heads in view. Only resize moves it.
+    // A longer lens (33°) and pitch chosen by a search over the same visibility rules: the largest court that keeps
+    // the players at least as tall as before. Portrait looks down at 43°, wide screens at 26° (players ~1.45× larger).
     const wide=Math.min(1,Math.max(0,(aspect-.9)/.7));
-    camera.fov=baseFov=39+3*wide;camera.updateProjectionMatrix();
-    const target=aim0.set(0,.4+.1*wide,-4.4+.5*wide);
-    const offset=new THREE.Vector3(0,10,6.6).lerp(new THREE.Vector3(0,7.6,8.3),wide).sub(target);
+    camera.fov=baseFov=33;camera.updateProjectionMatrix();
+    const target=aim0.set(0,.4*(1-wide),-3.6),pitch=(PITCH_TALL-(PITCH_TALL-26)*wide)*Math.PI/180;
+    const offset=new THREE.Vector3(0,Math.sin(pitch),Math.cos(pitch)).multiplyScalar(12);
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
     for(const x of [-3.95,3.95])boundary.push(new THREE.Vector3(x,0,1.15),new THREE.Vector3(x,1.15,0));
@@ -469,8 +472,8 @@ export function buildWorld(){
   function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
     if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}
     else if(goalCam.w>0){camera.position.lerp(chasePos,goalCam.w);lookAt.copy(aim0).lerp(chaseAim,goalCam.w);camera.lookAt(lookAt);}
-    // The goal shot opens the lens a little for a closer, more dynamic frame; exactly the framed lens otherwise.
-    const fov=baseFov+(52-baseFov)*goalCam.w;if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+    // Close-ups open the lens (burst 40°, goal shot 52°) for a closer, more dynamic frame; exactly the framed lens otherwise.
+    const fov=baseFov+(40-baseFov)*cine.w+(52-baseFov)*goalCam.w;if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
