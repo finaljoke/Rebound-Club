@@ -53,3 +53,12 @@ test('旋转球带侧旋：绕竖直轴的转向和拐弯方向一致',()=>{
     assert.ok(Math.abs(r.axis.y)>.3,`侧旋分量 ${r.axis.y.toFixed(2)}`);assert.equal(Math.sign(r.axis.y*r.angle),Math.sign(-k),`k=${k}`);
   }
 });
+
+test('拖尾随球速变亮变粗：快球明显，慢球保持原样',()=>{
+  const look=speed=>{const w=buildWorld(),s=playing();s.power=false;s.ball.kind=null;s.ball.curve=null;s.ball.vx=0;s.ball.vz=-speed;w.update(s,0,false,1);
+    return {opacity:w.trail.reduce((n,m)=>n+m.material.opacity,0),scale:Math.max(...w.trail.map(m=>m.scale.x))};};
+  const slow=look(3),serve=look(4),fast=look(11);
+  assert.ok(Math.abs(slow.opacity-.98)<1e-9&&slow.scale===1,'慢球与原来一致');
+  assert.ok(fast.opacity>slow.opacity*2&&fast.scale>1.3,`快球 ${fast.opacity.toFixed(2)} / ${fast.scale.toFixed(2)}`);
+  assert.ok(serve.opacity>slow.opacity&&serve.opacity<fast.opacity);
+});
