@@ -16,7 +16,8 @@ async function open(browser,{viewport={width:390,height:844},mobile=true,reduced
   await p.goto('http://localhost:4173/');await p.waitForTimeout(400);return {ctx,p};
 }
 const st=p=>p.evaluate(()=>{const g=__qa.game();return {phase:g.phase,energy:g.energy,hits:g.hits,goals:g.goals,misses:g.misses,level:g.levelIndex,lastShot:g.lastShot,skill:g.skill&&{...g.skill},seq:g.skillSeq,px:g.player.x,bx:g.ball.x,bz:g.ball.z,vx:g.ball.vx,vz:g.ball.vz,kind:g.ball.kind||null,curve:!!g.ball.curve,elapsed:g.elapsed,tut:!!g.tutorial,renderer:document.getElementById('court').dataset.renderer};});
-const click=(p,sel)=>p.evaluate(s=>document.querySelector(s).click(),sel);
+// Waits for the target first: the result card appears only after the winning goal's camera shot.
+const click=async(p,sel)=>{await p.waitForSelector(sel,{state:'attached',timeout:5000});return p.evaluate(s=>document.querySelector(s).click(),sel);};
 async function bot(p,{until,useSkills=false,ms=90000}){
   let held=null;const hold=async k=>{if(held===k)return;if(held)await p.keyboard.up(held);held=k;if(k)await p.keyboard.down(k);};const t0=Date.now();
   while(Date.now()-t0<ms){const s=await p.evaluate(()=>{const g=__qa.game();const pv=g.phase==='playing'&&g.ball.vz<0&&!g.swing?__qa.preview().kind:'none';return {phase:g.phase,energy:g.energy,bx:g.ball.x,bz:g.ball.z,vx:g.ball.vx,vz:g.ball.vz,px:g.player.x,kind:pv,goals:g.goals};});

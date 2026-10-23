@@ -23,6 +23,11 @@ export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
   spin:{cost:50,angle:.22,curve:.06,maxAngle:.65,curveShare:.7},
   // Burst show beats in seconds (user-requested longer, punchier show): freeze → push in → hold → strike → return → launch.
   burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:1.1,freeze:.12,push:.45,strike:.75,release:.85}};
+// Goal camera (presentation only; rules never read it). Key goals get the full show: the camera starts moving camStart
+// sim-seconds before the ball reaches the goal line, the sim runs at `slow` for the last slowWindow, then the shot is held
+// for `hold` and the camera returns over `back` (real seconds, inside the 1.2 s before the next serve). Other goals get
+// a brief push-in capped at weight `brief`.
+export const GOAL_CAM={camStart:.45,slowWindow:.22,slow:.3,hold:.6,back:.45,brief:.35};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 // Folds a straight-line x back between the side walls, as repeated bounces would.
@@ -200,6 +205,26 @@ export function predictFlight(s){
   }
   return out;
 }
+// Key goals: the match winner, power, burst and spin shots, and any shot that comes off a side wall.
+function keyGoal(s,banksAhead=false){return s.goals+1>=s.level.goals||['perfect','burst','spin'].includes(s.lastShot)||!!s.shot?.banked||banksAhead;}
+// A goal is certain once the keeper cannot reach the ball's crossing point at its line even moving at full speed from
+// now with no reaction delay (it moves once per step, before the ball). Returns {x, t, key} or null; read-only.
+export function goalLock(s){
+  if(s.phase!=='playing'||s.tutorial||!(s.ball.vz>0))return null;
+  const r=s.ball,b={x:r.x,z:r.z,vx:r.vx,vz:r.vz,curve:r.curve?{...r.curve}:null},dt=1/120,g=s.level.goalHalf;
+  let keeperX=null,keeperSteps=0,banks=false;
+  for(let i=1;i<=2400&&b.vz>0;i++){
+    const px=b.x,pz=b.z,wall=advanceBall(b,dt),at=line=>wall?b.x:px+(b.x-px)*(line-pz)/(b.z-pz);
+    if(wall)banks=true;
+    if(keeperX===null&&pz<KEEPER_Z&&b.z>=KEEPER_Z){keeperX=at(KEEPER_Z);keeperSteps=i;}
+    if(pz<GOAL_Z&&b.z>=GOAL_Z){
+      const x=at(GOAL_Z);if(Math.abs(x)>g)return null;
+      if(keeperX!==null&&Math.abs(keeperX-s.keeper.x)<=KEEPER_REACH+s.level.keeper.speed*keeperSteps*dt+1e-9)return null;
+      return {x,t:i*dt,key:keyGoal(s,banks)};
+    }
+  }
+  return null;
+}
 // Short arc a spin taken right now would follow (same step function), for the pre-swing hint.
 export function spinPreview(s,length=2.6){
   const r=s.ball;if(!(r.vz<0))return null;
@@ -260,6 +285,7 @@ function farEnd(s,prevZ,prevX,wall){
     return;
   }
   if(goalX!==null&&Math.abs(goalX)<=g){
+    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1};
     s.goals++;s.score+=1000+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
@@ -295,7 +321,7 @@ function tick(s,dt,axis){
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
   const b=s.ball,prevZ=b.z,prevX=b.x;
-  const wall=advanceBall(b,dt);if(wall)s.events.push('wall');
+  const wall=advanceBall(b,dt);if(wall){s.events.push('wall');if(b.vz>0&&s.shot)s.shot.banked=true;}
   if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // What the ball was doing while the window was open, so a whiff can be explained honestly.
     const r=hitZone(s),dx=b.x-s.player.x,inc=b.vz<0;sw.first??={z:b.z,dx,inc};sw.last={z:b.z,dx,inc};

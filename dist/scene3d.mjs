@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
@@ -47,6 +47,7 @@ export function buildWorld(){
   // The far wall is split around the goal mouth; both are rebuilt whenever the level's goal width changes.
   const farGoal=new THREE.Group();farGoal.position.set(0,0,-FAR_WALL);scene.add(farGoal);
   const farNet=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.4});
+  let farNetLines=null,netRest=null,netDirty=false;
   function buildFarGoal(g){
     for(const child of [...farGoal.children]){farGoal.remove(child);if(child!==sign)child.geometry?.dispose();}
     const edge=SIDE+.4,span=edge-g;
@@ -59,7 +60,7 @@ export function buildWorld(){
     }
     rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
-    farGoal.add(new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet));
+    farNetLines=new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
     if(sign){sign.position.set(0,1.62,-.5);farGoal.add(sign);}
     mergeRigidParts(farGoal);
   }
@@ -210,6 +211,73 @@ export function buildWorld(){
     heightProbe.ball.z=posed.bz;heightProbe.ball.z0=s.ball.z0;heightProbe.ball.z1=s.ball.z1;
     return posed;
   }
+  // Goal camera. When a goal becomes certain (goalLock) the camera blends toward a low chase shot behind the ball,
+  // looking at where it will meet the net; key goals get the full shot and a hold, others a brief push (GOAL_CAM).
+  // After the line the ball carries on into the net, which bulges and settles; the beaten keeper dives at it.
+  // All of it runs on the render clock, so it keeps playing while the match sits in 'goal' or 'won'.
+  const goalCam={w:0,on:false,key:false,start:0,goalAt:-1,x:0,dirX:0,dirZ:1,h:.73,goals:0,state:null,dive:0,diveDir:1,side:1},chasePos=new THREE.Vector3(),chaseAim=new THREE.Vector3();
+  // Keeper dive pose (0 standing, 1 full stretch), shared by saves and the beaten keeper's reaction.
+  function poseKeeper(dive,dir){keeper.rotation.z=dir*dive*.85;goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);}
+  // How far the keeper's body reaches sideways at ball height (below 1.7) for each dive amount, measured once from the
+  // model. A beaten keeper never stretches nearer the ball's path than standing still would put it.
+  const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x;
+    for(let i=0;i<=10;i++){poseKeeper(i/10,1);keeper.updateMatrixWorld(true);let reach=0;
+      keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=3){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x-x0);}});out.push(reach);}
+    poseKeeper(0,1);keeper.updateMatrixWorld(true);return out;})();
+  function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.3);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
+  // Chosen by a search over near/far misses, both sides and portrait/landscape: fewest frames with the keeper or the
+  // goal frame in front of the ball, ball near frame centre (dolly-in made the posts block it more often).
+  const GC_POSE={back:2.6,side:2.4,height:2.4,dolly:0,center:false,dive:beatenDive};
+  const restAt=new THREE.Vector3(),netLean=g=>Math.max(-1,Math.min(1,g.dirX/Math.max(.2,g.dirZ)))*.5;
+  // Where the ball ends up inside the net (netShot's limit: .62 deep, resting low).
+  function netRest3(g){return restAt.set(g.x+netLean(g)*.62,.3,-(GOAL_Z+.62));}
+  function trackGoal(s,now,reduceMotion,pose,sm){
+    const g=goalCam;
+    if(g.state!==s||s.goals<g.goals||s.phase==='ready'){Object.assign(g,{on:false,goalAt:-1,w:0,dive:0,state:s,goals:s.goals});}
+    if(g.goalAt>=0&&s.phase==='playing'){g.on=false;g.goalAt=-1;}
+    const lock=s.phase==='playing'?goalLock(s):null;
+    // The lens sits on the far side of the ball from the keeper, so a keeper lunging at it never fills the frame.
+    const away=x=>GC_POSE.center?(x>0?-1:1):Math.sign(x-pose.kx)||(x>0?1:-1);
+    if(lock&&lock.t<=GOAL_CAM.camStart&&!g.on){g.on=true;g.key=lock.key;g.start=now;g.goalAt=-1;g.x=lock.x;g.side=away(lock.x);}
+    if(s.goals>g.goals){
+      const L=s.lastGoal,v=Math.hypot(L.vx,L.vz)||1;g.goals=s.goals;
+      if(!g.on){g.on=true;g.key=L.key;g.start=now;g.side=away(L.x);}
+      g.goalAt=now;g.x=L.x;g.dirX=L.vx/v;g.dirZ=L.vz/v;g.h=ballHeight(s);
+    }
+    if(g.on&&g.goalAt<0&&!lock)g.on=false;
+    let w=0;
+    if(g.on){
+      const pre=g.goalAt<0,t=pre?0:now-g.goalAt,blend=sm((now-g.start)/(g.key?.35:.25));
+      const hold=g.key?GOAL_CAM.hold:.25,back=g.key?GOAL_CAM.back:.35,peak=g.key?1:GOAL_CAM.brief;
+      w=peak*(pre||t<hold?blend:t<hold+back?blend*sm(1-(t-hold)/back):0);
+      if(!pre&&t>=hold+back)g.on=false;
+    }
+    g.w=reduceMotion?0:w;
+    // A beaten keeper reaches as far as the gap allows: a near miss is a stretch, only a wide one is a full dive, so no
+    // part of it ever sweeps across the ball's path.
+    const gap=Math.abs(g.x-pose.kx);
+    g.dive=g.on||g.goalAt>=0?GC_POSE.dive(gap)*sm((now-g.start)/.25):0;g.diveDir=Math.sign(g.x-pose.kx)||1;
+    if(g.w>0){
+      // Behind the ball along its flight (frozen at the line once it scores), raised and offset away from the keeper;
+      // after the line the aim settles on where the ball comes to rest in the net and the lens dollies in on it.
+      const pre=g.goalAt<0,bx=pre?pose.bx:g.x,bz=pre?pose.bz:GOAL_Z,dx=pre?s.ball.vx:g.dirX,dz=pre?s.ball.vz:g.dirZ,l=Math.hypot(dx,dz)||1;
+      const settle=pre?0:sm((now-g.goalAt)/GOAL_CAM.hold),back=GC_POSE.back-GC_POSE.dolly*settle;
+      chasePos.set(bx-dx/l*back+g.side*GC_POSE.side,GC_POSE.height,-(bz-dz/l*back));const rest=netRest3(g);chaseAim.set(g.x*.92,.72,-(GOAL_Z+.3)).lerp(rest,settle);
+    }
+  }
+  // Ball into the net after the line: it decelerates to the back, drops, and the net bulges around it, then settles.
+  function netShot(s,now,reduceMotion,sm){
+    const g=goalCam,t=now-g.goalAt,ta=g.key&&!reduceMotion?(t<.4?t*.4:.16+(t-.4)):t;
+    const depth=.62*(1-Math.exp(-ta*9)),lat=netLean(g);
+    ball.position.set(g.x+lat*depth,g.h+(.3-g.h)*sm(ta/.5),-(GOAL_Z+depth));
+    if(!farNetLines)return;
+    const a=farNetLines.geometry.attributes.position,arr=a.array;
+    if(ta>1.2){restoreNet();return;}
+    const env=ta<.1?ta/.1:Math.exp(-(ta-.1)*5)*Math.cos((ta-.1)*16);
+    for(let i=0;i<arr.length;i+=3){const x=netRest[i],y=netRest[i+1],z=netRest[i+2],f=Math.max(0,(.1-z)/.85);arr[i+2]=z-.3*f*env*Math.exp(-((x-g.x)**2+(y-g.h)**2)/.3);}
+    a.needsUpdate=true;netDirty=true;
+  }
+  function restoreNet(){if(!netDirty||!farNetLines)return;const a=farNetLines.geometry.attributes.position;a.array.set(netRest);a.needsUpdate=true;netDirty=false;}
   function update(s,axis=0,reduceMotion=false,time){
     clock=time??clock+1/60;const now=clock;
     if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
@@ -232,6 +300,7 @@ export function buildWorld(){
     // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
     const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    trackGoal(s,now,reduceMotion,pose,sm);
     const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
     lastReduce=reduceMotion;
     if(sk){arms[1].rotation.x=.32-wind*.85+blow*1.6;arms[0].rotation.x=.32-wind*.35+blow*.45;torso.rotation.y=-wind*.45+blow*.35;torso.rotation.x=blow*.12-wind*.05;}
@@ -243,13 +312,13 @@ export function buildWorld(){
     torso.rotation.x=punch*.06*strong;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
     leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
-    const k=s.keeper,dive=k.dive/.35;
-    keeper.position.set(pose.kx,0,-KEEPER_Z);keeper.rotation.z=k.diveDir*dive*.85;
-    goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);
+    const k=s.keeper,dive=Math.max(k.dive/.35,goalCam.dive),diveDir=k.dive>0?k.diveDir:goalCam.diveDir;
+    keeper.position.set(pose.kx,0,-KEEPER_Z);poseKeeper(dive,diveDir);
     const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
     goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
     const height=ballHeight(heightProbe);
     ball.position.set(pose.bx,height,-pose.bz);
+    if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
@@ -271,7 +340,8 @@ export function buildWorld(){
     aim.visible=!!arrow&&showHints;
     if(arrow){aim.position.set(arrow.x,0,-arrow.z);aim.rotation.y=-arrow.angle;aimMat.color.set(arrow.kind==='perfect'?'#ff7a3d':arrow.kind==='soft'?'#d7d2b8':'#ffffff');aimMat.opacity=recent&&!(p.kind==='clean'||p.kind==='perfect')?.55:.85;}
     const outgoing=s.shot&&s.ball.vz>0&&(s.phase==='playing'||s.phase==='goal'||s.phase==='won');
-    const fl=outgoing?predictFlight(s):null;
+    // The route and its end ring are ground hints for the normal view; the goal close-up hides them.
+    const fl=outgoing&&goalCam.w<.3?predictFlight(s):null;
     if(fl){
       // Red/green only says whether the keeper covers that line right now; it is not a promise of a goal.
       route.forEach((d,i)=>{const on=i+1<fl.count&&fl.zs[i+1]>s.ball.z;d.visible=on;if(on)d.position.set(fl.xs[i+1],.052,-fl.zs[i+1]);});
@@ -315,7 +385,7 @@ export function buildWorld(){
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(pose.bx,.035,-pose.bz);ballMarker.visible=ball.visible&&s.phase==='playing';
-    ballShadow.position.set(pose.bx,.038,-pose.bz);ballShadow.scale.setScalar(1.25-(height-.73)*.35);ballShadow.visible=ball.visible;
+    ballShadow.position.set(ball.position.x,.038,ball.position.z);ballShadow.scale.setScalar(1.25-(ball.position.y-.73)*.35);ballShadow.visible=ball.visible;
     if(s.phase!=='playing'&&s.phase!=='paused'){historyCount=0;lastBall=null;}
     else if(s.phase==='playing'&&!reduceMotion&&s.ball!==lastBall){lastBall=s.ball;}
     if(s.phase==='playing'&&!reduceMotion){history[historyHead].copy(ball.position);historyHead=(historyHead+1)%history.length;historyCount=Math.min(history.length,historyCount+1);}
@@ -339,7 +409,7 @@ export function buildWorld(){
     // shows bodies and swings instead of head-tops; the frame is the tightest one that still keeps both
     // goals, the side walls at the defender's depth and both players' heads in view. Only resize moves it.
     const wide=Math.min(1,Math.max(0,(aspect-.9)/.7));
-    camera.fov=39+3*wide;camera.updateProjectionMatrix();
+    camera.fov=baseFov=39+3*wide;camera.updateProjectionMatrix();
     const target=aim0.set(0,.4+.1*wide,-4.4+.5*wide);
     const offset=new THREE.Vector3(0,10,6.6).lerp(new THREE.Vector3(0,7.6,8.3),wide).sub(target);
     const boundary=[];
@@ -357,14 +427,19 @@ export function buildWorld(){
     banner.scale.set(hudSize.w*.82,hudSize.w*.82/4,1);banner.position.y=hudSize.h*.36;
   }
   // Camera shake is a pure render offset around the framed position.
+  let baseFov=39;
   const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3(),hudSize={w:1,h:1};
   // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
   // always comes from the latest resize, so a close-up never restores an old screen shape.
   function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
-    if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
+    if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}
+    else if(goalCam.w>0){camera.position.lerp(chasePos,goalCam.w);lookAt.copy(aim0).lerp(chaseAim,goalCam.w);camera.lookAt(lookAt);}
+    // The goal shot opens the lens a little for a closer, more dynamic frame; exactly the framed lens otherwise.
+    const fov=baseFov+(52-baseFov)*goalCam.w;if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+   if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,cine,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a

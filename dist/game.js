@@ -1,4 +1,4 @@
-import {SKILLS,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX} from './core.mjs';
+import {SKILLS,GOAL_CAM,goalLock,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX} from './core.mjs';
 import {createInput} from './input.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
@@ -10,7 +10,7 @@ const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,weapon='glove',game=createGame(),uiPhase='',soundOn=true,audio=null;
-let lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
+let resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const icons=Object.fromEntries(['glove','racket','sword'].map(id=>[id,icon(id)]));
 let matchStats=createMatchStats();
@@ -102,7 +102,9 @@ function selections(){
 function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,weapon,{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
-  if(game.phase===uiPhase)return;uiPhase=game.phase;
+  if(game.phase===uiPhase)return;
+  if(game.phase==='won'&&performance.now()<resultAt)return;
+  uiPhase=game.phase;
   const previous=document.body.dataset.screen,screen=screenFor(game.phase);document.body.dataset.screen=screen;
   $('start-match').disabled=game.phase!=='ready';
   if(game.phase==='ready'){$('overlay').hidden=true;}
@@ -356,7 +358,9 @@ function draw(dt){
 }
 function frame(time){
   const dt=lastTime?Math.min((time-lastTime)/1000,.05):0;lastTime=time;
-  stepGame(game,dt,input.axis());
+  // Key goals play their last moments in slow motion (goalLock); the rules just see ordinary, slower time.
+  const lock=reduceMotion?null:goalLock(game),slow=lock?.key&&lock.t<=GOAL_CAM.slowWindow?GOAL_CAM.slow:1;
+  stepGame(game,dt*slow,input.axis());
   const events=game.events;game.events=[];
   const aim={left:'偏左 ←',right:'偏右 →',straight:'直线 ↑'},say=text=>$('feedback').textContent=text;
   for(const e of events){
@@ -381,6 +385,8 @@ function frame(time){
     if(e==='tutorialStep'){verdict('好球！下一步','good');}
     if(e==='tutorialRetry'){verdict('再来一球','info');}
     if(e==='save'){verdict(teaching?'门将挡住了 · 换到空的一侧':game.lastShot==='perfect'?'重炮被扑住 · 门将封住了这条线':'被扑住 · 门将封住了这条线','bad');shake=Math.max(shake,.03);if(!teaching)say('终点变红说明门将挡在那条线上。换个方向，或借侧墙绕开它。');}
+    // The winning goal's camera shot plays out before the result card covers the court.
+    if(e==='goal'&&game.phase==='won')resultAt=performance.now()+1000*(reduceMotion?.3:game.lastGoal?.key?GOAL_CAM.hold+GOAL_CAM.back:.6);
     if(e==='goal'&&!teaching){verdict(game.lastShot==='perfect'?'重炮破门！':'进球！','good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
     if(e==='wide'){verdict('打偏了 · 球出了门框','bad');if(!teaching)say('角度太大会打到门外的墙。出手时机往中间收一点。');}
     if(e==='practice'){verdict(`练习球 · 不扣机会（还剩 ${game.practiceLeft}）`,'info');say('看地上的影子，移动到亮框里再挥击。');trail=[];}
