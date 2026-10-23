@@ -65,7 +65,7 @@ test('AC6 apex配置仅在最高点前后0.08秒给重炮，仍由时机决定�
 });
 test('AC7 三种触发都能蓄力至少0.5秒后实际打出重炮',()=>{
  for(const type of ['soft','shallow','fourth']){
-  const s=live();s.ball=solveShot({x:0,y:1,z:1.5},{x:0,z:type==='shallow'?6.8:8.2},{hitter:'player',kind:type==='soft'?'soft':'normal'});s.flight=predictFlight(s.ball);s.opponent.hits=type==='fourth'?3:0;
+  const s=live();s.ball=solveShot({x:0,y:1,z:1.5},{x:0,z:type==='shallow'?6.8:8.2},{hitter:'player',kind:type==='soft'?'soft':'normal'});s.flight=predictFlight(s.ball);s.opponent.hits=type==='fourth'?RALLY.heavyEvery-1:0;
   let tell=null,shot=null;
   for(let i=0;i<700&&!shot&&s.phase==='playing';i++){stepRally(s,1/120,0);for(const e of s.events){if(e.type==='heavyTell')tell=e.at;if(e.type==='opponentHit')shot=e;}}
   assert.ok(shot&&tell!==null,`${type}: ${JSON.stringify(s.records)}`);assert.equal(shot.kind,'heavy');assert.ok(shot.at-tell>=.5-1e-8);
@@ -74,7 +74,7 @@ test('AC7 三种触发都能蓄力至少0.5秒后实际打出重炮',()=>{
 test('AC8 重炮中心反制借力1.1倍并增加对手独立反制延迟；偏离窗口只能软回',()=>{
  for(const [t,kind] of [[0,'counter'],[.55,'soft']]){
   const s=live();receive(s,t,'heavy');s.ball.vz=-8;s.ball.vy=-1.2;s.ball.z=2.1+t*.6+.4;hit(s);assert.equal(s.lastShot.kind,kind);
-  if(kind==='counter'){assert.ok(Math.abs(Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz)-Math.hypot(8,1.5)*1.1)<.06);assert.ok(Math.abs(s.opponent.reaction-(RALLY.aiDelay+RALLY.counterDelay))<1e-8);assert.equal(s.point.counters,1);}
+  if(kind==='counter'){assert.ok(Math.abs(Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz)-Math.max(RALLY.counterMinSpeed,Math.hypot(8,1.5)*1.1))<.06);assert.ok(Math.abs(s.opponent.reaction-(RALLY.aiDelay+RALLY.counterDelay))<1e-8);assert.equal(s.point.counters,1);}
  }
 });
 test('AC9 对手被逼到10.3之后打重炮，首次落在玩家底线外，对手失分',()=>{
@@ -236,7 +236,7 @@ test('平衡空当选择逐个预演早晚真实挥拍，比较各自出手时�
 });
 
 function forcedHeavy(s){
- s.phase='playing';s.flight=null;s.swing=null;s.player.x=0;
+ s.phase='playing';s.flight=null;s.swing=null;s.player.x=0;s.point.hits=0;
  Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,reaction:0,heavy:true,intentDecided:true,chargeAt:s.elapsed-.6,hits:0});
  s.ball=ball({x:0,z:8.3,y:1,vz:3,bounces:1,kind:'soft'});stepRally(s,RALLY.dt);
  assert.equal(s.lastShot?.kind,'heavy');
@@ -261,7 +261,7 @@ function aimedShot(x,t,kind='normal'){
  s.player.x=x;s.ball.x=x;hit(s);return {ball:structuredClone(s.ball),kind:s.lastShot.kind};
 }
 test('第2轮 AC11 同一时机在三个横向位置落到同一球场位置，早左晚右且全程单调',()=>{
- for(const [t,kind] of [[-.5,'normal'],[.5,'normal'],[.1,'heavy'],[.55,'heavy']]){
+ for(const [t,kind] of [[-.5,'normal'],[.5,'normal'],[.1,'normal'],[.55,'heavy']]){
   const shots=[-2.8,0,2.8].map(x=>aimedShot(x,t,kind));
   assert.ok(Math.max(...shots.map(s=>s.ball.target.x))-Math.min(...shots.map(s=>s.ball.target.x))<=.05);
   assert.ok(shots.every(s=>Math.sign(s.ball.target.x)===-Math.sign(t)));
@@ -324,5 +324,56 @@ test('第2轮 普通落点策略可周期性打合法边路，仍保持普通球
   s.ball=ball({x:0,z:8.3,y:1,vz:3,bounces:1});stepRally(s,RALLY.dt);
   assert.equal(s.lastShot.kind,'normal');assert.ok(Math.abs(s.ball.target.x)>=3.28);assert.ok(Math.abs(s.flight.firstBounce.x)<=3.4+1e-8);assert.ok(Math.abs(s.flight.firstBounce.z-RALLY.aiNormalDepth)<1e-8);
  }finally{for(const [key,value] of [['aiNormalWideEvery',previous.every],['aiNormalWideX',previous.x]]){if(value===undefined)delete RALLY[key];else RALLY[key]=value;}}
+});
+
+test('第3轮 AC12 反制自动打当前空当，与时机正负无关，有保底且不叠加回合加速',()=>{
+ for(const opponentX of [-2,0,2])for(const playerX of [-2,2])for(const t of [-.1,.1]){
+  const s=live();receive(s,t,'heavy');s.ball.vz=-8;s.ball.z=2.1+t*.6+.4;s.ball.x=s.player.x=playerX;
+  s.opponent.x=opponentX;s.point.hits=40;hit(s);assert.equal(s.lastShot.kind,'counter');
+  const side=Math.sign(s.opponent.x)||Math.sign(s.player.x)||1;
+  assert.ok(Math.abs(s.ball.target.x+side*RALLY.counterAimX)<1e-8);
+  assert.ok(Math.abs(Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz)-RALLY.counterMinSpeed)<1e-8);
+  assert.equal(s.point.heavyChain,0);
+ }
+ const s=live();receive(s,0,'heavy');s.ball.vz=-20;s.ball.z=3.1;hit(s);assert.equal(s.lastShot.kind,'counter');assert.ok(Math.abs(Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz)-RALLY.counterMax)<1e-8);
+});
+
+test('第3轮 AC13 普通软球按已经发生的拍数缩短飞行时间，重炮合并倍率不穿透上限',()=>{
+ for(const [t,time] of [[.5,RALLY.normalTime],[.95,RALLY.softTime]])for(const n of [0,4,19]){
+  const s=live();receive(s,t);s.point.hits=n;hit(s);
+  const factor=Math.min(RALLY.rallyCap,1+RALLY.rallyStep*n);
+  assert.ok(Math.abs(s.ball.flightTime-time/factor)<1e-8);assert.ok(Math.abs(s.ball.rallyMultiplier-factor)<1e-8);
+ }
+ const s=live();s.point.heavyChain=2;s.point.hits=20;s.flight=null;s.swing=null;
+ Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,reaction:0,heavy:true,intentDecided:true,chargeAt:s.elapsed-.6,hits:0});
+ s.ball=ball({x:0,z:8.3,y:1,vz:3,bounces:1,kind:'soft'});stepRally(s,RALLY.dt);
+ const multiplier=Math.min(RALLY.heavyRampCap,Math.min(RALLY.rallyCap,1+RALLY.rallyStep*20)*(1+RALLY.heavyRamp*2));
+ assert.ok(Math.abs(Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz)/s.ball.heavyBaseSpeed-multiplier)<1e-8);
+ assert.ok(s.ball.heavyMultiplier<=RALLY.heavyRampCap);
+});
+
+test('第3轮 AC13 新一分的第一拍发球倍率恢复1，玩家重炮仅叠加本分加速',()=>{
+ const s=live();s.point.hits=40;s.flight=null;s.ball=ball({z:8,y:.15,vy:-1,bounces:1});stepRally(s,.03);
+ let served=false;for(let i=0;i<400&&!served;i++){stepRally(s,RALLY.dt);served=s.events.some(e=>e.type==='serve');}
+ assert.ok(served);assert.equal(s.point.hits,1);assert.equal(s.ball.rallyMultiplier,1);
+ const speeds=[];for(const n of [0,20]){const q=live();receive(q,0);q.point.hits=n;hit(q);assert.equal(q.lastShot.kind,'power');speeds.push(Math.hypot(q.ball.vx,q.ball.vy,q.ball.vz));}
+ assert.ok(Math.abs(speeds[1]/speeds[0]-Math.min(RALLY.heavyRampCap,RALLY.rallyCap))<1e-8);
+});
+
+test('第3轮 AC14 重炮间隔3到5可调，普通触发按期发生且每次前兆不少于0.5秒',()=>{
+ const previous=RALLY.heavyEvery;
+ try{for(const period of [3,4,5])for(let ordinal=1;ordinal<=period;ordinal++){
+  RALLY.heavyEvery=period;const s=live();s.opponent.hits=ordinal-1;
+  s.ball=solveShot({x:0,y:1,z:1.5},{x:0,z:8.2},{hitter:'player',kind:'normal'});s.flight=predictFlight(s.ball);
+  let tell=null,shot=null;for(let i=0;i<700&&s.phase==='playing'&&!shot;i++){stepRally(s,RALLY.dt);for(const e of s.events){if(e.type==='heavyTell')tell=e;if(e.type==='opponentHit')shot=e;}}
+  assert.ok(shot);assert.equal(shot.kind,ordinal===period?'heavy':'normal');
+  if(ordinal===period){assert.ok(tell);assert.ok(shot.at-tell.at>=.5-1e-8);}else assert.equal(tell,null);
+ }}finally{if(previous===undefined)delete RALLY.heavyEvery;else RALLY.heavyEvery=previous;}
+});
+
+test('第3轮 实验只能使用获准的新参数范围，间隔必须为整数',async()=>{
+ const {validateBalanceParameters}=await import('../scripts/rally-balance.mjs');assert.equal(typeof validateBalanceParameters,'function');
+ assert.equal(validateBalanceParameters(RALLY),true);
+ for(const [key,value] of [['counterAimX',2.39],['counterAimX',3.21],['counterMinSpeed',9.99],['counterMinSpeed',12.51],['rallyStep',.019],['rallyStep',.061],['rallyCap',1.29],['rallyCap',1.61],['heavyEvery',2],['heavyEvery',6],['heavyEvery',3.5]])assert.throws(()=>validateBalanceParameters({...RALLY,[key]:value}),RangeError);
 });
 

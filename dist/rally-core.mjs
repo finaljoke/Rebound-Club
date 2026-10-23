@@ -1,12 +1,13 @@
 // Pure, deterministic wall-tennis rules. Rendering never decides collisions.
 export const RALLY={
  side:3.82,netZ:5,netHeight:.62,gravity:6,radius:.14,bounceY:.72,bounceXZ:.9,dt:1/120,
- targetScore:5,serveDelay:.8,pointDelay:1.2,playerSpeed:6.2,depthSpeed:3.8,aiChaseSpeed:2.8,aiRecoverSpeed:.3,aiWideX:1.8,aiStagger:.3,aiDelay:.25,
+ targetScore:5,serveDelay:.8,pointDelay:1.2,playerSpeed:6.2,depthSpeed:3.8,aiChaseSpeed:5,aiRecoverSpeed:.6,aiWideX:1.8,aiStagger:.3,aiDelay:.25,
  width:1.08,aiWidth:.40,reach:1.2,near:.12,minHeight:.2,maxHeight:1.7,windup:.05,active:.13,recovery:.2,whiff:.5,
  perfect:.3,counterWindow:.18,apexWindow:.08,counterScale:1.1,counterMax:12.5,counterDelay:.4,tell:.5,tellMargin:.1,
  normalTime:1.65,powerTime:1.32,softTime:1.85,heavyTime:1.0,heavyMinSpeed:8,
  normalDepth:8.1,powerDepth:7.7,softDepth:6.8,counterDepth:9.2,aimInner:3.2,aimEdge:3.4,
- heavyRamp:.2,heavyRampCap:1.5,heavyWiden:.2,
+ heavyRamp:.2,heavyRampCap:1.5,heavyWiden:.05,
+ counterAimX:2.9,counterMinSpeed:11,rallyStep:.04,rallyCap:1.5,heavyEvery:4,
  aiNormalCenterEvery:0,aiNormalDepth:1.65,aiCounterReplyDepth:1.65,aiCounterReplyCenter:0,
  aiNormalWideEvery:0,aiNormalWideX:3.4,
  playerMinZ:-2.1,playerMaxZ:3.3,aiMinZ:6.7,aiMaxZ:11.65
@@ -128,7 +129,7 @@ function launched(s,b,kind,hitter){
   s.opponent.stagger=Math.abs(b.x)>RALLY.aiWideX?RALLY.aiStagger:0;
   if(kind==='heavy'){s.point.opponentHeavy++;s.point.facedHeavy++;s.point.heavyChain++;s.point.heavyPeak=Math.max(s.point.heavyPeak,s.point.heavyChain);}
  }
- emit(s,hitter==='player'?'playerHit':'opponentHit',{kind,...(kind==='heavy'?{level:b.heavyLevel,multiplier:b.heavyMultiplier,baseSpeed:b.heavyBaseSpeed}:{})});if(kind==='counter')emit(s,'counter');
+ emit(s,hitter==='player'?'playerHit':'opponentHit',{kind,rallyMultiplier:b.rallyMultiplier,...(kind==='heavy'?{level:b.heavyLevel,multiplier:b.heavyMultiplier,baseSpeed:b.heavyBaseSpeed}:{})});if(kind==='counter')emit(s,'counter');
 }
 function finishPoint(s,reason,loser){
  if(s.phase!=='playing')return;
@@ -143,7 +144,7 @@ function finishPoint(s,reason,loser){
 function decideOpponent(s){
  const a=s.opponent;if(a.intentDecided||s.ball.hitter!=='player')return;
  a.intentDecided=true;if(!s.heavyEnabled)return;
- const wantsHeavy=s.ball.kind==='soft'||(s.flight?.firstBounce?.z??s.ball.target?.z??9)<7.2||(a.hits+1)%4===0;
+ const wantsHeavy=s.ball.kind==='soft'||(s.flight?.firstBounce?.z??s.ball.target?.z??9)<7.2||(a.hits+1)%RALLY.heavyEvery===0;
  if(!wantsHeavy)return;
  const contact=s.flight?.contact,remaining=contact?contact.age-s.ball.age:0,chaseTime=Math.max(0,remaining-a.reaction);
  const distance=contact?Math.abs(contact.x-a.x):Infinity;
@@ -179,12 +180,21 @@ export function playerAim(t){
  const x=side*(bank?RALLY.aimInner+(RALLY.aimEdge-RALLY.aimInner)*clamp((u-.7)/.3,0,1):RALLY.aimInner*Math.sin(u/.7*Math.PI*.5));
  return {x,bank:bank?side:0};
 }
+export function rallyMultiplier(s){return Math.min(RALLY.rallyCap,1+RALLY.rallyStep*(s.point?.hits??0));}
 function playerStrike(s){
  const b=s.ball,t=timing(b,s.player),kind=shotKind(s,b,t);
- const target={...playerAim(t),z:kind==='soft'?RALLY.softDepth:kind==='counter'?RALLY.counterDepth:kind==='power'?RALLY.powerDepth:RALLY.normalDepth};
+ const aim=kind==='counter'?{x:-(Math.sign(s.opponent.x)||Math.sign(s.player.x)||1)*RALLY.counterAimX,bank:0}:playerAim(t);
+ const target={...aim,z:kind==='soft'?RALLY.softDepth:kind==='counter'?RALLY.counterDepth:kind==='power'?RALLY.powerDepth:RALLY.normalDepth};
  const incoming=Math.hypot(b.vx,b.vy,b.vz),options={hitter:'player',kind,flightTime:kind==='soft'?RALLY.softTime:kind==='power'?RALLY.powerTime:RALLY.normalTime};
- if(kind==='counter')options.speed=Math.min(RALLY.counterMax,incoming*RALLY.counterScale);
- const next=solveShot(b,target,options);s.swing.hit=true;if(kind==='counter')s.point.counters++;
+ const factor=kind==='counter'?1:rallyMultiplier(s);let next;
+ if(kind==='counter'){
+  options.speed=Math.min(RALLY.counterMax,Math.max(RALLY.counterMinSpeed,incoming*RALLY.counterScale));next=solveShot(b,target,options);
+ }else if(kind==='power'){
+  const base=solveShot(b,target,options),multiplier=Math.min(RALLY.heavyRampCap,factor);
+  next=multiplier===1?base:solveShot(b,target,{hitter:'player',kind,speed:Math.hypot(base.vx,base.vy,base.vz)*multiplier});
+ }else{options.flightTime/=factor;next=solveShot(b,target,options);}
+ next.rallyMultiplier=kind==='power'?Math.min(RALLY.heavyRampCap,factor):factor;
+ s.swing.hit=true;if(kind==='counter')s.point.counters++;
  launched(s,next,kind,'player');
 }
 function opponentStrike(s){
@@ -194,12 +204,13 @@ function opponentStrike(s){
  const target={x:center?0:clamp((s.player.x>=0?-corner:corner)+.12*Math.sin((a.hits+1)*2.3),-3.4,3.4),z:out?-.7:kind==='heavy'?1.65:b.kind==='counter'?RALLY.aiCounterReplyDepth:RALLY.aiNormalDepth};
  const distance=Math.hypot(target.x-b.x,target.z-b.z);
  const time=kind==='heavy'?Math.min(RALLY.heavyTime,distance/RALLY.heavyMinSpeed):RALLY.normalTime;
- let next=solveShot(b,target,{hitter:'opponent',kind,flightTime:time});
+ const factor=rallyMultiplier(s);let next=solveShot(b,target,{hitter:'opponent',kind,flightTime:kind==='heavy'?time:time/factor});
+ next.rallyMultiplier=factor;
  if(kind==='heavy'){
-  const level=s.point.heavyChain+1,multiplier=Math.min(RALLY.heavyRampCap,1+RALLY.heavyRamp*(level-1));
+  const level=s.point.heavyChain+1,pressure=Math.min(RALLY.heavyRampCap,1+RALLY.heavyRamp*(level-1)),multiplier=Math.min(RALLY.heavyRampCap,factor*pressure);
   const baseSpeed=Math.hypot(next.vx,next.vy,next.vz),wide={...target,x:clamp(target.x+Math.sign(target.x)*RALLY.heavyWiden*(level-1),-3.4,3.4)};
-  if(level>1)next=solveShot(b,wide,{hitter:'opponent',kind,speed:baseSpeed*multiplier});
-  Object.assign(next,{heavyLevel:level,heavyMultiplier:multiplier,heavyBaseSpeed:baseSpeed});
+  if(level>1||multiplier>1)next=solveShot(b,wide,{hitter:'opponent',kind,speed:baseSpeed*multiplier});
+  Object.assign(next,{heavyLevel:level,heavyMultiplier:multiplier,heavyBaseSpeed:baseSpeed,rallyMultiplier:factor,pressureMultiplier:pressure});
  }
  a.hits++;launched(s,next,kind,'opponent');
 }
@@ -228,7 +239,8 @@ function tick(s,dt,axis){
  if(s.phase==='serving'){
   s.countdown-=dt;if(s.countdown<=EPS){
    s.phase='playing';const server=s.point.server,origin=s.ball,target={x:(s.records.length%2?1:-1)*1.2,z:server==='player'?8.1:1.9};
-   launched(s,solveShot(origin,target,{hitter:server,kind:'serve',flightTime:1.65}),'serve',server);emit(s,'serve',{server});
+   const factor=rallyMultiplier(s),shot=solveShot(origin,target,{hitter:server,kind:'serve',flightTime:1.65/factor});shot.rallyMultiplier=factor;
+   launched(s,shot,'serve',server);emit(s,'serve',{server});
   }return;
  }
  if(s.phase==='point'){s.countdown-=dt;if(s.countdown<=EPS)newPoint(s);return;}

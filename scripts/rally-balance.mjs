@@ -6,7 +6,7 @@ import * as liveCore from '../dist/rally-core.mjs';
 const core=process.argv.includes('--baseline')?await import('data:text/javascript;base64,'+Buffer.from(execFileSync('git',['show','0040c3a:dist/rally-core.mjs'])).toString('base64')):liveCore;
 const {RALLY,createRally,startRally,stepRally,attackRally,advanceBall}=core;
 
-export const EXPERIMENT={controller:'world-side-pressure-v2',seed:0x20261023,matches:200,sigmas:[.12,.25,.40],strategies:['N','C','S'],reaction:.18,maxSteps:60000};
+export const EXPERIMENT={controller:'open-counter-rally-v3',seed:0x20261023,matches:200,sigmas:[.12,.25,.40],strategies:['N','C','S'],reaction:.18,maxSteps:60000};
 const mean=values=>values.length?values.reduce((a,b)=>a+b,0)/values.length:null;
 function distribution(values){
  const sorted=[...values].sort((a,b)=>a-b),n=sorted.length;
@@ -74,7 +74,7 @@ export function simulateMatch({strategy,sigma,seed,maxSteps=EXPERIMENT.maxSteps,
    incoming=s.ball;readyAt=s.elapsed+EXPERIMENT.reaction;attempted=false;
    goal=desiredTiming(s,strategy,sigma,seed+Math.imul(pointNumber+1,0x85ebca6b),shot++);
    pendingHeavy=s.ball.kind==='heavy';
-   incomingFact={point:pointNumber+1,kind:s.ball.kind,outcome:'unresolved',level:s.ball.heavyLevel??0,multiplier:s.ball.heavyMultiplier??1,targetX:s.ball.target?.x??null};incomingRecords.push(incomingFact);
+   incomingFact={point:pointNumber+1,kind:s.ball.kind,outcome:'unresolved',level:s.ball.heavyLevel??0,multiplier:s.ball.heavyMultiplier??1,rallyMultiplier:s.ball.rallyMultiplier??1,speed:Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz),targetX:s.ball.target?.x??null};incomingRecords.push(incomingFact);
   }
   let axis=0;
   if(s.phase==='playing'&&s.ball.hitter==='opponent'&&s.elapsed>=readyAt){
@@ -86,7 +86,7 @@ export function simulateMatch({strategy,sigma,seed,maxSteps=EXPERIMENT.maxSteps,
   }
   const before=s.records.length;stepRally(s,RALLY.dt,axis);
   for(const e of s.events){
-   if(trace&&(e.type==='playerHit'||e.type==='opponentHit'))shots.push({point:s.records.length+1,at:e.at,hitter:s.ball.hitter,kind:e.kind,goal,level:e.level,multiplier:e.multiplier,baseSpeed:e.baseSpeed,speed:Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz),playerX:s.player.x,opponentX:s.opponent.x,origin:s.lastShot,target:s.ball.target,contact:s.flight?.contact});
+   if(trace&&(e.type==='playerHit'||e.type==='opponentHit'))shots.push({point:s.records.length+1,at:e.at,hitter:s.ball.hitter,kind:e.kind,goal,level:e.level,multiplier:e.multiplier,rallyMultiplier:e.rallyMultiplier,baseSpeed:e.baseSpeed,speed:Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz),playerX:s.player.x,opponentX:s.opponent.x,origin:s.lastShot,target:s.ball.target,contact:s.flight?.contact});
    if(e.type==='heavySkipped')skipped++;
    if(e.type==='playerHit'){
     if(incomingFact){incomingFact.outcome='returned';incomingFact.response=e.kind;}
@@ -121,8 +121,16 @@ export function experimentValid(groups,matches){
  if(groups.filter(g=>g.strategy==='N'&&g.sigma===.25&&g.heavyEnabled===false).length!==1)return false;
  return groups.every(g=>g.matches===matches&&g.completed===matches&&g.unfinished.length===0&&Number.isFinite(g.maxMatchSeconds)&&g.maxMatchSeconds<=500+1e-7);
 }
+export function validateBalanceParameters(p=RALLY){
+ const ranges={heavyRamp:[.08,.2],heavyRampCap:[1.2,1.5],counterAimX:[2.4,3.2],counterMinSpeed:[10,12.5],rallyStep:[.02,.06],rallyCap:[1.3,1.6]};
+ for(const [key,[min,max]] of Object.entries(ranges))if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw new RangeError(key+' outside approved range');
+ if(!Number.isInteger(p.heavyEvery)||p.heavyEvery<3||p.heavyEvery>5)throw new RangeError('heavyEvery must be an integer from 3 to 5');
+ if(p.aimInner<2.9||p.aimInner>p.aimEdge||p.aimEdge>3.4)throw new RangeError('Aim coefficients must preserve monotonic side-lane targets');
+ return true;
+}
 export function runBalance({matches=EXPERIMENT.matches,progress=false}={}){
- if(typeof core.playerAim!=='function')throw Error('Round 2 protocol needs B4/F rules and a true heavy-disabled control; historical Round 1 data are archived in artifacts/rally/round1.');
+ if(typeof core.rallyMultiplier!=='function')throw Error('Current protocol needs the approved G/H/B5 rules; prior-round experiments are archived separately.');
+ validateBalanceParameters();
  const groups=[];
  const cases=EXPERIMENT.sigmas.flatMap(sigma=>EXPERIMENT.strategies.map(strategy=>({strategy,sigma,heavyEnabled:true})));cases.push({strategy:'N',sigma:.25,heavyEnabled:false});
  for(const {strategy,sigma,heavyEnabled} of cases){
@@ -148,10 +156,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  if(!Number.isInteger(matches)||matches<1)throw Error('matches must be a positive integer');
  if(argument('--params')){
   const parameters=JSON.parse(await readFile(argument('--params'),'utf8'));
-  const allowed=['aiChaseSpeed','aiRecoverSpeed','aiWideX','aiStagger','tellMargin','counterDelay','aiNormalCenterEvery','aiNormalDepth','aiCounterReplyDepth','aiCounterReplyCenter','aiNormalWideEvery','aiNormalWideX','heavyRamp','heavyRampCap','heavyWiden','aimInner','aimEdge'];
+  const allowed=['aiChaseSpeed','aiRecoverSpeed','aiWideX','aiStagger','tellMargin','counterDelay','aiNormalCenterEvery','aiNormalDepth','aiCounterReplyDepth','aiCounterReplyCenter','aiNormalWideEvery','aiNormalWideX','heavyRamp','heavyRampCap','heavyWiden','aimInner','aimEdge','counterAimX','counterMinSpeed','rallyStep','rallyCap','heavyEvery'];
   for(const [key,value] of Object.entries(parameters)){if(!allowed.includes(key)||!Number.isFinite(value)||value<0)throw Error('Unsupported balance parameter '+key);RALLY[key]=value;}
-  if(RALLY.heavyRamp<.08||RALLY.heavyRamp>.2||RALLY.heavyRampCap<1.2||RALLY.heavyRampCap>1.5)throw Error('Pressure parameters outside approved ranges');
-  if(RALLY.aimInner<2.9||RALLY.aimInner>RALLY.aimEdge||RALLY.aimEdge>3.4)throw Error('Aim coefficients must preserve monotonic side-lane targets');
+  validateBalanceParameters();
  }
  const report=runBalance({matches,progress:true});await mkdir('artifacts/rally',{recursive:true});await writeFile(output,JSON.stringify(report,null,2)+'\n');
  console.table(report.groups.map(g=>({strategy:g.strategy,sigma:g.sigma,heavyEnabled:g.heavyEnabled,completed:g.completed,points:g.points,win:g.pointWinRate,medianHits:g.hits.median,meanHits:g.hits.mean,ordinaryMiss:g.incoming.ordinary.failureRate,heavyMiss:g.incoming.heavy.failureRate,counterWin:g.heavyResponses.counter.pointWinRate,heavyPerPoint:g.heavy.perPoint,skipped:g.heavySkipped.total})));
