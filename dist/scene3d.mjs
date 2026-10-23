@@ -196,6 +196,21 @@ export function buildWorld(){
   fxParts.slash.add(new THREE.Mesh(new THREE.RingGeometry(.34,.43,28,1,-.2,Math.PI*.85),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.47,.5,28,1,0,Math.PI*.7),fxMat()));
   fx.traverse(fxLayer);
   let fxShot=null,fxStart=-1,fxFeel=null,clock=0;
+  // Side-wall impact: a ring on the wall face at the contact point, growing and fading in 0.35 s (two pooled, built once).
+  const wallFx=[0,1].map(()=>{const g=new THREE.Group(),mat=new THREE.MeshBasicMaterial({color:'#fff4d2',transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+    const outer=new THREE.Mesh(new THREE.RingGeometry(.2,.26,28),mat),inner=new THREE.Mesh(new THREE.RingGeometry(.08,.12,20),mat);outer.rotation.y=inner.rotation.y=Math.PI/2;g.add(outer,inner);
+    g.visible=false;g.userData={start:-9,power:1,mat};scene.add(g);return g;});
+  const wallSeen={state:null,vx:0,vz:0};let wallNext=0;
+  function wallImpacts(s,now){
+    const b=s.ball,seen=wallSeen;
+    // A side-wall bounce flips only the sideways velocity, right at a wall; hits and saves also turn the ball back.
+    if(seen.state===s&&s.phase==='playing'&&seen.vx!==0&&Math.sign(b.vx)!==Math.sign(seen.vx)&&Math.sign(b.vz)===Math.sign(seen.vz)&&Math.abs(b.x)>SIDE-.6){
+      const fx=wallFx[wallNext];wallNext=(wallNext+1)%wallFx.length;
+      fx.position.set(Math.sign(seen.vx)*(SIDE+.02),ball.position.y,ball.position.z);fx.userData.start=now;fx.userData.power=Math.min(1,Math.hypot(b.vx,b.vz)/10);
+    }
+    seen.state=s;seen.vx=b.vx;seen.vz=b.vz;
+    for(const fx of wallFx){const u=(now-fx.userData.start)/.35;fx.visible=u>=0&&u<1;if(fx.visible){fx.scale.setScalar(.6+u*(1.2+1.2*fx.userData.power));fx.userData.mat.opacity=.85*(1-u);}}
+  }
   // Ring buffer for the ball trail: positions are copied into fixed vectors, never allocated per frame.
   const history=Array.from({length:trail.length},()=>new THREE.Vector3());let historyCount=0,historyHead=0;
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
@@ -336,7 +351,7 @@ export function buildWorld(){
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
     // Speed reads in the trail: from 3 up to 10 it grows brighter and thicker (the gaps already widen with speed).
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
-    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);
+    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
@@ -453,7 +468,7 @@ export function buildWorld(){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a

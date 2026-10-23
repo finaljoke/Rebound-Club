@@ -62,3 +62,17 @@ test('拖尾随球速变亮变粗：快球明显，慢球保持原样',()=>{
   assert.ok(fast.opacity>slow.opacity*2&&fast.scale>1.3,`快球 ${fast.opacity.toFixed(2)} / ${fast.scale.toFixed(2)}`);
   assert.ok(serve.opacity>slow.opacity&&serve.opacity<fast.opacity);
 });
+
+import {SIDE} from '../dist/core.mjs';
+test('撞墙时在撞击点出现冲击圈并很快消失；击球改变方向不会触发',()=>{
+  for(const side of [-1,1]){
+    const w=buildWorld(),s=playing();const b=s.ball;b.x=side*3.2;b.z=5;b.vx=side*3;b.vz=5;b.z0=5;b.z1=9.7;b.curve=null;
+    let now=0,at=null,hitZ=null;
+    for(let i=0;i<60;i++){stepGame(s,1/60,0);now+=1/60;if(s.events.includes('wall')&&at===null){at=now;hitZ=s.ball.z;}w.update(s,0,false,now);
+      if(at!==null&&now-at<.1){const fx=w.wallFx.find(m=>m.visible);assert.ok(fx,'冲击圈出现');assert.ok(Math.abs(Math.abs(fx.position.x)-SIDE)<.15&&Math.sign(fx.position.x)===side,`位置 x=${fx.position.x}`);assert.ok(Math.abs(-fx.position.z-hitZ)<.4,'在撞击处');}
+      if(at!==null&&now-at>.5)assert.ok(w.wallFx.every(m=>!m.visible),'很快消失');}
+    assert.ok(at!==null,'确实撞墙');
+  }
+  const w=buildWorld(),s=playing();w.update(s,0,false,0);s.ball.x=0;s.ball.vx=2;w.update(s,0,false,.02);s.ball.vx=-2;s.ball.vz=-s.ball.vz;w.update(s,0,false,.04);
+  assert.ok(w.wallFx.every(m=>!m.visible),'场地中间的方向变化不触发');
+});
