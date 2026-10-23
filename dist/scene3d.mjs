@@ -109,7 +109,7 @@ export function buildWorld(){
   const skin=player.skin;scene.add(hero);hero.position.set(0,0,-1.6);
   const goalie=buildAthlete({jersey:'#356f91',accent:'#edc25e',number:'1',goalie:true}),keeper=goalie.group;
   scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
-  for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#edc25e',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
+  for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#eef2ee',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
   const leftHand=buildGlove('#ed6941',-1);leftHand.group.position.set(-.015,-.44,-.015);arms[0].add(leftHand.group);
   const leftGlove=leftHand.body;
   const gear={glove:new THREE.Group(),racket:new THREE.Group(),sword:new THREE.Group()};
@@ -243,8 +243,11 @@ export function buildWorld(){
   // After the line the ball carries on into the net, which bulges and settles; the beaten keeper dives at it.
   // All of it runs on the render clock, so it keeps playing while the match sits in 'goal' or 'won'.
   const goalCam={w:0,on:false,key:false,start:0,goalAt:-1,x:0,dirX:0,dirZ:1,h:.73,goals:0,state:null,dive:0,diveDir:1,side:1},chasePos=new THREE.Vector3(),chaseAim=new THREE.Vector3();
+  let keeperReady=0,keeperClock=null;
   // Keeper dive pose (0 standing, 1 full stretch), shared by saves and the beaten keeper's reaction.
-  function poseKeeper(dive,dir){keeper.rotation.z=dir*dive*.85;goalie.arms[0].rotation.z=-.45-dive*1.1;goalie.arms[1].rotation.z=.45+dive*1.1;goalie.arms.forEach(a=>a.rotation.x=.5);}
+  // Standing, the arms stay close (the model's reach at ball height then sits near the 0.55 save reach); a full dive
+  // raises them as far as before.
+  function poseKeeper(dive,dir){keeper.rotation.z=dir*dive*.85;goalie.arms[0].rotation.z=-.15-dive*1.4;goalie.arms[1].rotation.z=.15+dive*1.4;goalie.arms.forEach(a=>a.rotation.x=.5);}
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each dive amount, measured once from the
   // model. A beaten keeper never stretches nearer the ball's path than standing still would put it.
   const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x;
@@ -340,7 +343,10 @@ export function buildWorld(){
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
     leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
     const k=s.keeper,dive=Math.max(k.dive/.35,goalCam.dive),diveDir=k.dive>0?k.diveDir:goalCam.diveDir;
-    keeper.position.set(pose.kx,0,-KEEPER_Z);poseKeeper(dive,diveDir);
+    // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
+    const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
+    keeperReady+=(readyTo-keeperReady)*Math.min(1,since*9);
+    keeper.position.set(pose.kx,-.07*keeperReady,-KEEPER_Z);goalie.torso.rotation.x=.16*keeperReady;poseKeeper(dive,diveDir);
     const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
     goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
     const height=ballHeight(heightProbe);
