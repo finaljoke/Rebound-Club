@@ -228,7 +228,7 @@ export function buildWorld(){
   fxParts.ring.add(new THREE.Mesh(new THREE.RingGeometry(.22,.26,32),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.36,.385,32),fxMat()));
   fxParts.slash.add(new THREE.Mesh(new THREE.RingGeometry(.34,.43,28,1,-.2,Math.PI*.85),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.47,.5,28,1,0,Math.PI*.7),fxMat()));
   fx.traverse(fxLayer);
-  let fxShot=null,fxStart=-1,fxFeel=null,clock=0;
+  let fxShot=null,fxStart=-1,fxFeel=null,clock=0,wallClock=null;
   // Side-wall impact: a ring on the wall face at the contact point, growing and fading in 0.35 s (two pooled, built once).
   const wallFx=[0,1].map(()=>{const g=new THREE.Group(),mat=new THREE.MeshBasicMaterial({color:'#fff4d2',transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
     const outer=new THREE.Mesh(new THREE.RingGeometry(.2,.26,28),mat),inner=new THREE.Mesh(new THREE.RingGeometry(.08,.12,20),mat);outer.rotation.y=inner.rotation.y=Math.PI/2;g.add(outer,inner);
@@ -342,7 +342,9 @@ export function buildWorld(){
   }
   function restoreNet(){if(!netDirty||!farNetLines)return;const a=farNetLines.geometry.attributes.position;a.array.set(netRest);a.needsUpdate=true;netDirty=false;}
   function update(s,axis=0,reduceMotion=false,time){
-    clock=time??clock+1/60;const now=clock;
+    // Scene clock: follows the caller's time but stands still while the match is paused, so every effect timed on it
+    // (crowd, wall rings, net, camera blends, keeper easing) freezes with the pause and resumes where it was.
+    const raw=time??(wallClock??0)+1/60,step=wallClock===null?0:Math.max(0,Math.min(.25,raw-wallClock));wallClock=raw;if(s.phase!=='paused')clock+=step;const now=clock;
     if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}

@@ -53,3 +53,17 @@ test('进球后观众跳起欢呼，下一次发球前回到座位；轮廓光�
   const after=crowdPositions(w).map(p=>p.y);assert.ok(after.every((y,k)=>Math.abs(y-rest[k])<.03),'发球时回到座位');
   const rim=w.scene.children.find(o=>o.isDirectionalLight&&o.name==='rim');assert.ok(rim&&!rim.castShadow&&rim.position.z<-6,'远端轮廓光');
 });
+
+import {pauseGame,resumeGame} from '../dist/core.mjs';
+test('暂停时整个画面静止：观众、撞墙冲击圈、门将姿态、镜头都不随真实时间变化，恢复后接着播',()=>{
+  const w=buildWorld(),s=playing();w.resize(.65);
+  const b=s.ball;b.x=3.2;b.z=5;b.vx=3;b.vz=5;b.z0=5;b.z1=9.7;b.curve=null;let now=0,walled=false;
+  for(let i=0;i<60&&!walled;i++){stepGame(s,1/60,0);now+=1/60;walled=s.events.includes('wall');w.update(s,0,false,now);w.shake(0);}
+  assert.ok(walled&&w.wallFx.some(m=>m.visible),'撞墙效果进行中');
+  pauseGame(s);w.update(s,0,false,now+=1/60);w.shake(0);
+  const snap=()=>JSON.stringify({crowd:Array.from(w.crowd.instanceMatrix.array),fx:w.wallFx.map(m=>[m.visible,m.scale.x]),keeper:w.keeper.position.toArray(),cam:w.camera.position.toArray()});
+  const frozen=snap();for(let i=0;i<60;i++){w.update(s,0,false,now+=1/60);w.shake(0);}
+  assert.equal(snap(),frozen,'暂停一秒后画面不变');
+  resumeGame(s);for(let i=0;i<30;i++){stepGame(s,1/60,0);w.update(s,0,false,now+=1/60);w.shake(0);}
+  assert.notEqual(snap(),frozen,'恢复后接着播');
+});

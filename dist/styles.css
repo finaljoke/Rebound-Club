@@ -79,3 +79,25 @@ body[data-tutorial=on] .skill-dock{visibility:hidden}
 @media(max-width:380px){.skill-dock{width:96px}.skill-button{min-width:44px}.attack-button{width:64px;height:64px}}
 @media(max-height:570px) and (min-width:701px){body[data-screen=match] .attack-wrap,body[data-screen=paused] .attack-wrap{flex-direction:column;gap:8px}}
 @media(max-width:359px){.controls{padding-left:0;padding-right:0;gap:8px}.move-control{min-width:128px}.move-buttons{gap:8px}.move-button{min-width:60px}.attack-wrap{gap:8px}.attack-button{width:56px;height:56px}}
+
+/* Wide desktop screens use the side layout as well: moves on the left, score and swing on the right, so the court takes
+   the full height and much more width than the stacked phone layout. The header (sound toggle) stays. */
+@media(min-width:1100px) and (min-height:571px) and (min-aspect-ratio:5/4){
+  body[data-screen=match] .layout,body[data-screen=paused] .layout{width:min(100%,1760px)}
+  body[data-screen=match] .game-shell,body[data-screen=paused] .game-shell{height:100%;grid-template-columns:clamp(170px,15vw,240px) minmax(0,1fr) clamp(170px,15vw,240px);grid-template-rows:34px minmax(0,1fr) minmax(0,1fr) 30px;
+    grid-template-areas:"top top top" "move court hud" "move court atk" "foot foot foot";column-gap:24px}
+  body[data-screen=match] .game-top,body[data-screen=paused] .game-top{grid-area:top}
+  body[data-screen=match] .hud,body[data-screen=paused] .hud{grid-area:hud;flex-direction:column;align-items:stretch;gap:10px;align-self:start}
+  body[data-screen=match] .hud-divider,body[data-screen=paused] .hud-divider{display:none}
+  body[data-screen=match] .court-wrap,body[data-screen=paused] .court-wrap{grid-area:court;height:auto;min-height:0}
+  body[data-screen=match] .controls,body[data-screen=paused] .controls{display:contents}
+  body[data-screen=match] .move-control,body[data-screen=paused] .move-control{grid-area:move;align-self:center;width:auto}
+  body[data-screen=match] .attack-wrap,body[data-screen=paused] .attack-wrap{grid-area:atk;align-self:end;justify-self:center;flex-direction:column;gap:10px;padding-bottom:8px}
+  body[data-screen=match] .game-footer,body[data-screen=paused] .game-footer{grid-area:foot}
+  /* The side columns were sized for phones (7–12px text): scale them as a whole so proportions hold. */
+  body[data-screen=match] :is(.game-top,.hud,.move-control,.attack-wrap,.game-footer),body[data-screen=paused] :is(.game-top,.hud,.move-control,.attack-wrap,.game-footer){zoom:1.3}
+}
+
+/* Hit pops sit over the green court: a crisp dark outline (painted under the fill) keeps them readable while they fade. */
+.hit-pop{-webkit-text-stroke:5px #1f4434;paint-order:stroke fill;text-shadow:0 3px 10px #213c28b0}
+.hit-pop.miss{-webkit-text-stroke-color:#5b2b1f}
