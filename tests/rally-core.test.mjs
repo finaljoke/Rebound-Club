@@ -128,10 +128,15 @@ test('平衡实验按逐分事实统计分组胜率、失分和横向追球距�
 });
 
 test('平衡机器人按预计击球时的空当选方向，不能误把正在回中的位置当作破绽',async()=>{
- const {desiredTiming}=await import('../scripts/rally-balance.mjs');assert.equal(typeof desiredTiming,'function');
+ const {desiredTiming,timingOption}=await import('../scripts/rally-balance.mjs');assert.equal(typeof desiredTiming,'function');
  const s=live();s.opponent.x=-1.4;s.opponent.stagger=0;
  s.ball=solveShot({x:-1.4,y:1,z:9.2},{x:-2.7,z:1.65},{hitter:'opponent'});s.flight=predictFlight(s.ball);
- assert.equal(desiredTiming(s,'N',0,123,0),.5);
+ const early=timingOption(s,.5),late=timingOption(s,-.5),chosen=desiredTiming(s,'N',0,123,0);
+ for(const option of [early,late]){
+  const recovery=Math.min(Math.abs(s.opponent.x),RALLY.aiRecoverSpeed*(option.at-s.elapsed));
+  assert.ok(Math.abs(option.opponentX-(s.opponent.x+recovery))<1e-8);
+ }
+ assert.ok((chosen>0?early:late).gap>=(chosen>0?late:early).gap);
 });
 
 test('平衡机器人保留窗口外的时机噪声，不能把过早挥拍自动改成有效回球',async()=>{
@@ -228,5 +233,96 @@ test('平衡空当选择逐个预演早晚真实挥拍，比较各自出手时�
   assert.equal(chosen,early&&(!late||early.gap>=late.gap)?.5:-.5);
   if(early&&late)assert.notEqual(early.at,late.at,'两种出手时机不能共用同一个最高点时刻');
  }
+});
+
+function forcedHeavy(s){
+ s.phase='playing';s.flight=null;s.swing=null;s.player.x=0;
+ Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,reaction:0,heavy:true,intentDecided:true,chargeAt:s.elapsed-.6,hits:0});
+ s.ball=ball({x:0,z:8.3,y:1,vz:3,bounces:1,kind:'soft'});stepRally(s,RALLY.dt);
+ assert.equal(s.lastShot?.kind,'heavy');
+ return {speed:Math.hypot(s.ball.vx,s.ball.vy,s.ball.vz),x:Math.abs(s.ball.target.x),level:s.ball.heavyLevel};
+}
+test('第2轮 AC10 连续重炮按真实三维初速度升级，软回不重置，反制和结分重置',()=>{
+ const s=live(),shots=[];
+ for(let k=1;k<=3;k++){
+  shots.push(forcedHeavy(s));assert.equal(s.point.heavyChain,k);
+  if(k<3){receive(s,.55,'heavy');s.ball.vz=-8;s.ball.z=2.1+.55*.6+.4;hit(s);assert.equal(s.lastShot.kind,'soft');assert.equal(s.point.heavyChain,k);}
+ }
+ for(let i=0;i<3;i++)assert.ok(Math.abs(shots[i].speed/shots[0].speed-(1+RALLY.heavyRamp*i))<1e-7);
+ assert.ok(shots[1].x>shots[0].x&&shots[2].x>shots[1].x);
+ receive(s,0,'heavy');s.ball.vz=-8;s.ball.z=2.5;hit(s);assert.equal(s.lastShot.kind,'counter');assert.equal(s.point.heavyChain,0);
+ const reset=forcedHeavy(s);assert.equal(reset.level,1);assert.ok(Math.abs(reset.speed-shots[0].speed)<1e-7);
+ for(let i=0;i<10;i++){const shot=forcedHeavy(s);assert.ok(shot.speed/shots[0].speed<=RALLY.heavyRampCap+1e-8);assert.ok(shot.x<=3.4+1e-8);}
+ s.flight=null;s.ball=ball({z:8,y:.15,vy:-1,bounces:1});stepRally(s,.03);assert.equal(s.point.heavyChain,0);
+});
+
+function aimedShot(x,t,kind='normal'){
+ const s=live();receive(s,t,kind);if(kind==='heavy'){s.ball.vz=-8;s.ball.z=2.1+t*.6+.4;}
+ s.player.x=x;s.ball.x=x;hit(s);return {ball:structuredClone(s.ball),kind:s.lastShot.kind};
+}
+test('第2轮 AC11 同一时机在三个横向位置落到同一球场位置，早左晚右且全程单调',()=>{
+ for(const [t,kind] of [[-.5,'normal'],[.5,'normal'],[.1,'heavy'],[.55,'heavy']]){
+  const shots=[-2.8,0,2.8].map(x=>aimedShot(x,t,kind));
+  assert.ok(Math.max(...shots.map(s=>s.ball.target.x))-Math.min(...shots.map(s=>s.ball.target.x))<=.05);
+  assert.ok(shots.every(s=>Math.sign(s.ball.target.x)===-Math.sign(t)));
+ }
+ const xs=[-.95,-.7,-.5,-.2,0,.2,.5,.7,.95].map(t=>aimedShot(0,t).ball.target.x);
+ assert.ok(xs.every((x,i)=>i===0||x<=xs[i-1]+1e-8));
+});
+test('第2轮 AC11 极早极晚先撞同侧墙，再实际落在同侧边路',()=>{
+ for(const x of [-2.8,0,2.8])for(const t of [-.95,-.7,.7,.95]){
+  const {ball:b}=aimedShot(x,t);let wall=null,land=null;
+  for(let i=0;i<1800&&!land;i++)advanceBall(b,1/240,e=>{if(e.type==='wall'&&!wall)wall={...e};if(e.type==='bounce'){land={...e};return false;}});
+  assert.ok(wall&&land,JSON.stringify({x,t,wall,land}));assert.equal(Math.sign(wall.x),-Math.sign(t));assert.equal(Math.sign(land.x),-Math.sign(t));assert.ok(Math.abs(land.x)>=2.9-.05);
+ }
+});
+test('第2轮 对照组关闭重炮时始终普通出球，不蓄力也不累计压力',()=>{
+ const s=live({heavyEnabled:false});s.ball=solveShot({x:0,y:1,z:1.5},{x:0,z:6.8},{hitter:'player',kind:'soft'});s.flight=predictFlight(s.ball);s.opponent.hits=3;
+ let hitEvent=null,tells=0;
+ for(let i=0;i<700&&!hitEvent&&s.phase==='playing';i++){stepRally(s,RALLY.dt);for(const e of s.events){if(e.type==='heavyTell')tells++;if(e.type==='opponentHit')hitEvent=e;}}
+ assert.ok(hitEvent);assert.equal(hitEvent.kind,'normal');assert.equal(tells,0);assert.equal(s.point.heavyChain,0);
+});
+
+test('第2轮 施压按每颗合法来球统计，失误球和未结束来球不混入失败分母',async()=>{
+ const {summarizeIncoming}=await import('../scripts/rally-balance.mjs');assert.equal(typeof summarizeIncoming,'function');
+ const result=summarizeIncoming([
+  {kind:'normal',outcome:'returned'},{kind:'serve',outcome:'missed'},
+  {kind:'normal',outcome:'opponent-fault'},{kind:'normal',outcome:'unresolved'},
+  {kind:'heavy',outcome:'returned'},{kind:'heavy',outcome:'missed'},{kind:'heavy',outcome:'missed'},
+  {kind:'heavy',outcome:'opponent-fault'}
+ ]);
+ assert.equal(result.ordinary.resolved,2);assert.equal(result.ordinary.failureRate,.5);assert.equal(result.ordinary.opponentFaults,1);assert.equal(result.ordinary.unresolved,1);
+ assert.equal(result.heavy.resolved,3);assert.equal(result.heavy.failureRate,2/3);assert.equal(result.heavy.opponentFaults,1);
+});
+
+test('第2轮 目标使用独立无重炮组和每球失败率，缺组或有超时必须无效',async()=>{
+ const {evaluateTargets,experimentValid}=await import('../scripts/rally-balance.mjs');assert.equal(typeof experimentValid,'function');
+ const groups=[];
+ for(const sigma of [.12,.25,.4])for(const strategy of ['N','C','S'])groups.push({strategy,sigma,heavyEnabled:true,matches:200,completed:200,unfinished:[],maxMatchSeconds:100,
+  pointWinRate:strategy==='C'?.8:strategy==='S'?.6:sigma===.4?.25:.6,heavyResponses:{counter:{pointWinRate:.75}},
+  incoming:{ordinary:{failureRate:.1},heavy:{failureRate:.4}},withoutHeavy:{hits:{median:2},pointWinRate:0},withHeavy:{pointWinRate:1}});
+ const control={strategy:'N',sigma:.25,heavyEnabled:false,matches:200,completed:200,unfinished:[],maxMatchSeconds:100,hits:{median:6}};groups.push(control);
+ assert.ok(evaluateTargets(groups).every(t=>t.pass));assert.equal(experimentValid(groups,200),true);
+ control.hits.median=5;assert.equal(evaluateTargets(groups)[0].pass,false);control.hits.median=6;
+ groups[0].unfinished=[{match:1}];assert.equal(experimentValid(groups,200),false);groups[0].unfinished=[];
+ assert.equal(experimentValid(groups.slice(0,-1),200),false);
+ groups[0].maxMatchSeconds=500.01;assert.equal(experimentValid(groups,200),false);
+});
+
+test('第2轮 S的无噪声意图始终落到左半场，N/C仍选真实空当',async()=>{
+ const {desiredTiming,timingOption}=await import('../scripts/rally-balance.mjs');
+ for(const x of [-2.4,0,2.4]){
+  const s=live();s.opponent.x=x;s.ball=solveShot({x,y:1,z:9.2},{x:0,z:1.65},{hitter:'opponent'});s.flight=predictFlight(s.ball);
+  const target=desiredTiming(s,'S',0,123,0),option=timingOption(s,target);assert.ok(option);assert.ok(option.x<0);
+ }
+});
+
+test('第2轮 普通落点策略可周期性打合法边路，仍保持普通球速与规则',()=>{
+ const previous={every:RALLY.aiNormalWideEvery,x:RALLY.aiNormalWideX};RALLY.aiNormalWideEvery=3;RALLY.aiNormalWideX=3.4;
+ try{
+  const s=live();s.flight=null;Object.assign(s.opponent,{x:0,z:8.9,targetZ:8.9,hits:2,reaction:0,intentDecided:true});
+  s.ball=ball({x:0,z:8.3,y:1,vz:3,bounces:1});stepRally(s,RALLY.dt);
+  assert.equal(s.lastShot.kind,'normal');assert.ok(Math.abs(s.ball.target.x)>=3.28);assert.ok(Math.abs(s.flight.firstBounce.x)<=3.4+1e-8);assert.ok(Math.abs(s.flight.firstBounce.z-RALLY.aiNormalDepth)<1e-8);
+ }finally{for(const [key,value] of [['aiNormalWideEvery',previous.every],['aiNormalWideX',previous.x]]){if(value===undefined)delete RALLY[key];else RALLY[key]=value;}}
 });
 
