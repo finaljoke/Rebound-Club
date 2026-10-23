@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="./lobby.css">
 </head>
 <body data-screen="ready">
+<div class="boot" id="boot" role="status" aria-live="polite"><span class="boot-ball" aria-hidden="true"></span><b>正在载入球场…</b><small id="boot-note">首次打开约需下载 1 MB</small></div>
+<script>setTimeout(function(){if(document.body.dataset.booted!=='1'){var n=document.getElementById('boot-note');if(n)n.textContent='网络较慢，仍在载入；如长时间无反应，请刷新页面。';}},15000);</script>
 <div class="app">
 <header class="site-header">
   <a class="brand" href="./" aria-label="反弹守卫首页"><span class="brand-ball"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="13"/><path d="M7 20h26M20 7c-10 8-10 18 0 26m0-26c10 8 10 18 0 26"/></svg></span><span>反弹守卫<small>REBOUND CLUB</small></span></a>

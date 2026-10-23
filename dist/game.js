@@ -399,3 +399,5 @@ function frame(time){
   phaseUI();hud();draw(dt);requestAnimationFrame(frame);
 }
 ready();requestAnimationFrame(frame);
+// Everything is wired: lift the loading cover from index.html.
+document.body.dataset.booted='1';
