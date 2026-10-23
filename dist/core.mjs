@@ -106,10 +106,13 @@ export function crossingFrom(x,z,vx,vz,s){
 }
 export function predictCrossing(s){const b=s.ball;return b.vz>0?crossingFrom(b.x,b.z,b.vx,b.vz,s):null;}
 // Visual height only: each leg of flight is a parabola that starts and ends at hitting height.
+// Drawn height only (no rule reads it). One fixed gravity: the apex follows the flight time over the span, so a fast
+// ball flies flat and a slow one lobs. GRAVITY keeps level 1's serve at the old ARC apex; MAX_APEX caps slow lobs.
+export const GRAVITY=8*ARC/((KEEPER_Z-.3-PLAYER_Z)/4)**2,MAX_APEX=1.5;
 export function ballHeight(s){
   const b=s.ball,span=(b.z1??PLAYER_Z)-(b.z0??b.z);
-  const u=Math.abs(span)<1e-6?1:clamp((b.z-b.z0)/span,0,1);
-  return HIT_HEIGHT+ARC*4*u*(1-u);
+  const u=Math.abs(span)<1e-6?1:clamp((b.z-b.z0)/span,0,1),time=Math.abs(span)/Math.max(1e-6,Math.abs(b.vz??0));
+  return HIT_HEIGHT+Math.min(MAX_APEX,GRAVITY*time*time/8)*4*u*(1-u);
 }
 function strike(s,w,sw){
   const b=s.ball,t=clamp((b.z-sweetZ(s,w))/(w.reach*.5),-1,1);

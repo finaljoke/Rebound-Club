@@ -201,14 +201,14 @@ export function buildWorld(){
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
   // Render pose: the sim runs in fixed 1/120 s steps, the screen at 60/90/120/144 Hz. Positions are carried forward by
   // the unspent part of the next step at the last step's velocity (no added latency); a jump (serve, reset) snaps.
-  const posed={px:0,kx:0,bx:0,bz:0},heightProbe={ball:{z:0,z0:0,z1:0}};
+  const posed={px:0,kx:0,bx:0,bz:0},heightProbe={ball:{z:0,z0:0,z1:0,vz:0}};
   function renderPose(s){
     const p=s.pose,a=p?s.accumulator*120:0,on=a>1e-6;
     const carry=(cur,prev)=>on&&Math.abs(cur-prev)<.5?cur+(cur-prev)*a:cur;
     posed.px=p?carry(s.player.x,p.px):s.player.x;posed.kx=p?carry(s.keeper.x,p.kx):s.keeper.x;
     const jump=!p||Math.abs(s.ball.x-p.bx)>=.5||Math.abs(s.ball.z-p.bz)>=.5;
     posed.bx=jump?s.ball.x:Math.max(-SIDE,Math.min(SIDE,carry(s.ball.x,p.bx)));posed.bz=jump?s.ball.z:carry(s.ball.z,p.bz);
-    heightProbe.ball.z=posed.bz;heightProbe.ball.z0=s.ball.z0;heightProbe.ball.z1=s.ball.z1;
+    heightProbe.ball.z=posed.bz;heightProbe.ball.z0=s.ball.z0;heightProbe.ball.z1=s.ball.z1;heightProbe.ball.vz=s.ball.vz;
     return posed;
   }
   // Goal camera. When a goal becomes certain (goalLock) the camera blends toward a low chase shot behind the ball,
