@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 
@@ -272,17 +272,69 @@ export function buildWorld(){
   // All of it runs on the render clock, so it keeps playing while the match sits in 'goal' or 'won'.
   const goalCam={w:0,on:false,key:false,start:0,goalAt:-1,x:0,dirX:0,dirZ:1,h:.73,goals:0,state:null,dive:0,diveDir:1,side:1},chasePos=new THREE.Vector3(),chaseAim=new THREE.Vector3();
   let keeperReady=0,keeperClock=null;
-  // Keeper dive pose (0 standing, 1 full stretch), shared by saves and the beaten keeper's reaction.
-  // Standing, the arms stay close (the model's reach at ball height then sits near the 0.55 save reach); a full dive
-  // raises them as far as before.
-  function poseKeeper(dive,dir){keeper.rotation.z=dir*dive*.85;goalie.arms[0].rotation.z=-.15-dive*1.4;goalie.arms[1].rotation.z=.15+dive*1.4;goalie.arms.forEach(a=>a.rotation.x=.5);}
-  // How far the keeper's body reaches sideways at ball height (below 1.7) for each dive amount, measured once from the
-  // model. A beaten keeper never stretches nearer the ball's path than standing still would put it.
-  const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x;
-    for(let i=0;i<=10;i++){poseKeeper(i/10,1);keeper.updateMatrixWorld(true);let reach=0;
+  // Keeper dive, staged like a real goalkeeper's save (presentation only: the rules decide save or goal at the line).
+  // The body turns about the hips. A stretch a (0 set stance … 1 full dive) tips it toward the ball, drops the hips and
+  // carries them sideways so the feet leave the ground, tucks the far leg and trails the near one. land (0…1) brings a
+  // dive down onto its side: the hips sink to the ground and the body flattens while its leading edge stays put.
+  // Returns the body's offset from its spot on the line. The arms are aimed separately (aimArms): this keeper's arms
+  // are short for its head, so arms swung "overhead" end beside the head; pointing them at the ball reads as a reach.
+  const HIP=.9,ARM_SPAN=1.25,diveOffset={x:0,y:0};
+  function poseKeeper(a,dir,land=0){
+    const lead=dir>0?0:1,trail=1-lead,out=lead?1:-1,legs=goalie.legs,flat=land*Math.min(1,a*2);
+    const t0=1.42*a**1.2,tilt=t0+(1.5-t0)*flat;
+    keeper.rotation.z=dir*tilt;
+    goalie.arms[0].rotation.set(.5,0,-.15);goalie.arms[1].rotation.set(.5,0,.15);
+    legs[trail].rotation.set(.85*a,0,-out*.2*a);legs[lead].rotation.set(-.15*a,0,out*.12*a);
+    const hipX=dir*(.3*a**1.3+ARM_SPAN*(Math.sin(t0)-Math.sin(tilt))),hipY=HIP-.35*a-(HIP-.35*a-.24)*flat;
+    diveOffset.x=hipX-dir*HIP*Math.sin(tilt);diveOffset.y=hipY-HIP*Math.cos(tilt);return diveOffset;
+  }
+  // Both arms swing from the set stance toward a world point by weight w, so the hands arrive at the ball together.
+  // Once a dive lands (land 0…1) the aim sinks to the turf, so the arms stretch along the ground rather than up.
+  const armAim={v:new THREE.Vector3(),at:new THREE.Vector3(),q:new THREE.Quaternion(),p:new THREE.Quaternion(),down:new THREE.Vector3(0,-1,0),target:new THREE.Vector3()};
+  function aimArms(x,w,land=0){
+    if(w<=0)return;const A=armAim;A.target.set(x,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);keeper.updateMatrixWorld(true);
+    for(const arm of goalie.arms){arm.getWorldPosition(A.at);A.v.copy(A.target).sub(A.at).normalize();
+      arm.parent.getWorldQuaternion(A.p).invert();A.v.applyQuaternion(A.p);A.q.setFromUnitVectors(A.down,A.v);arm.quaternion.slerp(A.q,w);}
+  }
+  // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
+  // out toward the ball side, measured once from the model.
+  const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x,y0=keeper.position.y;
+    for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;aimArms(x0+8,1);keeper.updateMatrixWorld(true);let reach=0;
       keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=3){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x-x0);}});out.push(reach);}
-    poseKeeper(0,1);keeper.updateMatrixWorld(true);return out;})();
-  function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.3);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
+    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;keeper.updateMatrixWorld(true);return out;})();
+  // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius).
+  function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
+  // A save's stretch follows the ball's gap: a ball at the body is a step and a low block, one at the edge of the
+  // 0.55 save reach a short dive; the arms go to the ball either way.
+  function saveStretch(gap){return .12+.45*Math.max(0,Math.min(1,(gap-.1)/.45));}
+  // The save timeline on the scene clock (so it freezes with a pause): from 0.24 s before the ball reaches the keeper
+  // line a short side step loads the near leg and the knees give, the launch fills the last 0.14 s, the stretch holds
+  // through contact, a big dive then lands on its side, and the keeper gets back up. A shot it can reach is met at its
+  // gap; one it cannot (a goal) gets a full-effort dive that stops short of the ball's path. Shots heading clearly wide
+  // are only watched. The rules' own save (keeper.dive restarting) fixes side, stretch and contact from the real save.
+  const DIVE={load:.1,launch:.14,hold:.06,land:.22,up:.5},dive={state:null,on:false,locked:false,at:0,dir:1,amt:0,tx:0,lastK:0},diveOut={a:0,w:0,tx:0,land:0,crouch:0,step:0,dir:1};
+  function trackDive(s,now,pose,sm){
+    const d=dive,k=s.keeper,b=s.ball,o=diveOut;o.a=o.w=o.land=o.crouch=o.step=0;
+    if(d.state!==s||s.phase==='ready')Object.assign(d,{state:s,on:false,locked:false,lastK:k.dive});
+    const saved=k.dive>d.lastK+.01;d.lastK=k.dive;
+    if(saved)Object.assign(d,{on:true,locked:true,at:d.on?Math.min(d.at,now):now,dir:k.diveDir,amt:saveStretch(Math.abs(pose.bx-pose.kx)),tx:pose.bx});
+    else if(s.phase==='playing'&&b.vz>0&&b.z<KEEPER_Z&&!d.locked){
+      const tk=(KEEPER_Z-b.z)/b.vz,goalX=foldX(b.x+b.vx*(GOAL_Z-b.z)/b.vz);
+      if(tk<=DIVE.load+DIVE.launch&&Math.abs(goalX)<=s.level.goalHalf+.3){
+        const cross=foldX(b.x+b.vx*tk),gap=cross-k.x,g=Math.abs(gap);
+        Object.assign(d,{on:true,at:now+tk,dir:Math.sign(gap)||1,amt:g<=KEEPER_REACH?saveStretch(g):beatenDive(g),tx:cross});
+      }
+    }
+    const big=d.amt>.6,end=DIVE.hold+(big?DIVE.land:0)+DIVE.up;
+    if(d.on&&now-d.at>end){d.on=false;d.locked=false;}
+    o.dir=d.dir;o.tx=d.tx;if(!d.on)return o;
+    const u=now-d.at;
+    if(u<-DIVE.launch){const p=sm((u+DIVE.launch+DIVE.load)/DIVE.load);o.crouch=.1*p;o.step=.07*p;o.w=.25*p;}
+    else if(u<DIVE.hold){const p=Math.min(1,(u+DIVE.launch)/DIVE.launch),e=1-(1-p)**2;o.a=d.amt*e;o.w=.25+.75*e;o.crouch=.1*(1-e);o.step=.07*(1-e);}
+    else if(big&&u<DIVE.hold+DIVE.land){o.a=d.amt;o.w=1;o.land=sm((u-DIVE.hold)/DIVE.land);}
+    else{const p=sm((u-DIVE.hold-(big?DIVE.land:0))/DIVE.up);o.a=d.amt*(1-p);o.w=1-p;o.land=big?1-p:0;o.crouch=.06*Math.sin(Math.PI*p);}
+    return o;
+  }
   // Chosen by a search over near/far misses, both sides and portrait/landscape: fewest frames with the keeper or the
   // goal frame in front of the ball, ball near frame centre (dolly-in made the posts block it more often).
   const GC_POSE={back:2.6,side:2.4,height:2.4,dolly:0,center:false,dive:beatenDive};
@@ -372,13 +424,14 @@ export function buildWorld(){
     torso.rotation.x=punch*.06*strong;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
     for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
     leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
-    const k=s.keeper,dive=Math.max(k.dive/.35,goalCam.dive),diveDir=k.dive>0?k.diveDir:goalCam.diveDir;
+    const k=s.keeper,dv=trackDive(s,now,pose,sm);
     // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
     const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
     keeperReady+=(readyTo-keeperReady)*Math.min(1,since*9);
-    keeper.position.set(pose.kx,-.07*keeperReady,-KEEPER_Z);goalie.torso.rotation.x=.16*keeperReady;poseKeeper(dive,diveDir);
-    const shuffling=Math.abs(k.target-k.x)>.05&&s.phase==='playing';
-    goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
+    const off=poseKeeper(dv.a,dv.dir,dv.land);goalie.torso.rotation.x=.16*keeperReady*(1-dv.a);
+    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-.07*keeperReady-dv.crouch,-KEEPER_Z);aimArms(dv.tx,dv.w,dv.land);
+    const shuffling=!dv.a&&Math.abs(k.target-k.x)>.05&&s.phase==='playing';
+    if(!dv.a)goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
     const height=ballHeight(heightProbe);
     ball.position.set(pose.bx,height,-pose.bz);
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();

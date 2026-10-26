@@ -80,12 +80,14 @@ test('撞墙时在撞击点出现冲击圈并很快消失；击球改变方向�
 // Sideways reach of the keeper's body at ball height (below 1.7), measured from the model.
 function keeperReach(w){const v=new THREE.Vector3(),x0=w.keeper.position.x;let reach=0;w.scene.updateMatrixWorld(true);
   w.keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j++){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,Math.abs(v.x-x0));}});return reach;}
-test('门将：手套颜色与球明显不同，站立时伸展贴近扑救范围，扑救时仍能伸出去',()=>{
+test('门将：手套颜色与球明显不同，站立时伸展贴近扑救范围，扑救边缘球时向来球一侧伸出',()=>{
   const w=buildWorld(),s=playing();s.ball.vz=-4;w.update(s,0,false,1);
   const glove=w.keeper.getObjectByName('glove-body').material.color,ball=new THREE.Color('#ffbd35');
   assert.ok(Math.hypot(glove.r-ball.r,glove.g-ball.g,glove.b-ball.b)>.5,'手套和球颜色要分得开');
   const rest=keeperReach(w);assert.ok(rest<=.72,`站立伸展 ${rest.toFixed(2)}`);
-  s.keeper.dive=.35;s.keeper.diveDir=1;w.update(s,0,false,1.1);assert.ok(keeperReach(w)>=1.5,'扑救时仍能伸出去');
+  // A save's stretch follows the ball's gap (a full-length dive is checked in keeper-dive.test.mjs).
+  s.ball.x=s.keeper.x+.5;if(s.pose)s.pose.bx=s.ball.x;s.keeper.dive=.35;s.keeper.diveDir=1;w.update(s,0,false,1.1);
+  assert.ok(keeperReach(w)>=rest+.25,`扑救边缘球伸展 ${keeperReach(w).toFixed(2)}`);
 });
 test('门将准备姿态：球飞向球门时下蹲前倾，球回到己方时恢复站立',()=>{
   const w=buildWorld(),s=playing();const torso=w.keeper.getObjectByName('jersey-body').parent;
