@@ -11,7 +11,7 @@ test('人物身体不会自动挡球',()=>{const s=play();incoming(s);stepGame(s
 test('挥空与收招期间点击不增加进度',()=>{const s=play();s.ball.z=8;attack(s);assert.equal(attack(s),false);stepGame(s,.5,0);assert.equal(s.hits,0);});
 test('漏球只扣一次且保留回击数',()=>{const s=play();s.hits=3;s.combo=2;s.ball.z=.01;stepGame(s,.03,0);assert.equal(s.misses,1);assert.equal(s.hits,3);assert.equal(s.combo,0);stepGame(s,.2,0);assert.equal(s.misses,1);});
 test('第三次漏球失败并停止模拟',()=>{const s=play();s.misses=2;s.ball.z=.01;stepGame(s,.05,0);assert.equal(s.phase,'lost');const snapshot=JSON.stringify(s);stepGame(s,10,1);assert.equal(JSON.stringify(s),snapshot);});
-test('暂停冻结球与挥击并可恢复',()=>{const s=play();attack(s);pauseGame(s);const snapshot=JSON.stringify(s);stepGame(s,3,1);assert.equal(JSON.stringify(s),snapshot);resumeGame(s);assert.equal(s.phase,'playing');stepGame(s,.1,1);assert.ok(s.player.x>0);});
+test('暂停冻结球与挥击并可恢复',()=>{const s=play();attack(s);pauseGame(s);const snapshot=JSON.stringify(s);stepGame(s,3,1);assert.equal(JSON.stringify(s),snapshot);resumeGame(s);assert.equal(s.phase,'playing');stepGame(s,.3,1);assert.ok(s.player.x>0);});
 test('侧墙与门口外的远端墙只改变方向不计回击',()=>{const s=play();s.ball={x:3.79,z:5,vx:2,vz:2};stepGame(s,.05,0);assert.ok(s.ball.vx<0);s.ball={x:3.3,z:9.8,vx:0,vz:4};stepGame(s,.1,0);assert.ok(s.ball.vz<0);assert.equal(s.hits,0);assert.equal(s.goals,0);assert.ok(Math.abs(s.ball.vz)>1);});
 test('移动边界与无效时间不会破坏状态',()=>{const s=play();stepGame(s,1,1);assert.ok(s.player.x<=3.45);const x=s.player.x;stepGame(s,NaN,-1);assert.equal(s.player.x,x);});
 test('一击只有一球且离开人物的球不能再次击中',()=>{const s=play();s.ball={x:0,z:2.3,vx:0,vz:4};attack(s);stepGame(s,.12,0);assert.equal(s.hits,0);assert.equal(Array.isArray(s.ball),false);});

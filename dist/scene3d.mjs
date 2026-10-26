@@ -162,11 +162,12 @@ export function buildWorld(){
   const flat=(geometry,color,opacity,y)=>{const m=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false}));m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=5;scene.add(m);return m;};
   const unit=new THREE.PlaneGeometry(1,1);
   const zone={fill:flat(unit,'#e5efac',.1,.043),band:flat(unit,'#ff6a2b',.2,.046),edges:[0,1,2,3].map(()=>flat(unit,'#f6f8dc',.4,.048))};
-  // Aim arrow: shaft plus head, pointing along local -z (towards the far goal).
-  const aim=new THREE.Group();scene.add(aim);const aimMat=new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:.85,depthWrite:false});
-  const shaft=new THREE.Mesh(unit,aimMat);shaft.rotation.x=-Math.PI/2;shaft.scale.set(.09,1.7,1);shaft.position.set(0,.06,-1.05);aim.add(shaft);
+  // Aim arrow: shaft plus head, pointing along local -z (towards the far goal). Like the other ground hints it draws over
+  // the bodies, and it reaches past the defender's head so the held direction reads from behind.
+  const aim=new THREE.Group();scene.add(aim);const aimMat=new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:.85,depthWrite:false,depthTest:false});
+  const shaft=new THREE.Mesh(unit,aimMat);shaft.rotation.x=-Math.PI/2;shaft.scale.set(.1,2.6,1);shaft.position.set(0,.06,-1.6);shaft.renderOrder=6;aim.add(shaft);
   const headShape=new THREE.Shape();headShape.moveTo(-.22,0);headShape.lineTo(.22,0);headShape.lineTo(0,.42);headShape.lineTo(-.22,0);
-  const head=new THREE.Mesh(new THREE.ShapeGeometry(headShape),aimMat);head.rotation.x=-Math.PI/2;head.position.set(0,.06,-1.9);aim.add(head);aim.visible=false;
+  const head=new THREE.Mesh(new THREE.ShapeGeometry(headShape),aimMat);head.rotation.x=-Math.PI/2;head.position.set(0,.06,-2.9);head.renderOrder=6;aim.add(head);aim.visible=false;
   // Outgoing shot: dotted route to the goal line (folding off side walls) and a verdict ring at the end.
   const routeMat=new THREE.MeshBasicMaterial({color:'#fff6d8',transparent:true,opacity:.75,depthWrite:false});
   const dotGeo=new THREE.CircleGeometry(.06,10),spinMat=new THREE.MeshBasicMaterial({color:'#37d6c0',transparent:true,opacity:.9,depthWrite:false,depthTest:false});
@@ -388,7 +389,7 @@ export function buildWorld(){
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
     trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);cheer(now,reduceMotion);
     ball.visible=!['miss','lost'].includes(s.phase);
-    const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s):{kind:'none'};
+    const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s,axis):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
     const place=(m,l,rgt,n,f)=>{m.position.x=(l+rgt)/2;m.position.z=-(n+f)/2;m.scale.x=rgt-l;m.scale.y=f-n;};
     place(zone.fill,r.left,r.right,r.near,r.far);place(zone.band,r.left,r.right,r.sweetNear,r.sweetFar);
@@ -412,7 +413,7 @@ export function buildWorld(){
       const gx=fl.goal??fl.xs[fl.count-1];routeMat.color.set(s.ball.kind==='spin'?'#9df0e2':'#fff6d8');
       target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':Math.abs(gx-s.keeper.x)<=KEEPER_REACH?'#ff5a4a':'#5fe07a');target.visible=true;
     }else{route.forEach(d=>d.visible=false);target.visible=false;}
-    const sp=incoming&&skillStatus(s,'spin').ok?spinPreview(s):null;
+    const sp=incoming&&skillStatus(s,'spin').ok?spinPreview(s,axis):null;
     spinArc.forEach((d,i)=>{const on=!!sp&&i<sp.count;d.visible=on&&showHints;if(on)d.position.set(sp.xs[i],.055,-sp.zs[i]);});
     const showBurst=incoming&&!s.swing&&!s.tutorial&&s.energy>=SKILLS.burst.cost;
     if(showBurst){const bz=burstZone(s),be=.045;place(burstEdges[0],bz.left,bz.right,bz.near,bz.near+be);place(burstEdges[1],bz.left,bz.right,bz.far-be,bz.far);place(burstEdges[2],bz.left,bz.left+be,bz.near,bz.far);place(burstEdges[3],bz.right-be,bz.right,bz.near,bz.far);}
@@ -464,7 +465,7 @@ export function buildWorld(){
       fx.traverse(o=>{if(o.material)o.material.opacity=alpha;});
     }
   }
-  const PITCH_TALL=43;
+  const PITCH_TALL=43,PITCH_PORTRAIT=39;
   function resize(aspect){
     camera.aspect=aspect;camera.updateProjectionMatrix();
     // Lower than a top-down view so the ball's arc and both goals read at once.
@@ -474,14 +475,18 @@ export function buildWorld(){
     // shows bodies and swings instead of head-tops; the frame is the tightest one that still keeps both
     // goals, the side walls at the defender's depth and both players' heads in view. Only resize moves it.
     // A longer lens (33°) and pitch chosen by a search over the same visibility rules: the largest court that keeps
-    // the players at least as tall as before. Portrait looks down at 43°, wide screens at 26° (players ~1.45× larger).
-    const wide=Math.min(1,Math.max(0,(aspect-.9)/.7));
-    camera.fov=baseFov=33;camera.updateProjectionMatrix();
-    const target=aim0.set(0,.4*(1-wide),-3.6),pitch=(PITCH_TALL-(PITCH_TALL-26)*wide)*Math.PI/180;
+    // the players at least as tall as before. Wide screens look down at 26° (players ~1.45× larger).
+    // Portrait is width-bound on a near-square court, where a long lens drew the keeper as tall as the defender and the
+    // court read as short. It uses a wider 46° lens from closer and lower (39°), lets the near corners behind the
+    // defender leave the frame (the near goal mouth stays), and so shows real depth: keeper ~0.89× the defender's
+    // height, ~7% more screen between them, the defender a little taller, and the empty floor below filled by court.
+    const wide=Math.min(1,Math.max(0,(aspect-.9)/.7)),tall=aspect<1;
+    camera.fov=baseFov=tall?46:33;camera.updateProjectionMatrix();
+    const target=aim0.set(0,tall?.8:.4*(1-wide),tall?-5.5:-3.6),pitch=(tall?PITCH_PORTRAIT:PITCH_TALL-(PITCH_TALL-26)*wide)*Math.PI/180;
     const offset=new THREE.Vector3(0,Math.sin(pitch),Math.cos(pitch)).multiplyScalar(12);
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
-    for(const x of [-3.95,3.95])boundary.push(new THREE.Vector3(x,0,1.15),new THREE.Vector3(x,1.15,0));
+    for(const x of tall?[-1.6,1.6]:[-3.95,3.95])boundary.push(new THREE.Vector3(x,0,tall?.9:1.15),new THREE.Vector3(x,1.15,0));
     for(const x of [-SIDE-.1,SIDE+.1])boundary.push(new THREE.Vector3(x,0,-PLAYER_Z));
     boundary.push(new THREE.Vector3(0,2.3,-PLAYER_Z),new THREE.Vector3(0,2.3,-KEEPER_Z));
     const fits=()=>{camera.position.copy(target).addScaledVector(offset,distance);camera.lookAt(target);camera.updateMatrixWorld(true);

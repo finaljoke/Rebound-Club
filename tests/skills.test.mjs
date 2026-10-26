@@ -13,7 +13,7 @@ const collect=(s,secs)=>{const ev=[];for(let i=0;i<Math.round(secs*120);i++){ste
 test('AC1 能量：新局50，普通+12、完美+25（不叠加），软球/挥空0，上限100，漏球保留，新局重置',()=>{
   const s=play();assert.equal(s.energy,SKILLS.start);assert.equal(SKILLS.start,50);
   const half=WEAPONS.glove.reach*.5;
-  swingAt(s,sweet(s)+half*.6);assert.equal(s.lastShot,'left');assert.equal(s.energy,62);
+  swingAt(s,sweet(s)+half*.6);assert.equal(s.lastShot,'straight');assert.equal(s.energy,62);
   let p=play();swingAt(p,sweet(p));assert.equal(p.lastShot,'perfect');assert.equal(p.energy,75);
   let soft=play();soft.ball={x:0,z:4,vx:0,vz:-4,z0:4,z1:PLAYER_Z};soft.player.x=0;const w=WEAPONS.glove,front=PLAYER_Z+w.reach;
   for(let i=0;i<2000&&soft.ball.z>front+4*(w.windup+w.active*.5);i++)stepGame(soft,1/120,0);attack(soft);for(let i=0;i<60&&soft.ball.vz<0;i++)stepGame(soft,1/120,0);

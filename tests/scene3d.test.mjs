@@ -23,10 +23,10 @@ test('球拍和剑替换持有装备',()=>{
   assert.equal(w.gear.racket.visible,true);assert.equal(w.gear.glove.visible,false);
   s.weapon='sword';w.update(s,0,true);assert.equal(w.gear.sword.visible,true);assert.equal(w.gear.racket.visible,false);
 });
-test('竖屏手机比例下两个球门和整片防守区完整可见，球场占满画面宽度',()=>{
+test('竖屏手机比例下两个球门、近端球门口和整片防守区完整可见，球场占满画面宽度',()=>{
   const w=buildWorld();
   for(const aspect of [.62,.76,.85,.96]){w.resize(aspect);
-    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-3.9,-1.1,0],[3.9,-1.1,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-4,0,1.1],[4,0,1.1]]){const p=w.project(x,z,y);assert.ok(p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1,JSON.stringify({aspect,x,z,y,p}));}
+    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-1.6,-.9,0],[1.6,-.9,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-1.6,0,1.1],[1.6,0,1.1],[-3.82,1.6,0],[3.82,1.6,0]]){const p=w.project(x,z,y);assert.ok(p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1,JSON.stringify({aspect,x,z,y,p}));}
     const near=w.project(-4.2,0,0),nearR=w.project(4.2,0,0);assert.ok(nearR.x-near.x>.74,`aspect ${aspect} 近端宽度占比 ${(nearR.x-near.x).toFixed(2)}`);}
 });
 test('守门员与远端球门是有体积的3D对象，守门员位置与状态一致',()=>{
