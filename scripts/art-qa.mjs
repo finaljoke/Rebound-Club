@@ -19,7 +19,7 @@ try{
     for(let i=0;i<3;i++){
       const goalie=i===2,a=A.buildAthlete({jersey:goalie?'#356f91':'#f6e9ce',accent:goalie?'#edc25e':'#ed774b',number:goalie?'1':'01',goalie});
       a.group.position.set((i-1)*1.95,0,0);a.group.rotation.y=i===1?.25:Math.PI+(i===0?.2:-.2);scene.add(a.group);athletes.push(a.group);
-      for(let side=0;side<2;side++){const glove=A.buildGlove(goalie?'#edc25e':'#ed6941',side?1:-1);glove.group.position.set(side?.02:-.015,-.44,-.015);a.arms[side].add(glove.group);a.arms[side].rotation.x=.32;}
+      for(let side=0;side<2;side++){const glove=A.buildGlove(goalie?'#eef2ee':'#ed6941',side?1:-1);glove.group.position.set(side?.02:-.015,-.44,-.015);a.arms[side].add(glove.group);a.arms[side].rotation.x=.32;}
       const stand=new T.Mesh(new T.CylinderGeometry(.68,.72,.15,48),new T.MeshStandardMaterial({color:i===2?'#ccd6bd':'#dbe2ca',roughness:.9}));stand.position.set((i-1)*1.95,-.045,0);stand.receiveShadow=true;scene.add(stand);
     }
     const camera=new T.PerspectiveCamera(31,1200/840,.1,100);camera.position.set(0,3.5,9.6);camera.lookAt(0,1.05,0);renderer.render(scene,camera);

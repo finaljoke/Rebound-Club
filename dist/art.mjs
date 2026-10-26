@@ -72,38 +72,70 @@ function decalTexture(kind,number='01',color='#284b3c'){
   const c=new THREE.Color(color).getHex();rgb[0]=(c>>16)&255;rgb[1]=(c>>8)&255;rgb[2]=c&255;
   const dot=(x,y,rx,ry,col=rgb)=>{for(let yy=Math.max(0,Math.floor(y-ry));yy<Math.min(size,y+ry);yy++)for(let xx=Math.max(0,Math.floor(x-rx));xx<Math.min(size,x+rx);xx++)if(((xx-x)/rx)**2+((yy-y)/ry)**2<=1){const i=(yy*size+xx)*4;data[i]=col[0];data[i+1]=col[1];data[i+2]=col[2];data[i+3]=255;}};
   if(kind==='face'){
-    dot(40,55,5,8);dot(88,55,5,8);dot(38,52,1.7,2.2,[255,248,226]);dot(86,52,1.7,2.2,[255,248,226]);
-    dot(40,36,10,2);dot(88,36,10,2);
-    for(let x=50;x<79;x++)dot(x,84-((x-64)/14)**2*6,1.8,1.8);
+    // Printed toy features: clear at match scale, with a small eye glint in close-up.
+    dot(39,55,6.5,8.5);dot(89,55,6.5,8.5);dot(37,52,2,2.6,[255,248,226]);dot(87,52,2,2.6,[255,248,226]);
+    for(let x=29;x<=49;x++)dot(x,35+(x-29)*.16,1.5,1.8);
+    for(let x=79;x<=99;x++)dot(x,38-(x-79)*.16,1.5,1.8);
+    for(let x=52;x<78;x++)dot(x,83-((x-64)/14)**2*5,1.7,1.7);
   }else{
-    const glyphs={'0':['01110','11011','11011','11011','11011','11011','01110'],'1':['00110','01110','00110','00110','00110','00110','01111']};
-    const chars=number.split(''),cell=9,total=chars.length*6*cell-9,start=(size-total)/2;
-    chars.forEach((ch,n)=>{const glyph=glyphs[ch]||glyphs['1'];glyph.forEach((row,y)=>row.split('').forEach((on,x)=>{if(on==='1')for(let yy=0;yy<cell;yy++)for(let xx=0;xx<cell;xx++){const i=((32+y*cell+yy)*size+Math.round(start+n*6*cell+x*cell+xx))*4;data[i]=rgb[0];data[i+1]=rgb[1];data[i+2]=rgb[2];data[i+3]=255;}}));});
+    // Smooth athletic numerals, rasterised locally with 2x2 coverage instead of block glyphs.
+    const chars=number.slice(0,2).split(''),start=(size-(chars.length*43-9))/2;
+    const rounded=(x,y,w,h,r)=>Math.hypot(Math.max(Math.abs(x-w/2)-(w/2-r),0),Math.max(Math.abs(y-h/2)-(h/2-r),0))<=r&&x>=0&&x<=w&&y>=0&&y<=h;
+    const inside=(ch,x,y)=>ch==='0'?rounded(x,y,34,64,10)&&!rounded(x-10,y-10,14,44,4):((x>=17&&x<=28&&y>=0&&y<=64)||(x>=6&&x<=28&&y>=0&&y<=17&&y>=17-(x-6)*.78)||(x>=8&&x<=34&&y>=54&&y<=64));
+    for(let y=29;y<95;y++)for(let x=0;x<size;x++){
+      let coverage=0;for(const sy of [.25,.75])for(const sx of [.25,.75])if(chars.some((ch,n)=>inside(ch,x+sx-start-n*43,y+sy-30)))coverage++;
+      if(coverage){const i=(y*size+x)*4;data[i]=rgb[0];data[i+1]=rgb[1];data[i+2]=rgb[2];data[i+3]=Math.round(coverage/4*255);}
+    }
   }
   return dataTexture(data,size);
+}
+
+// Slightly squared cheeks and a tapered jaw retain a soft, moulded-toy silhouette.
+const softPower=(v,p=.9)=>Math.sign(v)*Math.abs(v)**p;
+function headShape(){
+  const g=new THREE.SphereGeometry(1,28,20),p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const y=p.getY(i);p.setXYZ(i,softPower(p.getX(i))*.33*(1-.1*Math.max(-y,0)),softPower(y)*.31,softPower(p.getZ(i))*.295);}
+  g.computeVertexNormals();return g;
+}
+function headBandShape(){
+  const g=new THREE.CylinderGeometry(1,1,.075,40,1,true),p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const y=p.getY(i),qy=softPower((y+.125)/.31,1/.9),r=Math.sqrt(1-qy*qy);p.setXYZ(i,softPower(p.getX(i)*r)*.342,y,softPower(p.getZ(i)*r)*.306);}
+  g.computeVertexNormals();return g;
+}
+function faceShape(){
+  const g=new THREE.PlaneGeometry(.45,.33,12,10);g.rotateY(Math.PI);const p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const y=p.getY(i),qy=softPower((y-.04)/.31,1/.9),qx=softPower(p.getX(i)/(.33*(1-.1*Math.max(-qy,0))),1/.9);p.setZ(i,softPower(-Math.sqrt(Math.max(.01,1-qx*qx-qy*qy)))*.295-.004);}
+  g.computeVertexNormals();return g;
 }
 
 export function buildAthlete({jersey='#f6e9ce',accent='#ed774b',number='01',goalie=false}={}){
   const group=new THREE.Group();group.scale.setScalar(1.16);
   const torso=new THREE.Group();group.add(torso);
   const skin=mat('#bd8b68',.85),cloth=mat(jersey,.82),trim=mat(accent,.72),dark=mat(goalie?'#243f52':'#25483c'),cream=mat('#fff1d8');
-  const body=part(torso,new THREE.CylinderGeometry(.325,.275,.64,20),cloth,0,.99,0);body.name='jersey-body';
+  const jerseyShape=softBoxGeometry(.67,.65,.46,.15),p=jerseyShape.attributes.position;
+  for(let i=0;i<p.count;i++){const t=THREE.MathUtils.clamp((p.getY(i)+.325)/.65,0,1);p.setX(i,p.getX(i)*(.86+.14*t));p.setZ(i,p.getZ(i)*(.94+.06*t));}
+  jerseyShape.computeVertexNormals();
+  const body=part(torso,jerseyShape,cloth,0,.99,0);body.name='jersey-body';
   const neck=part(torso,new THREE.CylinderGeometry(.115,.12,.13,12),skin,0,1.32,0);neck.name='neck';
   const collar=part(torso,new THREE.TorusGeometry(.123,.026,6,20),trim,0,1.3,0,false);collar.rotation.x=Math.PI/2;
-  part(torso,softBoxGeometry(.64,.085,.44,.03),trim,0,1.19,0,false);
-  const waist=part(group,softBoxGeometry(.57,.26,.4,.06),dark,0,.58,0);waist.name='shorts';
-  part(group,softBoxGeometry(.57,.036,.41,.01),cream,0,.705,0,false);
-  const head=ellipsoid(torso,.29,skin,0,1.56,-.012,[1,1.08,.97]);head.name='head';
+  for(const z of [-.231,.231])part(torso,softBoxGeometry(.40,.055,.012,.005),trim,0,1.13,z,false);
+  for(const side of [-1,1])part(torso,softBoxGeometry(.035,.35,.30,.014),trim,side*.293,.89,0,false);
+  const waist=part(group,softBoxGeometry(.59,.26,.42,.075),dark,0,.58,0);waist.name='shorts';
+  part(group,softBoxGeometry(.58,.035,.425,.015),cream,0,.705,0,false);
+  const head=part(torso,headShape(),skin,0,1.565,-.012);head.name='head';
   const hairMat=mat(goalie?'#3f352d':'#2d3e31',.92);
-  ellipsoid(torso,.299,hairMat,0,1.695,.027,[1,.65,1]);
-  const quiff=part(torso,softBoxGeometry(.41,.14,.25,.06),hairMat,-.055,1.77,-.13);quiff.rotation.z=-.16;quiff.name='hair-quiff';
-  ellipsoid(torso,.075,skin,-.285,1.52,0,[.7,1,.7],false);ellipsoid(torso,.075,skin,.285,1.52,0,[.7,1,.7],false);
-  const face=part(torso,new THREE.PlaneGeometry(.42,.32),new THREE.MeshBasicMaterial({map:decalTexture('face'),transparent:true,depthWrite:false}),0,1.53,-.297,false);face.rotation.y=Math.PI;face.name='face';
-  ellipsoid(torso,.039,skin,0,1.49,-.307,[.8,.9,1.15],false);
+  ellipsoid(torso,.335,hairMat,0,1.745,.01,[1.02,.55,.93]);
+  const quiff=ellipsoid(torso,.21,hairMat,-.055,1.855,-.13,[1.45,.43,.85]);quiff.rotation.z=-.12;quiff.name='hair-quiff';
+  const swept=ellipsoid(torso,.15,hairMat,.19,1.83,-.12,[.9,.45,1]);swept.rotation.z=.2;
+  part(torso,headBandShape(),goalie?cream:trim,0,1.69,-.012,false);
+  for(const side of [-1,1])ellipsoid(torso,.075,skin,side*.329,1.54,-.005,[.65,.95,.6],false);
+  const face=part(torso,faceShape(),new THREE.MeshBasicMaterial({map:decalTexture('face'),transparent:true,depthWrite:false}),0,1.525,-.012,false);face.name='face';
+  ellipsoid(torso,.038,skin,0,1.485,-.323,[.9,.85,.85],false);
   const ink=goalie?'#f8e9b7':'#2b5140';
-  const numberPlate=part(torso,new THREE.PlaneGeometry(.35,.3),new THREE.MeshBasicMaterial({map:decalTexture('number',number,ink),transparent:true,depthWrite:false}),0,1.015,.318,false);numberPlate.name='jersey-number';
-  const chest=part(torso,new THREE.CircleGeometry(.055,12),trim,-.12,1.095,-.3,false);chest.rotation.y=Math.PI;
-  const seamPoints=[];for(const side of [-1,1]){seamPoints.push([side*.225,.74,.20],[side*.25,1.12,.20]);}
+  const numberPlate=part(torso,new THREE.PlaneGeometry(.40,.37),new THREE.MeshBasicMaterial({map:decalTexture('number',number,ink),transparent:true,depthWrite:false}),0,.965,.229,false);numberPlate.name='jersey-number';
+  const chest=part(torso,new THREE.CircleGeometry(.055,16),trim,-.13,1.06,-.232,false);chest.rotation.y=Math.PI;
+  const crest=part(torso,new THREE.CircleGeometry(.028,12),cream,-.13,1.06,-.233,false);crest.rotation.y=Math.PI;
+  const seamPoints=[];for(const side of [-1,1]){seamPoints.push([side*.25,.76,.22],[side*.26,1.08,.23]);}
   lines(torso,seamPoints,goalie?'#82a9ba':'#d5cbb2');
   const legs=[],arms=[];
   for(const side of [-1,1]){
@@ -111,14 +143,17 @@ export function buildAthlete({jersey='#f6e9ce',accent='#ed774b',number='01',goal
     part(leg,new THREE.CapsuleGeometry(.105,.19,4,10),skin,0,-.15,0);
     part(leg,new THREE.CylinderGeometry(.108,.105,.17,12),cream,0,-.245,0);
     part(leg,new THREE.CylinderGeometry(.11,.11,.03,12),trim,0,-.185,0,false);
-    const sole=part(leg,softBoxGeometry(.25,.055,.41,.022),dark,0,-.412,-.06);sole.name='shoe-sole';
-    const shoe=part(leg,softBoxGeometry(.24,.135,.36,.05),cream,0,-.335,-.08);shoe.name='shoe';
-    part(leg,softBoxGeometry(.15,.065,.06,.018),trim,0,-.32,.07,false);
-    lines(leg,[[-.065,-.263,-.1],[.065,-.263,-.1],[-.055,-.263,-.15],[.055,-.263,-.15]],'#b1b7a0');
+    const sole=part(leg,softBoxGeometry(.28,.07,.43,.03),dark,0,-.408,-.06);sole.name='shoe-sole';
+    part(leg,softBoxGeometry(.276,.028,.42,.013),cream,0,-.376,-.06,false);
+    const shoe=part(leg,softBoxGeometry(.26,.15,.38,.065),cream,0,-.32,-.07);shoe.name='shoe';
+    part(leg,softBoxGeometry(.16,.075,.055,.023),trim,0,-.28,.105,false);
+    const tongue=part(leg,softBoxGeometry(.135,.045,.16,.02),trim,0,-.245,-.09,false);tongue.rotation.x=-.25;
+    for(const side of [-1,1]){const stripe=part(leg,softBoxGeometry(.012,.045,.14,.005),trim,side*.13,-.32,-.08,false);stripe.rotation.x=-.3;}
+    lines(leg,[[-.05,-.215,-.06],[.05,-.215,-.06],[-.05,-.225,-.10],[.05,-.225,-.10],[-.045,-.235,-.14],[.045,-.235,-.14]],'#fff7df');
     const arm=new THREE.Group();arm.position.set(side*.36,1.21,0);torso.add(arm);arms.push(arm);
-    const sleeve=ellipsoid(arm,.135,cloth,0,-.045,0,[1,1.08,1]);sleeve.name='shoulder-sleeve';
+    const sleeve=part(arm,softBoxGeometry(.255,.24,.31,.095),cloth,0,-.045,0);sleeve.name='shoulder-sleeve';
     part(arm,new THREE.CapsuleGeometry(.098,.2,4,10),skin,side*.025,-.245,0);
-    part(arm,new THREE.CylinderGeometry(.115,.115,.055,12),trim,0,-.12,0,false);
+    part(arm,softBoxGeometry(.25,.045,.29,.02),trim,0,-.14,0,false);
     part(arm,new THREE.CylinderGeometry(.108,.108,.07,12),cream,side*.02,-.365,0,false);
   }
   return {group,torso,legs,arms,skin};
@@ -126,13 +161,14 @@ export function buildAthlete({jersey='#f6e9ce',accent='#ed774b',number='01',goal
 
 export function buildGlove(color='#ed6941',side=1){
   const group=new THREE.Group(),details=new THREE.Group();group.add(details);
-  const leather=mat(color,.42),cuff=mat('#fff0d6',.8),ink=mat('#ead9b5');
-  const body=part(group,softBoxGeometry(.34,.37,.35,.12),leather,0,-.005,-.018);body.name='glove-body';
-  ellipsoid(details,.09,leather,-side*.145,-.07,-.075,[.85,1.15,.95],false);
-  part(details,new THREE.CylinderGeometry(.145,.145,.09,14),cuff,0,.18,.015,false);
-  const patch=part(details,new THREE.CircleGeometry(.047,12),ink,0,-.005,-.197,false);patch.rotation.y=Math.PI;
-  const seams=[];for(let i=-2;i<=2;i++){const x=i*.046;seams.push([x,-.13,-.173],[x+.012,-.105,-.181]);}
-  lines(details,seams,'#f9caa5');
+  const leather=mat(color,.38),cuff=mat('#fff0d6',.8),ink=mat('#ead9b5');
+  const body=part(group,softBoxGeometry(.36,.39,.38,.145),leather,0,-.005,-.02);body.name='glove-body';
+  ellipsoid(details,.095,leather,-side*.153,-.065,-.075,[.85,1.12,.95],false);
+  part(details,softBoxGeometry(.31,.09,.29,.04),cuff,0,.17,.015,false);
+  part(details,softBoxGeometry(.17,.055,.025,.012),leather,0,.17,-.14,false);
+  const patch=part(details,new THREE.CircleGeometry(.044,16),ink,0,.015,-.213,false);patch.rotation.y=Math.PI;
+  const seams=[];for(let i=-2;i<=2;i++){const x=i*.041;seams.push([x,-.105,-.197],[x+.009,-.084,-.203]);}
+  lines(details,seams,'#f9e3c1');
   return {group,body,details,material:leather};
 }
 

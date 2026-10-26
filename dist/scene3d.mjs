@@ -2,6 +2,7 @@ import * as THREE from './vendor/three.module.min.js';
 import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
 import {LEVELS,WEAPONS,SKILLS,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
+import {buildSpectatorCrowd} from './crowd.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 export function buildWorld(){
@@ -123,19 +124,12 @@ export function buildWorld(){
   // Everything above is static scenery: bake it into one mesh per material before any animated or pooled object exists.
   mergeRigidParts(scene);
   const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
-  // Crowd on the far stands: one instanced body mesh and one instanced head mesh (two draws for ~36 people), seated
-  // with deterministic gaps and colours. They bob a little and jump on every goal, back in their seats by the next serve.
+  // Crowd on the far stands: seated toy spectators share eight unshadowed instance batches.
+  // The original seat layout and body-instance interface remain unchanged.
   const seats=[];for(let i=0;i<TIER.length;i++)for(let c=0;c<14;c++){const h=Math.sin(i*12.9898+c*78.233)*43758.5453,r=h-Math.floor(h);if(r<.15)continue;seats.push({x:-5.6+c*.86+(r-.5)*.2,y:TIER[i],z:-(STAND_Z+.9*i)+.12,phase:r*6.28,lift:.22+.12*r});}
-  const shirts=['#356f91','#ed774b','#f6e9ce','#e9c56f','#5c8a6a','#c96a5a'],skins=['#bd8b68','#8f5f43','#e0b48f','#a8724f'];
-  const crowd=new THREE.InstancedMesh(new THREE.CylinderGeometry(.16,.21,.5,10).translate(0,.25,0),new THREE.MeshStandardMaterial({roughness:.85}),seats.length);
-  const crowdHeads=new THREE.InstancedMesh(new THREE.SphereGeometry(.14,12,10).translate(0,.64,0),new THREE.MeshStandardMaterial({roughness:.85}),seats.length);
-  const seatAt=new THREE.Matrix4(),seatTint=new THREE.Color();
-  seats.forEach((p,i)=>{seatAt.makeTranslation(p.x,p.y,p.z);crowd.setMatrixAt(i,seatAt);crowdHeads.setMatrixAt(i,seatAt);crowd.setColorAt(i,seatTint.set(shirts[i%shirts.length]));crowdHeads.setColorAt(i,seatTint.set(skins[(i*7)%skins.length]));});
-  scene.add(crowd,crowdHeads);
+  const spectators=buildSpectatorCrowd(seats),crowd=spectators.body;scene.add(spectators.group);
   function cheer(now,reduceMotion){
-    const since=goalCam.goalAt>=0?now-goalCam.goalAt:9,joy=since<1?Math.sin(Math.min(1,since/.15)*Math.PI/2)*(1-Math.max(0,(since-.55)/.45)):0;
-    seats.forEach((p,i)=>{const hop=reduceMotion?0:joy*p.lift*Math.abs(Math.sin(since*9+p.phase))+.012*Math.sin(now*2+p.phase);seatAt.makeTranslation(p.x,p.y+hop,p.z);crowd.setMatrixAt(i,seatAt);crowdHeads.setMatrixAt(i,seatAt);});
-    crowd.instanceMatrix.needsUpdate=true;crowdHeads.instanceMatrix.needsUpdate=true;
+    spectators.update(now,goalCam.goalAt,reduceMotion);
   }
   // Shared articulated collectible athletes; visual parts stay under their joints.
   const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
