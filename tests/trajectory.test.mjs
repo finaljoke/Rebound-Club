@@ -76,7 +76,7 @@ function caseState(level,x,shots){const s=createGame(level,'glove');s.practiceLe
 function outcome(s){for(let i=0;i<900;i++){stepGame(s,1/120,0);for(const e of ['goal','save','wide'])if(s.events.includes(e))return e;}return 'none';}
 test('AC14 旋转绕位案例：同一接球点与方向，普通回击被扑，旋转绕过门将进球（第4关封角、第5关左右对称）',()=>{
   const w=WEAPONS.glove,dt=1/120,t=.6;
-  for(const [level,x,axis] of [[3,-2,-1],[3,2,1],[4,-1,1],[4,1,-1]])for(let shots=0;shots<4;shots++){
+  for(const [level,x,axis] of [[3,-2,-1],[3,2,1],[4,0,-1],[4,0,1]])for(let shots=0;shots<4;shots++){
     const z=PLAYER_Z+w.reach*.5+t*w.reach*.5,v=LEVELS[level].speed,ticks=Math.ceil(w.windup*120);
     const normal=caseState(level,x,shots);normal.ball={x,z:z+v*ticks*dt,vx:0,vz:-v,z0:6,z1:PLAYER_Z};attack(normal);for(let i=0;i<ticks+2&&normal.ball.vz<0;i++)stepGame(normal,dt,axis);
     assert.notEqual(normal.lastShot,'soft');assert.equal(outcome(normal),'save',`普通 关${level+1} x=${x} 方向${axis} shots=${shots}`);
