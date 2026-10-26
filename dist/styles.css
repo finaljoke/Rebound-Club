@@ -113,3 +113,75 @@ body[data-booted="1"] .boot{opacity:0;visibility:hidden;pointer-events:none}
 .result-links{display:flex;justify-content:center;gap:18px}
 .share-button{display:inline-flex;align-items:center;gap:5px;color:#c9532f}.share-button svg{width:14px;height:14px}
 .share-button:disabled{opacity:.45;cursor:progress}
+
+/* Immersive match (all screen sizes, last so it wins over the stacked, short-landscape and desktop layouts above): the
+   court fills the screen and everything else floats over it as glass chips. Pause sits top-left, sound top-right, goals
+   and chances share one capsule between them; move buttons float bottom-left, skills and swing bottom-right. Tips rise
+   as a short caption above the controls and fade; the brand header, stage title, score and court stamp step aside. */
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]){--glass:rgba(255,252,244,.66);--glass-line:rgba(255,255,255,.6);--edge:max(12px,env(safe-area-inset-left));--edge-r:max(12px,env(safe-area-inset-right));--top:max(10px,env(safe-area-inset-top));--bottom:max(16px,calc(env(safe-area-inset-bottom) + 8px));overflow:hidden;background:#173f31}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) :is(.pause-button,.sound-button,.hud,.move-button,.skill-button){background:var(--glass);border:1px solid var(--glass-line);box-shadow:0 4px 14px rgba(18,42,32,.2);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .site-header{position:fixed;top:var(--top);right:var(--edge-r);left:auto;z-index:30;display:flex;width:auto;max-width:none;margin:0;height:auto;min-height:0;padding:0;background:transparent;border:0;box-shadow:none;pointer-events:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .brand,body:is([data-screen=match],[data-screen=result]) #help{display:none}
+body[data-screen=paused] #help{pointer-events:auto;width:40px;height:40px;background:var(--glass);border:1px solid var(--glass-line);box-shadow:0 4px 14px rgba(18,42,32,.2)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .sound-button{pointer-events:auto;width:40px;height:40px;min-width:0;padding:0;border-radius:50%;justify-content:center;gap:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .sound-button span:not(.sound-glyph){display:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .layout{position:fixed;inset:0;width:100%;max-width:none;margin:0;padding:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-shell{position:absolute;inset:0;display:block;height:auto;padding:0;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .court-wrap{position:absolute;inset:0;height:auto;min-height:0;margin:0;border:0;border-radius:0;box-shadow:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) #court{width:100%;height:100%;border-radius:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) :is(.court-stamp,.stage-heading,.preview-label,.hud-divider,#score,.attack-hint,.move-control small){display:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) :is(.game-top,.hud,.move-control,.attack-wrap,.game-footer){zoom:1}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-top{position:fixed;top:var(--top);left:var(--edge);z-index:30;height:auto;padding:0;margin:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .pause-button{width:40px;height:40px;border-radius:50%}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud{position:fixed;top:var(--top);left:50%;transform:translateX(-50%);z-index:30;display:flex;flex-direction:row;align-items:center;gap:12px;width:auto;height:40px;margin:0;padding:0 14px;border-radius:999px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-progress{display:flex;align-items:center;gap:8px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-progress b{font-size:20px;line-height:1;white-space:nowrap}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-progress .progress-track{width:48px;margin:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-label{font-size:0;margin:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-label .practice-chip{font-size:8px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .lives{display:flex;align-items:center;gap:6px;min-width:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .lives .life{width:20px;height:20px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .court-badge{top:calc(var(--top) + 48px);left:50%;transform:translateX(-50%);white-space:nowrap}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .tutorial-bar{top:calc(var(--top) + 48px)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .controls{display:contents}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-control{position:fixed;left:var(--edge);bottom:var(--bottom);z-index:30;width:auto;min-width:0;max-width:none;margin:0;padding:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-buttons{display:flex;gap:12px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-button{width:68px;height:68px;min-width:0;border-radius:50%}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-button.pressed{background:rgba(31,74,57,.88);border-color:rgba(31,74,57,.88);color:#fff9e6;transform:scale(.94)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .attack-wrap{position:fixed;right:var(--edge-r);bottom:var(--bottom);z-index:30;display:flex;flex-direction:row;align-items:flex-end;gap:10px;margin:0;padding:0}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-dock{width:68px;gap:6px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-buttons{flex-direction:column;gap:6px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-button{min-height:42px;border-radius:14px;padding:2px 4px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-button small{display:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .energy{height:9px;background:rgba(255,252,244,.55);border-color:var(--glass-line)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) #energy-value{display:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .attack-button{width:86px;height:86px}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-footer{position:fixed;left:50%;bottom:calc(var(--bottom) + 122px);transform:translateX(-50%);z-index:25;display:block;width:max-content;max-width:min(80vw,520px);margin:0;padding:6px 12px;border:0;border-radius:12px;background:rgba(18,40,31,.66);color:#fffaf0;font-size:12px;line-height:1.45;text-align:center;opacity:0;transition:opacity .35s;pointer-events:none}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-footer #feedback{display:block;color:inherit;font-size:inherit;white-space:normal;overflow:visible;text-overflow:clip}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-footer.show{opacity:1}
+body:is([data-screen=paused],[data-screen=result]) :is(.move-control,.attack-wrap,.game-footer){visibility:hidden}
+body[data-screen=result] :is(.hud,.game-top){visibility:hidden}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .overlay{z-index:35}
+/* Wide screens: the court sits in the middle third with the keeper near the top, so the capsule and the verdict toasts
+   move to the top-left beside the pause button, off the far goal. */
+@keyframes verdictLeft{0%{opacity:0;transform:translateY(-6px)}15%,80%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-6px)}}
+@media(min-aspect-ratio:1/1){
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud{left:calc(var(--edge) + 50px);transform:none}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .result-pop{display:block;left:calc(var(--edge) + 50px);top:calc(var(--top) + 50px);transform:none;max-width:min(40vw,360px)}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .result-pop.show{animation-name:verdictLeft}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .court-badge{left:auto;right:var(--edge-r);top:calc(var(--top) + 50px);transform:none}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-footer{bottom:var(--bottom);max-width:min(44vw,520px)}
+}
+/* Narrow phones (≤380px): a tighter capsule and controls so both clusters and all three top chips fit side by side. */
+@media(max-width:380px){
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud{gap:8px;padding:0 10px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-progress .progress-track{display:none}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .hud-progress b{font-size:18px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .lives{gap:4px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .lives .life{width:16px;height:16px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-buttons{gap:8px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-button{width:62px;height:68px;border-radius:31px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .attack-wrap{gap:8px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-dock{width:60px}
+  body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .attack-button{width:76px;height:76px}
+}
