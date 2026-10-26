@@ -14,7 +14,7 @@ export function recordMatchEvent(stats,event,state){
 export function matchSummary(s,stats){
   const won=s.phase==='won';let advice=s.level.lesson;
   if(!won&&stats.whiffs>=3)advice='下局先等击球框亮起，再出手。把第一球接稳。';
-  else if(!won&&stats.saves>=3)advice='试试换个方向，或借侧墙绕过门将的封堵。';
+  else if(!won&&stats.saves>=3)advice='挥击时按住另一侧方向键，或用旋转绕过门将的封堵。';
   const highlight=stats.powerGoals>0?`重炮破门 ${stats.powerGoals} 次`:stats.burstGoals>0?`爆发破门 ${stats.burstGoals} 次`:stats.spinGoals>0?`旋转绕过门将 ${stats.spinGoals} 次`:s.bestCombo>=3?`连续回击 ${s.bestCombo} 次`:s.goals>0?`攻破球门 ${s.goals} 次`:'下一球，稳稳接住。';
   return {won,title:won?(s.misses===0&&stats.practiceConceded===0?'零失球，漂亮拿下！':'好球，这局拿下！'):'差一点，再来一球。',
     action:won&&s.levelIndex<5?'next':'retry',actionLabel:won&&s.levelIndex<5?'挑战下一关':'再来一局',
@@ -49,4 +49,4 @@ export function whiffHint(w){
 // One short line per tutorial step; shown only while that step is active.
 // Short state labels for the skill buttons; text, not just colour.
 export const SKILL_STATE={ok:'可释放',energy:'能量不足',window:'等球进框',busy:'收招中',charging:'蓄力中',state:'待开球',tutorial:'教学中'};
-export const TUTORIAL_TIPS=['球来了：等它进框，按挥击打回去','球从侧边来：先移到影子上，再挥击','看门将站哪边，朝空的一侧打进去'];
+export const TUTORIAL_TIPS=['球来了：等它进框，按挥击打回去','球从侧边来：先移到影子上，再挥击','门将站在一边：按住空的那一侧，再挥击'];

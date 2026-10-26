@@ -6,14 +6,16 @@ function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.practic
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const sweet=s=>PLAYER_Z+WEAPONS[s.weapon].reach*.5;
 // Opens the active window when the ball is at depth `z`, then lets the swing resolve.
-function swingAt(s,z){const w=WEAPONS[s.weapon];for(let i=0;i<2000&&s.ball.z>z+Math.abs(s.ball.vz)*w.windup;i++)stepGame(s,1/120,0);attack(s);for(let i=0;i<30&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,0);}
+function swingAt(s,z,axis=0){const w=WEAPONS[s.weapon];for(let i=0;i<2000&&s.ball.z>z+Math.abs(s.ball.vz)*w.windup;i++)stepGame(s,1/120,0);attack(s);for(let i=0;i<30&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,axis);}
 const speed=b=>Math.hypot(b.vx,b.vz);
 
-test('早挥往左、晚挥往右、正中直线',()=>{
+test('按住左往左、按住右往右、不按直线（早晚都一样）',()=>{
   const half=WEAPONS.glove.reach*.5;
-  let s=play();incoming(s);swingAt(s,sweet(s)+half*.8);assert.ok(s.ball.vz>0);assert.ok(s.ball.vx<-.5,`早挥 vx=${s.ball.vx}`);assert.equal(s.lastShot,'left');
-  s=play();incoming(s);swingAt(s,sweet(s)-half*.8);assert.ok(s.ball.vz>0);assert.ok(s.ball.vx>.5,`晚挥 vx=${s.ball.vx}`);assert.equal(s.lastShot,'right');
-  s=play();incoming(s);swingAt(s,sweet(s));assert.ok(s.ball.vz>0);assert.ok(Math.abs(s.ball.vx)<.25,`正中 vx=${s.ball.vx}`);
+  for(const dz of [half*.8,-half*.8]){
+    let s=play();incoming(s);swingAt(s,sweet(s)+dz,-1);assert.ok(s.ball.vz>0);assert.ok(s.ball.vx<-.5,`左 vx=${s.ball.vx}`);assert.equal(s.lastShot,'left');
+    s=play();incoming(s);swingAt(s,sweet(s)+dz,1);assert.ok(s.ball.vz>0);assert.ok(s.ball.vx>.5,`右 vx=${s.ball.vx}`);assert.equal(s.lastShot,'right');
+    s=play();incoming(s);swingAt(s,sweet(s)+dz,0);assert.ok(s.ball.vz>0);assert.equal(s.ball.vx,0);assert.equal(s.lastShot,'straight');
+  }
 });
 test('完美只看球与甜点的距离，并打出重炮',()=>{
   const half=WEAPONS.glove.reach*.5;
