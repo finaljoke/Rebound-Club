@@ -475,22 +475,27 @@ export function buildWorld(){
     // shows bodies and swings instead of head-tops; the frame is the tightest one that still keeps both
     // goals, the side walls at the defender's depth and both players' heads in view. Only resize moves it.
     // A longer lens (33°) and pitch chosen by a search over the same visibility rules: the largest court that keeps
-    // the players at least as tall as before. Wide screens look down at 26° (players ~1.45× larger).
+    // the players at least as tall as before. Wide screens look down at 28° (players ~1.35× larger): at 26° a full-window
+    // landscape canvas let the defender's head cover the keeper.
     // Portrait is width-bound on a near-square court, where a long lens drew the keeper as tall as the defender and the
     // court read as short. It uses a wider 46° lens from closer and lower (39°), lets the near corners behind the
     // defender leave the frame (the near goal mouth stays), and so shows real depth: keeper ~0.89× the defender's
     // height, ~7% more screen between them, the defender a little taller, and the empty floor below filled by court.
     const wide=Math.min(1,Math.max(0,(aspect-.9)/.7)),tall=aspect<1;
     camera.fov=baseFov=tall?46:33;camera.updateProjectionMatrix();
-    const target=aim0.set(0,tall?.8:.4*(1-wide),tall?-5.5:-3.6),pitch=(tall?PITCH_PORTRAIT:PITCH_TALL-(PITCH_TALL-26)*wide)*Math.PI/180;
+    const target=aim0.set(0,tall?.8:.4*(1-wide),tall?-5.5:-3.6),pitch=(tall?PITCH_PORTRAIT:PITCH_TALL-(PITCH_TALL-28)*wide)*Math.PI/180;
     const offset=new THREE.Vector3(0,Math.sin(pitch),Math.cos(pitch)).multiplyScalar(12);
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
     for(const x of tall?[-1.6,1.6]:[-3.95,3.95])boundary.push(new THREE.Vector3(x,0,tall?.9:1.15),new THREE.Vector3(x,1.15,0));
     for(const x of [-SIDE-.1,SIDE+.1])boundary.push(new THREE.Vector3(x,0,-PLAYER_Z));
     boundary.push(new THREE.Vector3(0,2.3,-PLAYER_Z),new THREE.Vector3(0,2.3,-KEEPER_Z));
+    // The keeper's toes must clear the back of the defender's head: on a wide screen a close camera would otherwise blow
+    // the defender up over it.
+    const ndcY=v=>v.clone().project(camera).y,head=new THREE.Vector3(0,2.3,-PLAYER_Z-.45),keeperFeet=new THREE.Vector3(0,0,-KEEPER_Z+.45);
     const fits=()=>{camera.position.copy(target).addScaledVector(offset,distance);camera.lookAt(target);camera.updateMatrixWorld(true);
-      return boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.97&&Math.abs(p.y)<.97;});};
+      return boundary.every(v=>{const p=v.clone().project(camera);return Math.abs(p.x)<.97&&Math.abs(p.y)<.97;})
+        &&ndcY(keeperFeet)>ndcY(head)+.03;};
     let distance=.3;while(!fits()&&distance<4)distance*=1.02;
     base.copy(camera.position);baseQuat.copy(camera.quaternion);
     // Screen layers sit 0.5 in front of the lens, sized to the new frustum.

@@ -1,13 +1,16 @@
-// goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude.
+// goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude, and from
+// level 3 on: read (how far it starts toward a direction held once the defender is planted, as a share of the aim
+// mark), pattern (lean toward the side the last aims predict) and recover (speed share for getting back between shots).
 // practice: misses forgiven at the start of a level. Levels 1-3 keep ball speed and goal width fixed so
-// each one teaches a single thing through the keeper alone; later levels change one variable at a time.
+// each one teaches a single thing through the keeper alone; later levels change one variable at a time, with the
+// keeper's speed raised alongside the faster ball (5) so a plain shot to the open side is not a sure goal.
 export const LEVELS = [
   {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。挥击时按住 ← 或 →，球就往那边飞。',goals:2,practice:3,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
   {name:'左右开弓',tag:'按住方向，指哪打哪',lesson:'门将守住了正中。挥击时按住 ← 打左边，按住 → 打右边，看准它站哪边。',goals:3,practice:2,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
-  {name:'预判时刻',tag:'甜点重炮与旋转',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或用旋转绕过门将。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#5c5a8b'},
-  {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠。往同侧打会撞上它，按住另一侧打对角，或用旋转绕开。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#867045'},
-  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'只有球速变快。提前看影子移动到位，再选路线。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},color:'#8b574d'},
-  {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将更强。变向、重炮、旋转都要用上。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.4,error:.4},color:'#285b54'}
+  {name:'预判时刻',tag:'甜点重炮与旋转',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或用旋转绕过门将。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.5,pattern:.3,recover:.7},color:'#5c5a8b'},
+  {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠，还会盯着你在框里按的方向。按住另一侧打对角，或最后一刻再换方向骗它。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.6,pattern:.3,recover:.6},color:'#867045'},
+  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.5,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
+  {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将会读招。变向、重炮、旋转都要用上，出手前别暴露方向。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4,read:.8,pattern:.5,recover:.9},color:'#285b54'}
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
@@ -76,7 +79,7 @@ export function createGame(level=0,weapon='glove',options={}){
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
-    rally:1,power:false,shots:0,hitstop:0,lastShot:'',
+    rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],
     energy:options.tutorial&&levelIndex===0?0:SKILLS.start,skill:null,skillSeq:0,queued:[],
     whiff:null,tutorial:options.tutorial&&levelIndex===0?{step:0,attempt:0,shotStep:0,keeperX:0,done:false}:null,
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
@@ -120,6 +123,15 @@ export function ballHeight(s){
   const u=Math.abs(span)<1e-6?1:clamp((b.z-b.z0)/span,0,1),time=Math.abs(span)/Math.max(1e-6,Math.abs(b.vz??0));
   return HIT_HEIGHT+Math.min(MAX_APEX,GRAVITY*time*time/8)*4*u*(1-u);
 }
+// The last three aimed sides (-1, 0, 1), which a pattern-reading keeper leans on.
+function noteAim(s,side){s.aims.push(side);if(s.aims.length>3)s.aims.shift();}
+// Alternating sides predicts the side before last; repeating one predicts it again; anything else predicts nothing.
+// Three in a row of the same pattern is read with full confidence, two with a little over half.
+function predictSide(s){
+  const a=s.aims,n=a.length;if(n<2||!a[n-1]||!a[n-2])return 0;
+  const alt=a[n-1]===-a[n-2],next=alt?-a[n-1]:a[n-1],sure=n>=3&&a[n-3]&&(alt?a[n-3]===-a[n-2]:a[n-3]===a[n-2]);
+  return next*(sure?1:.6);
+}
 function strike(s,w,sw,axis){
   const b=s.ball,t=clamp((b.z-sweetZ(s,w))/(w.reach*.5),-1,1);
   const soft=!sw.armed,perfect=!soft&&Math.abs(t)<=PERFECT_BAND;
@@ -131,7 +143,7 @@ function strike(s,w,sw,axis){
   // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
-  s.lastShot=soft?'soft':perfect?'perfect':['left','straight','right'][aimSide(axis)+1];
+  s.lastShot=soft?'soft':perfect?'perfect':['left','straight','right'][aimSide(axis)+1];noteAim(s,aimSide(axis));
   s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   if(perfect)s.hitstop=.07;
@@ -190,7 +202,7 @@ export function useSkill(s,kind,axis=0){
   s.energy-=SKILLS[kind].cost;
   const w=WEAPONS[s.weapon],id=++s.skillSeq,b=s.ball;
   if(kind==='spin'){
-    const {angle,v,curve}=spinShot(s,b.x,b.z,axis);s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
+    const {dir,angle,v,curve}=spinShot(s,b.x,b.z,axis);noteAim(s,dir);s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
     b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
     b.kind='spin';b.curve=curve;
     registerContact(s,b,angle,'spin',id,s.queued);
@@ -202,7 +214,7 @@ export function useSkill(s,kind,axis=0){
 }
 // The burst reads the held direction when it leaves the racket, so the player can still pick a side during the show.
 function launchBurst(s,axis){
-  const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;k.angle=aimAngle(s,k.x,k.z,axis);
+  const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;k.angle=aimAngle(s,k.x,k.z,axis);noteAim(s,aimSide(axis));
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=Math.min(cfg.maxSpeed,s.level.speed*s.rally*cfg.speedScale);
   b.x=k.x;b.z=k.z;b.vx=Math.sin(k.angle)*v;b.vz=Math.cos(k.angle)*v;launch(b,KEEPER_Z);b.kind='burst';b.curve=null;
   registerContact(s,b,k.angle,'burst',k.id,s.events);
@@ -267,10 +279,15 @@ function moveKeeper(s,dt){
     // The misread fades over the last 0.6s, so slow balls get corrected and fast ones don't.
     const remaining=(KEEPER_Z-b.z)/b.vz;
     target=clamp(b.x+b.vx*remaining+k.err*Math.min(1,remaining/.6),-g,g);speed=K.speed;
-  }else if(s.phase==='playing'&&b.vz<0&&s.level.shade){
-    // Narrowing the angle: while the defender receives, the keeper shades toward that side,
-    // so a straight shot from the flank runs into it and crossing or banked shots pay off.
-    target=clamp(foldX(b.x+b.vx*(sweetZ(s,WEAPONS[s.weapon])-b.z)/b.vz)*s.level.shade,-g,g);speed=K.speed*.5;
+  }else if(s.phase==='playing'&&b.vz<0){
+    // Between shots the keeper gets back toward the middle. Narrowing the angle: while the defender receives, a
+    // shading keeper leans toward that side, so a straight shot from the flank runs into it. A pattern reader also
+    // leans toward the side the recent aims predict. Once the ball is in the hit box the defender is planted, so a
+    // direction held then is the aim showing: a reading keeper starts across early, and a late switch fools it.
+    const mark=g*AIM_SHARE,held=aimSide(s.held);speed=K.speed*(K.recover??(s.level.shade?.5:.35));
+    if(s.level.shade)target=foldX(b.x+b.vx*(sweetZ(s,WEAPONS[s.weapon])-b.z)/b.vz)*s.level.shade;
+    target=clamp(target+predictSide(s)*mark*(K.pattern||0),-g,g);
+    if(K.read&&held&&inHitRange(s)){target=held*mark*K.read;speed=K.speed;}
   }
   k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
 }
@@ -333,6 +350,7 @@ function tick(s,dt,axis){
     return;
   }
   const w=WEAPONS[s.weapon],sw=s.swing;
+  s.held=axis;
   // Once the ball is in the hit box, and while a swing can still connect, the defender is planted: the held direction
   // aims instead of sliding off the ball, so pressing it a beat before the swing is safe.
   if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*6.2*dt,-3.45,3.45);

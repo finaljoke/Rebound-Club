@@ -6,6 +6,13 @@ import {create3DRenderer} from './scene3d.mjs';
 import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
+// In a match tips float over the court as a caption: any change to the feedback line shows it for a few seconds.
+let captionTimer=0;
+new MutationObserver(()=>{const box=$('feedback').parentElement;box.classList.add('show');clearTimeout(captionTimer);captionTimer=setTimeout(()=>box.classList.remove('show'),4200);})
+  .observe($('feedback'),{childList:true,characterData:true,subtree:true});
+// Touch devices go true full screen when a match starts (a user gesture); where the API is missing (iPhone Safari) the
+// page layout is already full-bleed and the installed app runs standalone.
+function goFullscreen(){const d=document.documentElement;if(matchMedia('(pointer:coarse)').matches&&document.fullscreenEnabled&&!document.fullscreenElement&&d.requestFullscreen)d.requestFullscreen({navigationUI:'hide'}).catch(()=>{});}
 let canvas=$('court'),ctx=null,court3D=null;
 const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
@@ -200,6 +207,7 @@ document.querySelector('.app').addEventListener('click',e=>{
   }
   if(action==='help'){suspend();$('help-dialog').showModal();return;}
   if(action==='share'){const b=e.target.closest('[data-action]');if(shareShot?.blob)shareCard(shareShot.blob,shareShot.card).then(how=>{if(how!=='cancelled')b.textContent=how==='shared'?'已分享':'战绩图已保存';});return;}
+  if(['start','retry','next'].includes(action))goFullscreen();
   if(action==='start'){if(selected===0&&needsTutorial(progress)&&!game.tutorial){beginTutorial();return;}startGame(game);sound('start');}
   if(action==='resume')resumeGame(game);
   if(action==='retry'){ready(!!game.tutorial);startGame(game);sound('start');}
