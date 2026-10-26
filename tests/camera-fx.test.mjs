@@ -8,11 +8,15 @@ const heightShare=(w,z)=>{const top=w.project(0,z,2.15),feet=w.project(0,z,0);re
 test('竖屏与横屏：俯角更低、人物更大，同时两端球门、防守区和左右边界都在画面内',()=>{
   const w=buildWorld();
   for(const aspect of [.62,.87,1.45,2.2]){w.resize(aspect);
-    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-SIDE,PLAYER_Z,0],[SIDE,PLAYER_Z,0],[-4,0,1.1],[4,0,1.1],[0,PLAYER_Z,2.2],[0,KEEPER_Z,2.2]]){
+    // Portrait may crop the near corners behind the defender (user-approved for depth), never the near goal mouth.
+    const near=aspect<1?[[-1.6,0,1.1],[1.6,0,1.1]]:[[-4,0,1.1],[4,0,1.1]];
+    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-SIDE,PLAYER_Z,0],[SIDE,PLAYER_Z,0],...near,[0,PLAYER_Z,2.2],[0,KEEPER_Z,2.2]]){
       const p=w.project(x,z,y);assert.ok(p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1,JSON.stringify({aspect,x,z,y,p}));}
     const pitch=Math.atan2(w.camera.position.y,Math.hypot(w.camera.position.x,w.camera.position.z+4.3))*180/Math.PI;
     assert.ok(pitch<48,`aspect ${aspect} 俯角 ${pitch.toFixed(0)}°`);
-    assert.ok(heightShare(w,PLAYER_Z)>(aspect<1?.1:.18),`aspect ${aspect} 人物高度占比 ${heightShare(w,PLAYER_Z).toFixed(3)}`);}
+    assert.ok(heightShare(w,PLAYER_Z)>(aspect<1?.1:.18),`aspect ${aspect} 人物高度占比 ${heightShare(w,PLAYER_Z).toFixed(3)}`);
+    // Portrait reads depth through size: the keeper is drawn clearly smaller than the defender.
+    if(aspect<1)assert.ok(heightShare(w,KEEPER_Z)<heightShare(w,PLAYER_Z)*.92,`aspect ${aspect} 门将/主角 ${(heightShare(w,KEEPER_Z)/heightShare(w,PLAYER_Z)).toFixed(2)}`);}
 });
 test('镜头只随画面尺寸变化，对局中移动、击球不推拉镜头',()=>{
   const w=buildWorld(),s=createGame();startGame(s);stepGame(s,1,0);w.resize(.7);const pos=w.camera.position.clone();
