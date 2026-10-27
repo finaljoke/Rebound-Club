@@ -499,7 +499,7 @@ export function buildWorld(assets){
     const showing=!!react.kind&&s.phase!=='playing'&&s.phase!=='skill';
     const reactEnv=(actor,clip)=>{const d=actor.duration(clip),u=now-react.at;return showing&&u>=0&&u<d?Math.min(1,u/.15,(d-u)/.3):0;};
     // Striker: idle or a side-step by the held direction; the punch follows the rules' swing clock (or the burst's).
-    hero.position.set(pose.px,0,-s.player.z);
+    hero.position.set(pose.px,0,-s.player.z);follow=pose.px*FOLLOW;
     hero.rotation.z=s.phase==='playing'?-axis*.075:0;
     const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=WEAPONS[s.weapon];
     if(sw!==lastSwing){if(lastSwing&&!sw)swingEnd.at=s.elapsed;else if(sw)punchLeft=s.ball.x<s.player.x-.08;lastSwing=sw;}
@@ -659,7 +659,8 @@ export function buildWorld(assets){
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
     for(const x of tall?[-1.6,1.6]:[-3.95,3.95])boundary.push(new THREE.Vector3(x,0,tall?.9:1.15),new THREE.Vector3(x,1.15,0));
-    for(const x of [-SIDE-.1,SIDE+.1])boundary.push(new THREE.Vector3(x,0,-PLAYER_Z));
+    // The side walls at the defender's depth may leave the frame (user choice, 2026-10-27: a closer camera, players about
+    // 1.4x larger); the camera slides along with the defender instead (follow, in shake) so it never leaves the screen.
     boundary.push(new THREE.Vector3(0,2.3,-PLAYER_Z),new THREE.Vector3(0,2.3,-KEEPER_Z));
     // The keeper's toes must clear the back of the defender's head: on a wide screen a close camera would otherwise blow
     // the defender up over it.
@@ -677,10 +678,12 @@ export function buildWorld(assets){
   }
   // Camera shake is a pure render offset around the framed position.
   let baseFov=39;
+  // Sideways follow of the defender: a share of its x, as a pure slide (no turn), set every update.
+  let follow=0;const FOLLOW=.4;
   const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3(),hudSize={w:1,h:1};
   // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
   // always comes from the latest resize, so a close-up never restores an old screen shape.
-  function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
+  function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);camera.position.x+=follow;
     if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}
     else if(goalCam.w>0){camera.position.lerp(chasePos,goalCam.w);lookAt.copy(aim0).lerp(chaseAim,goalCam.w);camera.lookAt(lookAt);}
     // Close-ups open the lens (burst 40°, goal shot 52°) for a closer, more dynamic frame; exactly the framed lens otherwise.
@@ -689,7 +692,7 @@ export function buildWorld(assets){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a

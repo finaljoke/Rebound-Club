@@ -55,7 +55,8 @@ test('AC8/AC12 爆发镜头：演出中推近，结束时精确回到正常取�
   for(let i=0;i<TICKS+20&&s.phase==='skill';i++){stepGame(s,1/120,0);w.update(s,0,false,.3+i/120);w.shake(0);}
   assert.equal(s.phase,'playing');w.update(s,0,false,.8);w.shake(0);const after=w.camera.position.clone(),afterQ=w.camera.quaternion.clone();w.resize(1.6);w.shake(0);
   assert.ok(after.distanceTo(w.camera.position)<1e-9,'应回到新尺寸下的正常取景');assert.ok(1-Math.abs(afterQ.dot(w.camera.quaternion))<1e-12,'朝向也应恢复');
-  const r=buildWorld(assets);r.resize(.7);r.shake(0);const base=r.camera.position.clone();const t=armed();useSkill(t,'burst');
+  // The base frame is taken with the defender where it stands (the camera follows it sideways, which is not a push).
+  const r=buildWorld(assets);r.resize(.7);const t=armed();r.update(t,0,true,0);r.shake(0);const base=r.camera.position.clone();useSkill(t,'burst');
   for(let i=1;i<=TICKS+10;i++){stepGame(t,1/120,0);r.update(t,0,true,i/120);r.shake(0);assert.ok(r.camera.position.distanceTo(base)<1e-9,'减少动态效果不推镜头');}
   assert.equal(r.chargeRing.visible,false,'演出结束蓄力环消失');assert.ok(nq);
 });

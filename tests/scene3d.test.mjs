@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld} from '../dist/scene3d.mjs';
 import {loadCharacters} from './helpers/characters.mjs';
+import {heroInFrame} from './helpers/framing.mjs';
 const assets=await loadCharacters();
 import {createGame,startGame,stepGame,ballHeight,hitZone,swingPreview,LEVELS,KEEPER_Z,KEEPER_REACH,WEAPONS,PLAYER_Z} from '../dist/core.mjs';
 
@@ -20,10 +21,12 @@ test('3D人物和球与原有碰撞坐标保持一致，暂停时不会增加位
   assert.equal(w.ball.position.y,ballHeight(s));
   const pose=w.hero.toJSON();w.update(s,.7,false);assert.deepEqual(w.hero.toJSON(),pose);
 });
-test('竖屏手机比例下两个球门、近端球门口和整片防守区完整可见，球场占满画面宽度',()=>{
+// The side walls at the defender's depth may leave the frame (user choice 2026-10-27: a closer camera that follows the
+// defender sideways); the defender itself never does.
+test('竖屏手机比例下两个球门和近端球门口完整可见，主角走到两侧也在画面内，球场占满画面宽度',()=>{
   const w=buildWorld(assets);
-  for(const aspect of [.62,.76,.85,.96]){w.resize(aspect);
-    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-1.6,-.9,0],[1.6,-.9,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-1.6,0,1.1],[1.6,0,1.1],[-3.82,1.6,0],[3.82,1.6,0]]){const p=w.project(x,z,y);assert.ok(p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1,JSON.stringify({aspect,x,z,y,p}));}
+  for(const aspect of [.62,.76,.85,.96]){w.resize(aspect);heroInFrame(w,aspect);w.resize(aspect);
+    for(const [x,z,y] of [[-4.3,10.6,0],[4.3,10.6,0],[-1.6,-.9,0],[1.6,-.9,0],[-4.2,9.7,1.3],[4.2,9.7,1.3],[-1.6,0,1.1],[1.6,0,1.1]]){const p=w.project(x,z,y);assert.ok(p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1,JSON.stringify({aspect,x,z,y,p}));}
     const near=w.project(-4.2,0,0),nearR=w.project(4.2,0,0);assert.ok(nearR.x-near.x>.74,`aspect ${aspect} 近端宽度占比 ${(nearR.x-near.x).toFixed(2)}`);}
 });
 test('守门员与远端球门是有体积的3D对象，守门员位置与状态一致',()=>{

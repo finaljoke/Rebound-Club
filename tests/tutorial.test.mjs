@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,swingPreview,LEVELS,WEAPONS,PLAYER_Z,KEEPER_Z} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,swingPreview,LEVELS,WEAPONS,PLAYER_Z,KEEPER_Z,PACE} from '../dist/core.mjs';
 import {loadProgress,saveProgress,needsTutorial} from '../dist/storage.mjs';
 
 const levelsBefore=JSON.stringify(LEVELS);
@@ -34,7 +34,7 @@ test('教学的特殊球速、发球和门将状态不会泄漏到普通关卡',
   const s=tutorial();for(let i=0;i<2;i++){waitServe(s);returnBall(s);}
   assert.equal(JSON.stringify(LEVELS),levelsBefore);
   const n=createGame(0,'glove');assert.equal(n.tutorial,null);startGame(n);stepGame(n,1,0);
-  assert.ok(Math.abs(Math.hypot(n.ball.vx,n.ball.vz)-Math.hypot(.65,LEVELS[0].speed))<1e-9);
+  assert.ok(Math.abs(Math.hypot(n.ball.vx,n.ball.vz)-Math.hypot(.65*PACE,LEVELS[0].speed))<1e-9);
   assert.equal(n.practiceLeft,LEVELS[0].practice);assert.equal(createGame(1,'glove',{tutorial:true}).tutorial,null,'只有第一关有教学');
 });
 test('教学完成状态可保存；老玩家（已有进度）不再被要求教学',()=>{

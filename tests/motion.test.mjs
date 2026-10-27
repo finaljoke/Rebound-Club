@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ballHeight,HIT_HEIGHT,PLAYER_Z,KEEPER_Z} from '../dist/core.mjs';
+import {ballHeight,HIT_HEIGHT,PLAYER_Z,KEEPER_Z,PACE} from '../dist/core.mjs';
 
 // Height along a flight from z0 to z1 at a given forward speed (only the depth speed matters for the arc).
 function apexOf(speed,z0=KEEPER_Z-.3,z1=PLAYER_Z){
@@ -10,7 +10,8 @@ function apexOf(speed,z0=KEEPER_Z-.3,z1=PLAYER_Z){
 }
 
 test('弧线由固定重力决定：同一段距离，球越快越平，越慢越高',()=>{
-  const serve=apexOf(4),fast=apexOf(10),soft=apexOf(3.2),burst=apexOf(12.5);
+  // Authored speeds (level-1 serve 4, a fast rally 10, a soft return 3.2, the burst cap 12.5) at the game's pace.
+  const serve=apexOf(4*PACE),fast=apexOf(10*PACE),soft=apexOf(3.2*PACE),burst=apexOf(12.5*PACE);
   assert.ok(Math.abs(serve-.9)<.06,`第一关发球弧顶 ${serve.toFixed(2)}`);
   assert.ok(fast<.25,`快球弧顶 ${fast.toFixed(2)}`);assert.ok(burst<fast);
   assert.ok(soft>serve,`软球弧顶 ${soft.toFixed(2)}`);assert.ok(soft<=1.5);
