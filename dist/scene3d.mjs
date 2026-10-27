@@ -3,9 +3,12 @@ import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,m
 import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
+import {GLTFLoader} from './vendor/GLTFLoader.js';
+import {loadCharacterAssets} from './actor.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
-export function buildWorld(){
+// assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
+export function buildWorld(assets){
   const scene=new THREE.Scene();scene.background=new THREE.Color('#d7dfc5');
   const camera=new THREE.PerspectiveCamera(34,.85,.1,100);
   camera.position.set(2.8,18.5,9.8);camera.lookAt(0,.15,-4.6);
@@ -568,31 +571,34 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
     this.tier++;slow=0;ema=16.7;return true;
   }};
 }
-export function create3DRenderer(canvas){
+// Returns at once; `ready` settles when the characters are loaded and the world is built (nothing is drawn before).
+// A failed load rejects `ready`, and the caller falls back to the 2D court.
+export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url)){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
   const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
   if(!context)throw new Error('WebGL2 is unavailable');
   const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true});
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-  const world=buildWorld(),governor=createQualityGovernor();let width=0,height=0,size=null,last=0;
+  const governor=createQualityGovernor();let world=null,width=0,height=0,size=null,last=0;
   function applyQuality(){
     const q=QUALITY_TIERS[governor.tier];renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,q.pixelRatio));
     const shadow=world.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}
     width=0;
   }
-  applyQuality();
+  const ready=loadCharacterAssets(load).then(assets=>{world=buildWorld(assets);applyQuality();});
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
   return {
+    ready,
     get quality(){return governor.tier;},
     render(state,axis,reduceMotion,shake=0){
-      if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
+      if(!world)return;if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
       const now=performance.now();if(last&&governor.sample(now-last))applyQuality();last=now;
       if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);world.resize(width/height);}
       world.update(state,axis,reduceMotion,now/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
     },
-    dispose(){observer?.disconnect();world.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    dispose(){observer?.disconnect();world?.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
   };
 }

@@ -68,8 +68,10 @@ test('必进判定不改变比赛结果：同一局开与不开判定，逐帧�
 // ---- Presentation: drive the scene the way game.js does (real clock, slow motion from goalLock). ----
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld} from '../dist/scene3d.mjs';
+import {loadCharacters} from './helpers/characters.mjs';
+const assets=await loadCharacters();
 function film(s,{reduceMotion=false,aspect=.46,maxSeconds=6}={}){
-  const w=buildWorld();w.resize(aspect);w.update(s,0,reduceMotion,0);w.shake(0);
+  const w=buildWorld(assets);w.resize(aspect);w.update(s,0,reduceMotion,0);w.shake(0);
   const base=w.camera.position.clone(),net=w.farGoal.children.find(o=>o.isLineSegments),rest=net.geometry.attributes.position.array.slice();
   const log=[];let now=0,goalAt=null,slowFrom=null,servedAt=null,outcome=null;
   for(let i=0;i<maxSeconds*60;i++){

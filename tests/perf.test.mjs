@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld,createQualityGovernor,QUALITY_TIERS} from '../dist/scene3d.mjs';
+import {loadCharacters} from './helpers/characters.mjs';
+const assets=await loadCharacters();
 import {mergeRigidParts} from '../dist/art.mjs';
 import {createGame,startGame,stepGame,ballHeight,SIDE} from '../dist/core.mjs';
 
@@ -14,7 +16,7 @@ function drawCounts(w){
 function playing(level=0){const s=createGame(level);startGame(s);for(let i=0;i<400&&s.phase!=='playing';i++)stepGame(s,1/60,0);return s;}
 
 test('合并静态场景与球员零件后，每帧绘制数在手机预算内',()=>{
-  const w=buildWorld();w.resize(.46);
+  const w=buildWorld(assets);w.resize(.46);
   for(const s of [createGame(),playing(),playing(5)]){w.update(s,0,false,1);const c=drawCounts(w);
     assert.ok(c.main<=100,`可见物体 ${c.main}`);assert.ok(c.casters<=50,`投影物体 ${c.casters}`);}
 });
@@ -44,14 +46,14 @@ test('零件合并保持外形、顶点和颜色；保留名单、透明、贴�
 });
 
 test('球员合并后，动画关节、按名字查找的零件和拳套仍然可用',()=>{
-  const w=buildWorld();const s=playing();
+  const w=buildWorld(assets);const s=playing();
   for(const name of ['jersey-body','post-left','post-right'])assert.ok(w.scene.getObjectByName(name),name);
   w.update(s,0,false,1);w.update(s,0,false,2);
   assert.ok(w.hero.getObjectByName('glove-body'));assert.ok(w.gear.glove.visible);
 });
 
 test('渲染位置在两个模拟步之间按速度外推，瞬移时直接取当前位置',()=>{
-  const w=buildWorld(),s=playing();
+  const w=buildWorld(assets),s=playing();
   stepGame(s,1/120,0);stepGame(s,1.5/120,.8);
   const a=s.accumulator*120,vx=s.ball.x-s.pose.bx,vz=s.ball.z-s.pose.bz;
   assert.ok(a>.4&&a<.6,`alpha ${a}`);assert.ok(Math.abs(vz)>1e-3);

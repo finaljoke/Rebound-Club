@@ -2,13 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld} from '../dist/scene3d.mjs';
+import {loadCharacters} from './helpers/characters.mjs';
+const assets=await loadCharacters();
 import {createGame,startGame,stepGame,KEEPER_Z} from '../dist/core.mjs';
 
 // The keeper's save is staged like a real goalkeeper's: it springs before the ball arrives, meets it with both hands,
 // stretches only as far as the ball is from it, and after a full dive lands on its side and gets back up.
 // A still keeper (speed 0, no misread) faces a straight shot passing `gap` to its side; frames are rendered at 60 Hz.
 function film(gap){
-  const w=buildWorld(),s=createGame(3);s.practiceLeft=0;startGame(s);for(let i=0;i<240&&s.phase!=='playing';i++)stepGame(s,1/120,0);
+  const w=buildWorld(assets),s=createGame(3);s.practiceLeft=0;startGame(s);for(let i=0;i<240&&s.phase!=='playing';i++)stepGame(s,1/120,0);
   s.level={...s.level,keeper:{...s.level.keeper,speed:0,delay:0,error:0,read:0,pattern:0}};s.keeper.x=s.keeper.target=0;s.keeper.err=0;s.keeper.delay=0;
   s.ball={x:gap,z:5.5,vx:0,vz:6,z0:5.5,z1:KEEPER_Z};s.shot={x:gap,z:5.5,angle:0,kind:'straight',at:s.elapsed};s.lastShot='straight';s.swing=null;
   const cross=(KEEPER_Z-5.5)/6,v=new THREE.Vector3(),frames=[];let t=1;

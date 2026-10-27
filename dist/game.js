@@ -400,7 +400,10 @@ function frame(time){
   phaseUI();hud();draw(dt);requestAnimationFrame(frame);
 }
 ready();requestAnimationFrame(frame);
-// Everything is wired: lift the loading cover from index.html.
-document.body.dataset.booted='1';
+// Everything is wired: lift the loading cover from index.html once the court can draw. The 3D court first loads its
+// two characters; if that fails the match continues on the 2D court.
+const booted=()=>{document.body.dataset.booted='1';};
+if(court3D)court3D.ready.then(booted,()=>{fallbackRenderer();$('feedback').textContent='已切换兼容画面，可以继续防守。';booted();});
+else booted();
 // Offline play and install: release builds ship sw.js; local development (localhost) never registers it.
 if('serviceWorker' in navigator&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))navigator.serviceWorker.register('./sw.js').catch(()=>{});
