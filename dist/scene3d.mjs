@@ -10,7 +10,8 @@ import {CHARACTERS} from './characters.mjs';
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 // assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
 export function buildWorld(assets){
-  const scene=new THREE.Scene();scene.background=new THREE.Color('#d7dfc5');
+  // Night arena: a dark venue around a bright court, so the players and the ball carry the picture.
+  const scene=new THREE.Scene();scene.background=new THREE.Color('#070b1d');scene.fog=new THREE.Fog('#0d1233',26,70);
   const camera=new THREE.PerspectiveCamera(34,.85,.1,100);
   camera.position.set(2.8,18.5,9.8);camera.lookAt(0,.15,-4.6);
   const mats=new Map();
@@ -21,50 +22,61 @@ export function buildWorld(assets){
   const sphere=(r,color,parent,x,y,z,sx=1,sy=1,sz=1)=>{const m=mesh(new THREE.SphereGeometry(r,20,14),color,parent,x,y,z);m.scale.set(sx,sy,sz);return m;};
   const rod=(a,b,r,color,parent=scene)=>{const v1=new THREE.Vector3(...a),v2=new THREE.Vector3(...b),delta=v2.clone().sub(v1);const m=mesh(new THREE.CylinderGeometry(r,r,delta.length(),8),color,parent);m.position.copy(v1).add(v2).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());return m;};
   // Court markings sit just above the stripe tops (y .030) so they never depth-fight with them, whatever the draw order.
-  const floorLine=(x,z,width,depth,color='#e0e6c3')=>box(width,.016,depth,color,scene,x,.027,z);
-  const hemisphere=new THREE.HemisphereLight('#fff3d7','#516a5a',2.0);scene.add(hemisphere);
-  const sun=new THREE.DirectionalLight('#fff0cc',3.1);sun.position.set(-7,15,5);sun.target.position.set(0,0,-4);scene.add(sun.target);scene.add(sun);
+  const floorLine=(x,z,width,depth,color='#f3f6ff')=>box(width,.016,depth,color,scene,x,.027,z);
+  // Floodlight key (it keeps the name `sun` and casts the shadows), a cool sky fill and a warm fill from the camera side.
+  const HEMI=1.15,SUN=3;
+  const hemisphere=new THREE.HemisphereLight('#9fb4ff','#2a2140',HEMI);scene.add(hemisphere);
+  const sun=new THREE.DirectionalLight('#fff2dc',SUN);sun.position.set(-7,15,5);sun.target.position.set(0,0,-4);scene.add(sun.target);scene.add(sun);
   sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-10;sun.shadow.camera.right=10;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-10;sun.shadow.camera.near=1;sun.shadow.camera.far=40;sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;
-  const fill=new THREE.DirectionalLight('#dce9ee',.75);fill.position.set(7,8,-10);scene.add(fill);
-  const ground=mesh(new THREE.PlaneGeometry(200,200),'#d7dfc5',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;ground.name='ground';
-  const platform=softBox(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6,.13);platform.name='platform';
+  const fill=new THREE.DirectionalLight('#ffc2a8',.45);fill.position.set(6,7,9);scene.add(fill);
+  const ground=mesh(new THREE.PlaneGeometry(200,200),'#141a31',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;ground.name='ground';
+  const platform=softBox(10.3,.55,13.6,'#1b2240',scene,0,-.3,-4.6,.13);platform.name='platform';
   const stone=makeSurfaceTexture('stone');
-  softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#e5dfc5',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
+  softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#2a335f',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
   const turf=makeSurfaceTexture('turf'),turfMaterials=new Map();
   function fieldMaterial(color){if(!turfMaterials.has(color))turfMaterials.set(color,new THREE.MeshStandardMaterial({color,map:turf,bumpMap:turf,bumpScale:.012,roughness:.94}));return turfMaterials.get(color);}
-  const court=box(8.25,.06,10.2,fieldMaterial('#286659'),scene,0,-.015,-4.9);court.name='court';
-  // Ten stripes, two tints: one mesh per tint, re-tinted per level (stripes[0] even rows, stripes[1] odd rows).
+  const court=box(8.25,.06,10.2,fieldMaterial('#24974c'),scene,0,-.015,-4.9);court.name='court';
+  // Ten stripes in two fixed greens, one mesh per tint (stripes[0] even rows, stripes[1] odd rows). The level's colour goes
+  // to the LED boards and the rim light instead (see `accent`).
   const stripes=[0,1].map(parity=>{const rows=[];for(let i=parity;i<10;i+=2)rows.push(new THREE.Mesh(new THREE.BoxGeometry(8,.016,.97)).translateZ(-.45-i).translateY(.022));
-    const m=new THREE.Mesh(mergeMeshGeometry(rows),fieldMaterial(parity?'#286659':'#2c6c5e'));rows.forEach(r=>r.geometry.dispose());m.name=`stripes-${parity}`;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;});
+    const m=new THREE.Mesh(mergeMeshGeometry(rows),fieldMaterial(parity?'#28a253':'#2fae5a'));rows.forEach(r=>r.geometry.dispose());m.name=`stripes-${parity}`;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;});
   const paving=[];for(let z=-10.4;z<2;z+=1.45)for(const side of [-1,1])paving.push(new THREE.Vector3(side*4.35,-.008,z),new THREE.Vector3(side*5.07,-.008,z));
-  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#c9c6ac',transparent:true,opacity:.5})));
+  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#2c3560',transparent:true,opacity:.6})));
   for(const x of [-3.75,3.75])floorLine(x,-4.9,.035,9.6);
   for(const z of [-.25,-4.9,-9.55])floorLine(0,z,7.5,.035);
   floorLine(-2.4,-1.25,.035,2);floorLine(2.4,-1.25,.035,2);floorLine(0,-2.25,4.8,.035);
-  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#e0e6c3',scene,0,.036,-4.9,false);centerRing.rotation.x=-Math.PI/2;
-  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#e0e6c3',scene,0,.038,-4.9,false);centerDot.rotation.x=-Math.PI/2;
-  // Rails have real front/back faces; the lower beams don't hide the incoming ball.
+  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#f3f6ff',scene,0,.036,-4.9,false);centerRing.rotation.x=-Math.PI/2;
+  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#f3f6ff',scene,0,.038,-4.9,false);centerDot.rotation.x=-Math.PI/2;
+  // LED boards: club messages on a dark strip, one canvas shared by the side and far walls (each with its own repeat),
+  // scrolling on the scene clock. Without a DOM (node tests) they are plain blue panels.
+  const ledCanvas=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=2048;c.height=128;const g=c.getContext('2d');
+    const blocks=[['REBOUND CLUB','#ff6a2b'],['反弹守卫','#1ec8b4'],['NIGHT CUP','#ffd23a'],['反弹守卫','#3a7bff']],bw=c.width/blocks.length;
+    blocks.forEach(([text,col],i)=>{g.fillStyle='#0b1022';g.fillRect(i*bw,0,bw,128);g.fillStyle=col;g.fillRect(i*bw+6,12,bw-12,104);
+      g.fillStyle='#0b1022';g.font='900 64px system-ui,"PingFang SC","Microsoft YaHei",sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,i*bw+bw/2,67);});return c;})();
+  const ledMaterial=repeat=>{if(!ledCanvas)return new THREE.MeshBasicMaterial({color:'#2a3a7a'});const t=new THREE.CanvasTexture(ledCanvas);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.RepeatWrapping;t.repeat.set(repeat,1);return new THREE.MeshBasicMaterial({map:t,toneMapped:false});};
+  const ledSide=ledMaterial(1.5),ledFar=ledMaterial(.35);let ledOffset=0;
+  // Side walls: dark boards with the LED strip facing the court; low enough not to hide the incoming ball.
   for(const x of [-4.2,4.2]){
-    box(.18,.27,10.6,'#a6b599',scene,x,.15,-4.9);
-    rod([x,.65,.4],[x,.65,-10.2],.045,'#ece9d5');
-    for(let z=.3;z>=-10.3;z-=1.8)rod([x,.05,z],[x,.68,z],.045,'#eee9cf');
+    box(.18,.62,10.6,'#141a33',scene,x,.31,-4.9);
+    const face=mesh(new THREE.PlaneGeometry(10.4,.44),ledSide,scene,x-Math.sign(x)*.095,.33,-4.9,false);face.rotation.y=-Math.sign(x)*Math.PI/2;face.receiveShadow=false;
   }
   // The far wall is split around the goal mouth; both are rebuilt whenever the level's goal width changes.
   const farGoal=new THREE.Group();farGoal.position.set(0,0,-FAR_WALL);scene.add(farGoal);
-  const farNet=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.4});
+  const farNet=new THREE.LineBasicMaterial({color:'#e8f0ff',transparent:true,opacity:.5});
   let farNetLines=null,netRest=null,netDirty=false;
   function buildFarGoal(g){
     for(const child of [...farGoal.children]){farGoal.remove(child);if(child!==sign)child.geometry?.dispose();}
     const edge=SIDE+.4,span=edge-g;
     for(const side of [-1,1]){
-      box(span,.32,.65,'#244d40',farGoal,side*(g+span/2),.17,-.3);
-      box(span,.95,.32,'#cfdda8',farGoal,side*(g+span/2),.82,-.42);
-      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#fff2db',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
-      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#fff2db',farGoal);
-      sphere(.078,'#e6ddc5',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
+      box(span,.32,.65,'#141a33',farGoal,side*(g+span/2),.17,-.3);
+      box(span,.95,.32,'#1a2142',farGoal,side*(g+span/2),.82,-.42);
+      mesh(new THREE.PlaneGeometry(span-.08,.72),ledFar,farGoal,side*(g+span/2),.84,-.255,false).receiveShadow=false;
+      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#ffffff',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
+      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#e8edf8',farGoal);
+      sphere(.078,'#ffffff',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
     }
-    rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
-    rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
+    rod([-g,1.25,.1],[g,1.25,.1],.07,'#ffffff',farGoal);
+    rod([-g,.9,-.75],[g,.9,-.75],.045,'#e8edf8',farGoal);
     farNetLines=new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
     mergeRigidParts(farGoal);
   }
@@ -74,9 +86,10 @@ export function buildWorld(assets){
     const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');
     if(background){ctx.fillStyle=background;ctx.fillRect(0,0,512,128);}ctx.fillStyle=color;ctx.font='bold 52px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(value,256,66);
     const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
-    return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({map:texture,transparent:!background,depthWrite:false}));
+    return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({map:texture,transparent:!background,depthWrite:false,toneMapped:false}));
   }
-  const sign=label('REBOUND CLUB',2.9,.45);
+  // The club banner is a lit sign over the far stands.
+  const sign=label('REBOUND CLUB',2.9,.45,'#ffb347','#0d1430');
   // A low transparent goal leaves the defender and the interception area visible.
   // The camera sits behind it, so it is drawn see-through: its crossbar and net never hide the defender or the ball.
   const goal=new THREE.Group();scene.add(goal);
@@ -91,31 +104,26 @@ export function buildWorld(assets){
   rod([-4,.75,1.04],[4,.75,1.04],.045,back,goal);
   const netMat=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.16});
   goal.add(new THREE.LineSegments(netGeometry(4,1.04,.75,.05,1.04),netMat));
-  for(const side of [-1,1]){const joint=sphere(.075,ghost('#e6ddc5',.4),goal,side*4,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,ghost('#7d8b72',.45),goal,side*4,.015,.05,.015);foot.castShadow=false;}
+  for(const side of [-1,1]){const joint=sphere(.075,ghost('#e6ddc5',.4),goal,side*4,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,ghost('#2a3150',.45),goal,side*4,.015,.05,.015);foot.castShadow=false;}
   goal.traverse(o=>{if(o.isMesh)o.castShadow=false;});
-  // Small bleachers, planted corners, and front steps establish scale and depth.
-  for(const side of [-1,1]){
-    for(let i=-1;i<=1;i++)softBox(.19,.095,3.1,'#d2b78a',scene,side*4.75+i*.21,.44,-7.6,.035);
-    for(const z of [-6.45,-8.75]){softBox(.61,.39,.09,'#677c65',scene,side*4.75,.2,z,.025);rod([side*5.04,.2,z],[side*5.04,.91,z],.035,'#677c65');}
-    softBox(.075,.22,3.1,'#d8bf97',scene,side*5.04,.8,-7.6,.025);
-    for(const z of [-10.6,-3.4]){
-      mesh(new THREE.CylinderGeometry(.45,.38,.34,18),'#d3bba0',scene,side*4.65,.13,z);
-      const rim=mesh(new THREE.TorusGeometry(.44,.025,6,22),'#efe1c7',scene,side*4.65,.3,z,false);rim.rotation.x=Math.PI/2;
-      sphere(.52,'#819d68',scene,side*4.65,.68,z,1,.9,1);
-      sphere(.36,'#9ab47b',scene,side*4.83,.91,z+.1);
-    }
-  }
-  for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
+  // Side stands: dark tiers beyond the walls frame the court (the crowd sits on the far stands).
+  for(const side of [-1,1])for(let i=0;i<3;i++){const top=.45+i*.5,x=side*(5.05+i*.95);
+    mesh(new THREE.BoxGeometry(.95,top,11.6),i%2?'#1d2550':'#1a2147',scene,x,top/2-.02,-5.2,false);mesh(new THREE.BoxGeometry(.95,.05,11.6),'#2c3a72',scene,x,top+.005,-5.2,false);}
+  // Floodlight towers: poles and heads are static scenery (merged below); the lit panels, glows and beams come after.
+  const FLOODS=[[-9.5,3],[9.5,3],[-9.5,-15],[9.5,-15]],floodHeads=[];
+  for(const [x,z] of FLOODS){mesh(new THREE.CylinderGeometry(.16,.26,11.6,8),'#232a4a',scene,x,5.8,z,false);
+    const head=new THREE.Object3D();head.position.set(x,11.8,z);head.lookAt(0,0,-5);head.updateMatrixWorld(true);floodHeads.push(head);
+    const frame=mesh(new THREE.BoxGeometry(2.6,1.5,.25),'#232a4a',scene,0,0,0,false);frame.position.copy(head.position);frame.quaternion.copy(head.quaternion);}
   // Far stands: three tiers behind the far wall and a back wall carrying the club sign, so the top of a tall screen
   // shows a venue instead of bare ground. Built before the merge below, so they cost a couple of draws; no shadows.
   const STAND_Z=11.9,TIER=[.15,.7,1.25];
-  TIER.forEach((top,i)=>{mesh(new THREE.BoxGeometry(13,top+.65,.9),i%2?'#d9d2b8':'#e2dcc4',scene,0,(top-.65)/2,-(STAND_Z+.9*i),false);mesh(new THREE.BoxGeometry(13,.06,.9),'#c9bf9e',scene,0,top+.03,-(STAND_Z+.9*i),false);});
-  mesh(new THREE.BoxGeometry(13.4,3.3,.3),'#cfd9c0',scene,0,1,-(STAND_Z+2.75),false);
-  for(const x of [-6.6,6.6])mesh(new THREE.BoxGeometry(.3,3.3,3),'#c3cfb2',scene,x,1,-(STAND_Z+1.35),false);
+  TIER.forEach((top,i)=>{mesh(new THREE.BoxGeometry(13,top+.65,.9),i%2?'#1d2550':'#1a2147',scene,0,(top-.65)/2,-(STAND_Z+.9*i),false);mesh(new THREE.BoxGeometry(13,.06,.9),'#2c3a72',scene,0,top+.03,-(STAND_Z+.9*i),false);});
+  mesh(new THREE.BoxGeometry(13.4,3.3,.3),'#141b38',scene,0,1,-(STAND_Z+2.75),false);
+  for(const x of [-6.6,6.6])mesh(new THREE.BoxGeometry(.3,3.3,3),'#18203f',scene,x,1,-(STAND_Z+1.35),false);
   // The club banner hangs on two poles above the keeper's head. Only tall screens have room for it there; on wide ones
   // the keeper's head sits near the top edge and every spot beside its range (±4 with a dive) is cut off by the stands,
   // so it is not shown (the page header carries the name).
-  const signPoles=[0,1].map(()=>{const pole=mesh(new THREE.CylinderGeometry(.035,.035,1,8),'#8e9a80',scene,0,0,0,false);pole.name='sign-pole';return pole;});
+  const signPoles=[0,1].map(()=>{const pole=mesh(new THREE.CylinderGeometry(.035,.035,1,8),'#2a3150',scene,0,0,0,false);pole.name='sign-pole';return pole;});
   if(sign)scene.add(sign);
   function placeSign(aspect){
     if(!sign)return;const shown=aspect<1;sign.visible=shown;signPoles.forEach(pole=>pole.visible=shown);if(!shown)return;
@@ -124,10 +132,42 @@ export function buildWorld(assets){
     signPoles.forEach((pole,i)=>{const top=y-h/2,px=x+(i?1:-1)*width*.42;pole.scale.set(1,top+.65,1);pole.position.set(px,(top-.65)/2,-z-.02);});
   }
   // A cool rim light from the far end separates the players from the turf (no shadow, so no extra pass).
-  const rim=new THREE.DirectionalLight('#e6f0ff',.9);rim.name='rim';rim.position.set(3,6,-16);rim.target.position.set(0,0,-4);scene.add(rim,rim.target);
+  const RIM='#7fb6ff',rim=new THREE.DirectionalLight(RIM,1.4);rim.name='rim';rim.position.set(3,6,-16);rim.target.position.set(0,0,-4);scene.add(rim,rim.target);
   // Everything above is static scenery: bake it into one mesh per material before any animated or pooled object exists.
   mergeRigidParts(scene);
-  const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
+  const courtText=label('REBOUND',4.4,.85,'#ffffff');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.12;scene.add(courtText);}
+  // Sky: a gradient dome (deep blue overhead, a violet glow on the horizon) and a few stars; neither takes fog.
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(80,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
+    vertexShader:'varying vec3 p;void main(){p=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader:'varying vec3 p;void main(){float y=p.y;vec3 top=vec3(.02,.03,.09),hor=vec3(.17,.10,.32),low=vec3(.03,.04,.10);gl_FragColor=vec4(y>0.?mix(hor,top,smoothstep(0.,.55,y)):mix(hor,low,smoothstep(0.,.2,-y)),1.);}'}));
+  sky.name='sky';sky.renderOrder=-1;scene.add(sky);
+  const starPos=new Float32Array(240*3);for(let i=0;i<240;i++){const h=Math.sin(i*91.17)*43758.55,r1=h-Math.floor(h),h2=Math.sin(i*17.31)*24634.6,r2=h2-Math.floor(h2),a=r1*Math.PI*2,y=.25+r2*.75,rr=Math.sqrt(1-y*y);starPos.set([Math.cos(a)*rr*75,y*75,Math.sin(a)*rr*75],i*3);}
+  const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
+  scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:'#dfe6ff',size:.35,fog:false,transparent:true,opacity:.8,depthWrite:false})));
+  // Floodlights: lit panels (one mesh), soft glows (one point batch) and faint beams (one mesh), none of them shadowed.
+  const glowTexture=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d'),r=g.createRadialGradient(64,64,0,64,64,64);
+    r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.25,'rgba(255,236,190,.45)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,128,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  // Placed on each head, then detached with their world transform as their own (mergeMeshGeometry uses local matrices).
+  const panels=[],beams=[],glowPos=[];
+  const onHead=(head,m)=>{head.add(m);m.updateMatrixWorld(true);head.remove(m);m.matrixWorld.decompose(m.position,m.quaternion,m.scale);return m;};
+  for(const head of floodHeads){for(let i=0;i<3;i++)for(let j=0;j<2;j++){const p=new THREE.Mesh(new THREE.PlaneGeometry(.7,.55));p.position.set(-.85+i*.85,-.35+j*.7,.14);panels.push(onHead(head,p));}
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(1.1,4.2,15,20,1,true));beam.rotation.x=Math.PI/2;beam.position.z=7.6;beams.push(onHead(head,beam));
+    glowPos.push(...new THREE.Vector3(0,0,.6).applyMatrix4(head.matrixWorld).toArray());}
+  const floodPanels=new THREE.Mesh(mergeMeshGeometry(panels),new THREE.MeshBasicMaterial({color:'#fffbe6',toneMapped:false,fog:false}));floodPanels.name='flood-panels';scene.add(floodPanels);
+  const beamFade=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=4;c.height=128;const g=c.getContext('2d'),l=g.createLinearGradient(0,0,0,128);
+    l.addColorStop(0,'rgba(255,245,215,0)');l.addColorStop(.15,'rgba(255,245,215,.5)');l.addColorStop(1,'rgba(255,245,215,0)');g.fillStyle=l;g.fillRect(0,0,4,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const floodBeams=new THREE.Mesh(mergeMeshGeometry(beams),new THREE.MeshBasicMaterial({map:beamFade,color:'#fff4d8',transparent:true,opacity:beamFade?.14:0,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,fog:false}));
+  floodBeams.name='flood-beams';scene.add(floodBeams);
+  for(const m of [...panels,...beams])m.geometry.dispose();
+  const glowGeo=new THREE.BufferGeometry();glowGeo.setAttribute('position',new THREE.Float32BufferAttribute(glowPos,3));
+  scene.add(new THREE.Points(glowGeo,new THREE.PointsMaterial({map:glowTexture,color:'#fff1d0',size:9,transparent:true,opacity:glowTexture?1:0,depthWrite:false,blending:THREE.AdditiveBlending,fog:false})));
+  // A brighter pool of light on the court keeps the eye in the middle; the edges fall off into the dark venue.
+  const poolTexture=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d'),r=g.createRadialGradient(64,64,0,64,64,64);
+    r.addColorStop(0,'rgba(255,250,230,.22)');r.addColorStop(.6,'rgba(255,240,210,.08)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,128,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const pool=new THREE.Mesh(new THREE.CircleGeometry(7.5,40),new THREE.MeshBasicMaterial({map:poolTexture,transparent:true,opacity:poolTexture?1:0,depthWrite:false,blending:THREE.AdditiveBlending}));
+  pool.rotation.x=-Math.PI/2;pool.position.set(0,.031,-4.8);pool.scale.set(.72,1.12,1);pool.name='court-light';scene.add(pool);
+  // The level's colour as a lit accent: LED tint and rim light.
+  const accent=new THREE.Color(),accentHSL={h:0,s:0,l:0};
   // Crowd on the far stands: seated toy spectators share eight unshadowed instance batches.
   // The original seat layout and body-instance interface remain unchanged.
   const seats=[];for(let i=0;i<TIER.length;i++)for(let c=0;c<14;c++){const h=Math.sin(i*12.9898+c*78.233)*43758.5453,r=h-Math.floor(h);if(r<.15)continue;seats.push({x:-5.6+c*.86+(r-.5)*.2,y:TIER[i],z:-(STAND_Z+.9*i)+.12,phase:r*6.28,lift:.22+.12*r});}
@@ -401,7 +441,10 @@ export function buildWorld(assets){
     const raw=time??(wallClock??0)+1/60,step=wallClock===null?0:Math.max(0,Math.min(.25,raw-wallClock));wallClock=raw;if(s.phase!=='paused')clock+=step;const now=clock;
     if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
-    if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
+    if(lastLevel!==s.levelIndex){accent.set(s.level.color).getHSL(accentHSL);accent.setHSL(accentHSL.h,.7,.6);
+      for(const m of [ledSide,ledFar])m.color.set('#ffffff').lerp(accent,m.map?.35:.5);rim.color.set(RIM).lerp(accent,.3);buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
+    // LED boards scroll on the scene clock (still while paused); with reduced motion they hold still.
+    if(!reduceMotion)ledOffset=(now*.04)%1;for(const m of [ledSide,ledFar])if(m.map)m.map.offset.x=ledOffset;
     const pose=renderPose(s);rollState=s;
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
     const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=smooth;
@@ -492,7 +535,7 @@ export function buildWorld(assets){
     // The push-in sweeps ~50° round the defender, then the hold keeps easing closer until the strike.
     cine.theta=sk&&kt<B.push?(1-sm((kt-B.freeze)/(B.push-B.freeze)))*.9:0;cine.r=1-.04*sm((kt-B.push)/(B.strike-B.push));
     if(sk){focus.set((s.player.x+sk.x)/2,1.02,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
-    hemisphere.intensity=2*(1-.42*cine.dim);sun.intensity=3.1*(1-.3*cine.dim);
+    hemisphere.intensity=HEMI*(1-.42*cine.dim);sun.intensity=SUN*(1-.3*cine.dim);
     keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
     chargeRing.visible=!!sk;if(sk){chargeRing.position.set(s.player.x,.055,-s.player.z);chargeRing.scale.setScalar(.7+.7*kp);chargeRing.material.opacity=.85*(1-kp*.5);}
     // Aura: hoops rise and fade on a loop, sparks stream upward; static when motion is reduced.
@@ -585,7 +628,7 @@ export function buildWorld(assets){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
