@@ -191,11 +191,16 @@ export function buildWorld(assets){
   const punchTime=(t,w,c)=>{const reach=w.windup+.02,A=w.windup+w.active;return t<=reach?c-.12+.12*smooth(t/reach):t<=A?c+(t-reach)*.4:c+(A-reach)*.4+(t-A)/w.recovery*.35;};
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
-  // Toon-shaded and inked like the players, with dark seams so its spin reads.
-  const ballMat=toonMaterial({color:'#ffbd35'},'#fff1c0',.35),powerMat=toonMaterial({color:'#ff5a24',emissive:'#ff3d10',emissiveIntensity:.45},'#ffd7a0',.35);
-  const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball);
-  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.26,.011,5,40),'#1d2a5c',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
-  addOutline(ballBody,outlineMaterial(.02));
+  // Toon-shaded and inked like the players: a cream ball with club-orange and navy waves, so its spin reads. Without a DOM
+  // (node tests) it is plain amber. A power shot burns orange through the same waves.
+  const ballWaves=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=256;c.height=128;const g=c.getContext('2d');g.fillStyle='#fff7e8';g.fillRect(0,0,256,128);g.lineWidth=14;
+    for(const [col,off] of [['#ff6a2b',0],['#1d2a5c',64],['#ff6a2b',128],['#1d2a5c',192]]){g.strokeStyle=col;g.beginPath();for(let x=0;x<=256;x+=4){const y=64+Math.sin((x+off)/256*Math.PI*2)*38;x?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();}
+    const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const ballMat=toonMaterial(ballWaves?{map:ballWaves}:{color:'#ffbd35'},'#fff1c0',.35),powerMat=toonMaterial({color:'#ff7a3a',map:ballWaves,emissive:'#ff3d10',emissiveIntensity:.45},'#ffd7a0',.35);
+  const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball),ballInk=addOutline(ballBody,outlineMaterial(.02));
+  // The body and its ink take a stretch matrix (along the flight, about the centre) while the group keeps the spin.
+  ballBody.matrixAutoUpdate=ballInk.matrixAutoUpdate=false;
+  const stretchDir=new THREE.Vector3(),stretchQ=new THREE.Quaternion(),stretchM=new THREE.Matrix4();
   // Ground hints. Every shape is sized from the same numbers the rules use (hitZone, swingPreview, crossingFrom).
   const flat=(geometry,color,opacity,y)=>{const m=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false}));m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=5;scene.add(m);return m;};
   const unit=new THREE.PlaneGeometry(1,1);
@@ -247,6 +252,12 @@ export function buildWorld(assets){
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
   const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#05080f',transparent:true,opacity:.4,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
+  const RIB=16,ribPts=Array.from({length:RIB},()=>new THREE.Vector3());let ribCount=0,ribHead=0;
+  const ribGeo=new THREE.BufferGeometry(),ribPos=new Float32Array(RIB*6),ribCol=new Float32Array(RIB*8),ribIdx=[];for(let i=0;i<RIB-1;i++){const a=i*2;ribIdx.push(a,a+1,a+2,a+1,a+3,a+2);}
+  ribGeo.setAttribute('position',new THREE.BufferAttribute(ribPos,3).setUsage(THREE.DynamicDrawUsage));ribGeo.setAttribute('color',new THREE.BufferAttribute(ribCol,4).setUsage(THREE.DynamicDrawUsage));ribGeo.setIndex(ribIdx);
+  const ribbon=new THREE.Mesh(ribGeo,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
+  ribbon.name='ball-ribbon';ribbon.frustumCulled=false;ribbon.renderOrder=4;ribbon.visible=false;scene.add(ribbon);
+  const ribColor=new THREE.Color(),ribSide=new THREE.Vector3(),ribDir=new THREE.Vector3(),ribCam=new THREE.Vector3();
   const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false,blending:THREE.AdditiveBlending}),scene,0,.68,-5,false);m.visible=false;return m;});
   // Contact flashes, built once and reused: the glove's burst with spikes, and a teal double ring for spin shots.
   // They face the camera, are hollow so the ball stays visible, and live for a fraction of a second.
@@ -520,7 +531,7 @@ export function buildWorld(assets){
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
     throwConfetti(s,now,reduceMotion);
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
-    ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
+    ball.scale.setScalar(size);ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
     // Speed reads in the trail: from 3 up to 10 it grows brighter and thicker (the gaps already widen with speed).
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
@@ -582,8 +593,11 @@ export function buildWorld(assets){
       banner.position.x=reduceMotion?0:(1-inn)*-span+out*span;banner.material.opacity=reduceMotion?Math.min(inn,1-out):1;}
     const opening=kt<.07,striking=kt>=B.strike&&kt<B.strike+.12;
     flash.visible=!!sk&&!reduceMotion&&(opening||striking);if(flash.visible)flash.material.opacity=opening?.4*(1-kt/.07):.5*(1-(kt-B.strike)/.12);
-    // A short kick when the burst actually leaves (camera shake, skipped with reduced motion).
-    kick=!reduceMotion&&fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:0;
+    // A short forward kick of the camera on contact (bigger for a perfect strike, biggest when the burst leaves); a render
+    // offset like the shake, skipped with reduced motion.
+    // Only the striker's own contacts kick (in play, struck near its line), not a serve.
+    const struck=s.phase==='playing'&&fxShot&&fxShot.z<PLAYER_Z+2.5;
+    kick=reduceMotion||!fxFeel?0:fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:struck&&fxFeel.flash==='burst'&&fxAge<.22?(1-fxAge/.22)**2*(.06+.05*Math.min(2,fxFeel.intensity)):0;
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(pose.bx,.035,-pose.bz);ballMarker.visible=ball.visible&&s.phase==='playing';
@@ -592,6 +606,20 @@ export function buildWorld(assets){
     else if(s.phase==='playing'&&!reduceMotion&&s.ball!==lastBall){lastBall=s.ball;}
     if(s.phase==='playing'&&!reduceMotion){history[historyHead].copy(ball.position);historyHead=(historyHead+1)%history.length;historyCount=Math.min(history.length,historyCount+1);}
     trail.forEach((m,i)=>{m.visible=!reduceMotion&&ball.visible&&historyCount>i;m.position.copy(i<historyCount?history[(historyHead-historyCount+i+history.length)%history.length]:ball.position);});
+    // The ball stretches along its flight as it speeds up and flattens for an instant at contact (none with reduced motion).
+    const flightSpeed=Math.hypot(s.ball.vx,s.ball.vz),st=reduceMotion||!ball.visible?0:Math.min(.3,Math.max(0,(flightSpeed-3)*.03))-.35*squash;
+    if(Math.abs(st)>1e-4&&flightSpeed>1e-6){const v=stretchDir.set(s.ball.vx/flightSpeed,0,-s.ball.vz/flightSpeed).applyQuaternion(stretchQ.copy(ball.quaternion).invert()),a=1+st,p=1-st*.45,k=a-p;
+      stretchM.set(p+k*v.x*v.x,k*v.x*v.y,k*v.x*v.z,0, k*v.y*v.x,p+k*v.y*v.y,k*v.y*v.z,0, k*v.z*v.x,k*v.z*v.y,p+k*v.z*v.z,0, 0,0,0,1);}
+    else stretchM.identity();
+    ballBody.matrix.copy(stretchM);ballInk.matrix.copy(stretchM);
+    // The ribbon: a glowing tail through the last positions, as wide and bright as the same speed reading makes the beads.
+    if(s.phase==='playing'&&!reduceMotion&&ball.visible){ribPts[ribHead].copy(ball.position);ribHead=(ribHead+1)%RIB;ribCount=Math.min(RIB,ribCount+1);}else if(s.phase!=='paused')ribCount=0;
+    ribColor.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffc66a');camera.getWorldPosition(ribCam);
+    for(let i=0;i<RIB;i++){const on=i<ribCount,p=on?ribPts[(ribHead-1-i+RIB)%RIB]:ball.position,n=i+1<ribCount?ribPts[(ribHead-2-i+RIB)%RIB]:p,f=1-i/(RIB-1);
+      ribDir.subVectors(p,n);ribSide.subVectors(ribCam,p).cross(ribDir).normalize();const width=on&&ribDir.lengthSq()>1e-8?(.05+.09*quick)*(burstTrail?1.8:powered?1.3:1)*f:0;
+      ribPos.set([p.x+ribSide.x*width,p.y+ribSide.y*width,p.z+ribSide.z*width,p.x-ribSide.x*width,p.y-ribSide.y*width,p.z-ribSide.z*width],i*6);
+      const alpha=f*f*(.3+.5*quick);ribCol.set([ribColor.r,ribColor.g,ribColor.b,alpha,ribColor.r,ribColor.g,ribColor.b,alpha],i*8);}
+    ribGeo.attributes.position.needsUpdate=ribGeo.attributes.color.needsUpdate=true;ribbon.visible=ribCount>1;
     // Contact flash: a short pop centred on the contact point, oldest first to fade.
     fx.visible=!!fxFeel&&fxU<1&&s.phase!=='ready';
     if(fx.visible){
@@ -657,6 +685,7 @@ export function buildWorld(assets){
     else if(goalCam.w>0){camera.position.lerp(chasePos,goalCam.w);lookAt.copy(aim0).lerp(chaseAim,goalCam.w);camera.lookAt(lookAt);}
     // Close-ups open the lens (burst 40°, goal shot 52°) for a closer, more dynamic frame; exactly the framed lens otherwise.
     const fov=baseFov+(40-baseFov)*cine.w+(52-baseFov)*goalCam.w;if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+   if(kick>0)camera.position.addScaledVector(camera.getWorldDirection(jolt),kick);
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);

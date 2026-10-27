@@ -185,3 +185,40 @@ body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .overlay{
   body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .skill-dock{width:60px}
   body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .attack-button{width:76px;height:76px}
 }
+/* Night arena skin (cartoon sports direction): colours, surfaces and headline type only; every layout rule above stays.
+   Dark navy panels, club orange for the main action, teal and gold accents, heavy italic headlines with an ink edge. */
+:root{--paper:#0b1022;--panel:#141b38;--ink:#f4f1ea;--muted:#9aa6c9;--line:#2a3560;--orange:#ff6a2b;--green:#1ec8b4;--lime:#22305e;--glass:rgba(14,20,46,.66);--glass-line:rgba(255,255,255,.14);--gold:#ffd23a}
+.site-header{border-bottom-color:#2a356066}.header-center,.eyebrow,dialog .eyebrow,.text-button,.secondary-button{color:var(--muted)}
+.boot{background:#070b1d;color:var(--ink)}.boot small{color:var(--muted)}
+.court-wrap{background:#070b1d;border-color:#1d2550}
+.court-badge{background:rgba(14,20,46,.74);border-color:var(--glass-line);color:#cfe9ff}.court-badge .live-dot{background:var(--green)}
+.combo{color:var(--gold);text-shadow:0 2px 0 #0d1022}.combo b{font-style:italic;font-weight:900}
+.hit-pop{font-size:30px;font-style:italic;font-weight:900;-webkit-text-stroke:5px #0d1022;paint-order:stroke fill;text-shadow:0 3px 0 #0d1022}.hit-pop.miss{color:#ff8a8a}
+.result-pop{font-style:italic;box-shadow:0 4px 0 #0d102255}.result-pop.good{background:var(--gold);color:#1a1300}.result-pop.bad{background:#ff5a4a;color:#fff7ea}.result-pop.info{background:rgba(14,20,46,.84);color:#cfe9ff}
+.progress-track{background:rgba(255,255,255,.16)}.practice-chip{background:rgba(30,200,180,.18);color:#7ff0e0}
+.move-button{background:#1a2347;border-color:#2c3a72;color:var(--ink);box-shadow:0 5px 0 #0a0f22,0 7px 12px #0006}
+.move-button.pressed{background:var(--orange);border-color:var(--orange);color:#fff7ea;box-shadow:0 1px 0 #8a2f0e}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .move-button.pressed{background:rgba(255,106,43,.9);border-color:rgba(255,106,43,.9);color:#fff7ea}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) :is(.pause-button,.sound-button,.hud,.move-button,.skill-button){box-shadow:0 4px 14px rgba(0,0,0,.35)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .energy{background:rgba(255,255,255,.16)}
+.attack-button{box-shadow:0 5px 0 #b8441c,0 7px 13px #ff6a2b33}.attack-button:active:not(:disabled){box-shadow:0 1px 0 #b8441c}
+.primary-button{box-shadow:0 4px 0 #b8441c;font-style:italic;font-weight:900;letter-spacing:.5px}.primary-button:hover{background:#ff7b42}.primary-button:active{box-shadow:0 1px 0 #b8441c}
+.game-footer{border-top-color:#1d2550}.game-footer>span:first-child{color:var(--muted)}.game-footer #score{color:var(--gold)}
+.overlay{background:rgba(5,8,20,.58)}
+.overlay-content{background:#141b38;border-color:var(--glass-line);color:var(--ink);box-shadow:0 18px 55px rgba(0,0,0,.5)}
+.overlay-content h3,dialog h2{font-style:italic;font-weight:900}
+.overlay-symbol{background:var(--gold);color:#1a1300}.overlay-symbol.loss{background:#2a3560;color:#ff8a8a}
+.overlay-content>p,.result-subtitle,.result-score>small,.result-stats>span{color:var(--muted)}
+.result-score{font-style:italic;color:var(--ink)}
+.result-highlight{color:var(--gold);background:rgba(255,210,58,.12)}
+.result-stats>span{border-right-color:rgba(255,255,255,.1)}.result-stats b{color:var(--ink)}
+.result-advice{background:rgba(255,255,255,.06);color:#cfd6ef}.result-advice b{color:var(--muted)}
+dialog{background:#141b38;color:var(--ink);box-shadow:0 22px 70px rgba(0,0,0,.55)}dialog::backdrop{background:rgba(5,8,20,.62)}
+dialog li p,.dialog-intro,.dialog-tip,.selection-note,.dialog-close,.selector-close{color:var(--muted)}.dialog-tip{background:rgba(255,255,255,.06)}
+.level-button{background:#1a2347;border-color:#2c3a72;color:#cfd6ef}.level-button>small{color:var(--muted)}
+.level-button.selected{background:var(--orange);border-color:var(--orange);color:#fff7ea}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]){--glass:rgba(14,20,46,.66);--glass-line:rgba(255,255,255,.14)}
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-footer{background:rgba(10,15,34,.8);color:#f4f1ea}
+/* Fix (pre-existing): in the immersive match the tip bar got a top on top of its bottom and stretched over the court. */
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .tutorial-bar{bottom:auto}
+.tutorial-bar{background:rgba(14,20,46,.9);border-color:var(--glass-line);box-shadow:0 6px 18px rgba(0,0,0,.4)}.tutorial-step{color:#06231f}.tutorial-skip{color:var(--muted)}

@@ -57,3 +57,16 @@ body[data-screen=ready] #save-note{font-size:11px;color:#805132;text-align:cente
   body[data-screen=ready] .lobby-level>span{font-size:9px}
   body[data-screen=ready] .start-button{height:56px}
 }
+/* Night arena skin for the lobby: colours only (layout above unchanged). */
+body[data-screen=ready]{background:#0b1022}
+body[data-screen=ready] .court-wrap{background:#0b1022}
+body[data-screen=ready] .icon-button{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#f4f1ea}
+body[data-screen=ready] .lobby-option{border-color:rgba(255,255,255,.12);background:rgba(20,27,56,.88);color:#f4f1ea}
+body[data-screen=ready] .lobby-option:hover{background:#1b2448}
+body[data-screen=ready] .lobby-option:active{background:#222c55}
+body[data-screen=ready] .lobby-level>span{color:#9aa6c9}
+body[data-screen=ready] .lobby-option>svg{stroke:#9aa6c9}
+body[data-screen=ready] .start-button{box-shadow:0 5px 0 #b8441c,0 10px 22px rgba(255,106,43,.25)}
+body[data-screen=ready] .lobby-record{color:#9aa6c9}
+body[data-screen=ready] .lobby-record b{color:#ffd23a}
+body[data-screen=ready] #save-note{color:#ffb38a}
