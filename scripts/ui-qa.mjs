@@ -33,9 +33,7 @@ try{
     await page.locator('#levels').getByRole('button',{name:/第1关/}).click();
     if(!await page.locator('#levels .selected').evaluate(e=>e===document.activeElement))throw Error('Selection lost keyboard focus');
     await page.keyboard.press('Escape');
-    await page.getByRole('button',{name:/上场装备/}).click();
-    if(!await page.locator('[data-weapon="racket"]').isDisabled())throw Error('Locked gear is available');
-    await page.locator('#selection-done').click();
+    if(await page.locator('[data-action="choose-gear"]').count())throw Error('Gear picker should be gone');
     await page.getByRole('button',{name:'开始游戏'}).click();
     await page.waitForFunction(()=>document.body.dataset.screen==='match');await page.waitForTimeout(950);
     const fit=await page.evaluate(()=>{const b=id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {screen:document.body.dataset.screen,scroll:document.documentElement.scrollWidth,width:innerWidth,height:innerHeight,court:b('court-wrap'),attack:b('attack'),footer:b('feedback'),prepVisible:document.querySelector('.prep-panel').getBoundingClientRect().height>0};});
@@ -109,9 +107,7 @@ try{
     await page.getByRole('button',{name:'挑战下一关'}).click();await page.waitForFunction(()=>document.body.dataset.screen==='match');
     if(!/02/.test(await page.locator('.game-top .mini-label').textContent()))throw Error('Next level did not advance');
     await page.getByRole('button',{name:'暂停游戏'}).click();await page.getByRole('button',{name:'返回俱乐部'}).click();
-    await page.getByRole('button',{name:/上场装备/}).click();await page.locator('[data-weapon="racket"]').click();await page.locator('#selection-done').click();
-    if(await page.locator('#prep-weapon').textContent()!=='球拍')throw Error('Unlocked gear selection failed');
-    results.push({nextLevel:'02',unlockedGear:'racket'});
+    results.push({nextLevel:'02'});
   }
   if(errors.length)throw Error(errors.join(';'));
   results.push({flow:'ready / selectors / match / pause / help / return / natural loss / retry',errors});

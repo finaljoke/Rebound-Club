@@ -28,13 +28,13 @@ test('近端球门横梁与球网淡化，不挡住人物和来球',()=>{
   near.traverse(o=>{if(o.material){assert.equal(o.material.transparent,true);assert.ok(o.material.opacity<=.45,`${o.type} ${o.material.opacity}`);}});
 });
 function strikeState(weapon,kind){const s=createGame(0,weapon);startGame(s);stepGame(s,1,0);s.ball={x:0,z:2.2,vx:0,vz:5,z0:2,z1:9.3};s.shot={x:0,z:2.1,angle:0,kind,at:s.elapsed};return s;}
-test('击中特效按装备区分，完美击球更大，短时间后自动消失',()=>{
+test('拳套击中特效：完美击球更大，短时间后自动消失',()=>{
   const kinds={};
-  for(const weapon of ['glove','racket','sword']){const w=buildWorld();
+  for(const weapon of ['glove']){const w=buildWorld();
     let s=strikeState(weapon,'right');w.update(s,0,false,0);w.update(s,0,false,.04);assert.equal(w.fx.visible,true);kinds[weapon]=w.fx.userData.flash;const normal=w.fx.userData.peak;
     w.update(s,0,false,.6);assert.equal(w.fx.visible,false,'特效应在寿命结束后隐藏');
     s=strikeState(weapon,'perfect');w.update(s,0,false,1);w.update(s,0,false,1.04);assert.ok(w.fx.userData.peak>normal*1.5,`${weapon} 完美 ${w.fx.userData.peak} 普通 ${normal}`);}
-  assert.equal(new Set(Object.values(kinds)).size,3);
+  assert.equal(kinds.glove,'burst');
 });
 test('连续渲染更新不新建物体、几何体或材质',()=>{
   const w=buildWorld(),s=strikeState('glove','perfect');const count=()=>{let objects=0;const g=new Set(),m=new Set();w.scene.traverse(o=>{objects++;if(o.geometry)g.add(o.geometry.uuid);if(o.material)m.add(o.material.uuid);});return [objects,g.size,m.size];};

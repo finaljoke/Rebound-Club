@@ -133,25 +133,15 @@ export function buildWorld(){
   }
   // Shared articulated collectible athletes; visual parts stay under their joints.
   const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
-  const skin=player.skin;scene.add(hero);hero.position.set(0,0,-1.6);
+  scene.add(hero);hero.position.set(0,0,-1.6);
   const goalie=buildAthlete({jersey:'#356f91',accent:'#edc25e',number:'1',goalie:true}),keeper=goalie.group;
   scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
   for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#eef2ee',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
   const leftHand=buildGlove('#ed6941',-1);leftHand.group.position.set(-.015,-.44,-.015);arms[0].add(leftHand.group);
-  const leftGlove=leftHand.body;
-  const gear={glove:new THREE.Group(),racket:new THREE.Group(),sword:new THREE.Group()};
-  for(const g of Object.values(gear)){g.position.set(.02,-.43,-.025);arms[1].add(g);}
+  const gear={glove:new THREE.Group()};
+  gear.glove.position.set(.02,-.43,-.025);arms[1].add(gear.glove);
   gear.glove.add(buildGlove('#ed6941').group);
-  rod([0,-.06,0],[0,.45,0],.045,'#c99d60',gear.racket);
-  const racket=mesh(new THREE.TorusGeometry(.3,.035,8,36),'#edb85f',gear.racket,0,.65,0);racket.scale.set(1,1.3,1);racket.name='racket-head';
-  for(let y=.02;y<.24;y+=.055)mesh(new THREE.CylinderGeometry(.048,.048,.022,10),'#345c4a',gear.racket,0,y,0,false);
-  for(let p=-.2;p<=.201;p+=.1){rod([p,.43,-.005],[p,.87,-.005],.006,'#e9e4c4',gear.racket);rod([-.24,.65+p,-.005],[.24,.65+p,-.005],.006,'#e9e4c4',gear.racket);}
-  rod([0,-.09,0],[0,.2,0],.055,'#345c4a',gear.sword);softBox(.38,.06,.12,'#e9c56f',gear.sword,0,.22,0,.025);
-  for(let y=-.05;y<.16;y+=.06)mesh(new THREE.CylinderGeometry(.058,.058,.014,10),'#d5ba78',gear.sword,0,y,0,false);
-  const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;blade.name='sword-blade';
-  box(.025,.82,.054,'#f5f1d7',gear.sword,-.007,.68,0).castShadow=false;
-  const tip=mesh(new THREE.ConeGeometry(.073,.23,4),material('#d8e6df',.25),gear.sword,0,1.24,0);tip.rotation.y=Math.PI/4;
-  const lookedUp=new Set(['jersey-body','jersey-number','shoulder-sleeve','glove-body','racket-head','sword-blade']);
+  const lookedUp=new Set(['jersey-body','jersey-number','shoulder-sleeve','glove-body']);
   for(const athlete of [hero,keeper])mergeRigidParts(athlete,{keep:o=>lookedUp.has(o.name)});
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
@@ -210,18 +200,17 @@ export function buildWorld(){
   // A ground shadow under the airborne ball makes its depth and landing point readable.
   const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
   const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false}),scene,0,.68,-5,false);m.visible=false;return m;});
-  // Contact flashes, built once and reused: glove = burst with spikes, racket = springy double ring, sword = slash arc.
+  // Contact flashes, built once and reused: the glove's burst with spikes, and a teal double ring for spin shots.
   // They face the camera, are hollow so the ball stays visible, and live for a fraction of a second.
   const fx=new THREE.Group();fx.visible=false;scene.add(fx);
   // Drawn over the defender (the camera sits behind them) but hollow, so the ball itself stays visible.
   const fxMat=()=>new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:0,depthWrite:false,depthTest:false});
-  const fxParts={burst:new THREE.Group(),ring:new THREE.Group(),slash:new THREE.Group()};
+  const fxParts={burst:new THREE.Group(),ring:new THREE.Group()};
   for(const g of Object.values(fxParts))fx.add(g);
   const fxLayer=o=>{o.renderOrder=7;};
   fxParts.burst.add(new THREE.Mesh(new THREE.RingGeometry(.2,.27,28),fxMat()),new THREE.Mesh(new THREE.CircleGeometry(.11,16),fxMat()));
   for(let i=0;i<8;i++){const spike=new THREE.Mesh(new THREE.PlaneGeometry(.045,.2),fxMat());const a=i/8*Math.PI*2;spike.position.set(Math.cos(a)*.42,Math.sin(a)*.42,0);spike.rotation.z=a-Math.PI/2;fxParts.burst.add(spike);}
   fxParts.ring.add(new THREE.Mesh(new THREE.RingGeometry(.22,.26,32),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.36,.385,32),fxMat()));
-  fxParts.slash.add(new THREE.Mesh(new THREE.RingGeometry(.34,.43,28,1,-.2,Math.PI*.85),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.47,.5,28,1,0,Math.PI*.7),fxMat()));
   fx.traverse(fxLayer);
   let fxShot=null,fxStart=-1,fxFeel=null,clock=0,wallClock=null;
   // Side-wall impact: a ring on the wall face at the contact point, growing and fading in 0.35 s (two pooled, built once).
@@ -403,11 +392,11 @@ export function buildWorld(){
     legs.forEach((leg,i)=>leg.rotation.x=moving?Math.sin(s.elapsed*16+i*Math.PI)*.48:0);
     const sw=s.swing,w=WEAPONS[s.weapon];
     const punch=sw?Math.sin(Math.min(1,sw.time/(w.windup+w.active))*Math.PI):0;
-    if(sw!==lastSwing){lastSwing=sw;punchLeft=!!sw&&s.weapon==='glove'&&s.ball.x<s.player.x-.08;}
+    if(sw!==lastSwing){lastSwing=sw;punchLeft=!!sw&&s.ball.x<s.player.x-.08;}
     for(let i=0;i<arms.length;i++){
       const active=(i===0)===punchLeft,extension=active?punch:0;
       // Rotate about the attached shoulder; translating this root separates its sleeve.
-      arms[i].rotation.x=.32+extension*(s.weapon==='glove'?.65:.1)*Math.min(1.5,strong)+(i===0?stride:-stride)*.18;
+      arms[i].rotation.x=.32+extension*.65*Math.min(1.5,strong)+(i===0?stride:-stride)*.18;
     }
     // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
@@ -416,14 +405,8 @@ export function buildWorld(){
     const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
     lastReduce=reduceMotion;
     if(sk){arms[1].rotation.x=.32-wind*.85+blow*1.6;arms[0].rotation.x=.32-wind*.35+blow*.45;torso.rotation.y=-wind*.45+blow*.35;torso.rotation.x=blow*.12-wind*.05;}
-    for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch-blow;
-    // Racket strings spring back after contact; the sword's blade carries through in a flat slash.
-    gear.racket.rotation.z=fxU<1&&s.weapon==='racket'?Math.sin(fxAge*34)*.16*(1-fxU)*strong:0;
-    gear.sword.rotation.y=s.weapon==='sword'?-punch*.35*strong:0;
     torso.rotation.y=punch*(punchLeft?.28:-.28);
     torso.rotation.x=punch*.06*strong;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
-    for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
-    leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
     const k=s.keeper,dv=trackDive(s,now,pose,sm);
     // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
     const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
@@ -514,7 +497,7 @@ export function buildWorld(){
       fx.quaternion.copy(camera.quaternion);const ease=1-(1-fxU)**3,peak=fxFeel.intensity,alpha=(1-fxU)**1.4*Math.min(1,.55+.25*peak);
       let scale=(reduceMotion?.9:.55+.75*ease)*(.7+.3*peak);
       if(fxFeel.flash==='ring'&&!reduceMotion)scale*=1+.18*Math.sin(fxU*18)*(1-fxU);
-      fx.scale.setScalar(scale);fxParts.slash.rotation.z=reduceMotion?0:-.9+1.3*ease;
+      fx.scale.setScalar(scale);
       fx.traverse(o=>{if(o.material)o.material.opacity=alpha;});
     }
   }

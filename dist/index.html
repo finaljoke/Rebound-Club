@@ -43,7 +43,6 @@
   <aside class="sidebar prep-panel lobby-menu" aria-label="赛前准备">
     <div class="lobby-options">
       <button class="lobby-option lobby-level" data-action="choose-level" aria-label="选择关卡"><span id="prep-stage">第 01 关</span><b id="prep-level-name">初次交锋</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
-      <button class="lobby-option lobby-gear" data-action="choose-gear" aria-label="上场装备"><span class="selected-gear-icon" id="prep-weapon-icon"></span><b id="prep-weapon">拳套</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
     </div>
     <button class="primary-button start-button" id="start-match" data-action="start">开始游戏 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7Z"/></svg></button>
     <p class="lobby-record" id="best-record" hidden>本关最佳 <b id="best">—</b></p>
@@ -51,10 +50,9 @@
   </aside>
 </main>
 </div>
-<dialog id="selection-dialog" aria-labelledby="selection-title" data-kind="levels">
+<dialog id="selection-dialog" aria-labelledby="selection-title">
   <button class="selector-close" id="selection-close" aria-label="关闭赛前选择">×</button><span class="eyebrow">赛前准备</span><h2 id="selection-title">选择关卡</h2>
   <section class="level-options"><p class="dialog-intro" id="prep-rule">进 2 球通关 · 丢 3 球结束</p><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note"></p></section>
-  <section class="gear-options"><p class="dialog-intro">选一件顺手的装备，打出你的节奏。</p><div id="weapons"></div><p class="selection-note" id="weapon-note"></p></section>
   <button class="primary-button" id="selection-done">就这样，上场</button>
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-title">

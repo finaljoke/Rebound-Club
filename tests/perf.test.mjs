@@ -43,11 +43,11 @@ test('零件合并保持外形、顶点和颜色；保留名单、透明、贴�
   assert.equal(joint.children.filter(m=>m.material===glass).length,2,'透明零件不合并');
 });
 
-test('球员合并后，动画关节、按名字查找的零件和换材质的拳套仍然可用',()=>{
+test('球员合并后，动画关节、按名字查找的零件和拳套仍然可用',()=>{
   const w=buildWorld();const s=playing();
   for(const name of ['jersey-body','post-left','post-right'])assert.ok(w.scene.getObjectByName(name),name);
-  s.weapon='racket';w.update(s,0,false,1);s.weapon='glove';w.update(s,0,false,2);
-  assert.ok(w.hero.getObjectByName('glove-body'));assert.ok(w.gear.glove.visible&&!w.gear.racket.visible);
+  w.update(s,0,false,1);w.update(s,0,false,2);
+  assert.ok(w.hero.getObjectByName('glove-body'));assert.ok(w.gear.glove.visible);
 });
 
 test('渲染位置在两个模拟步之间按速度外推，瞬移时直接取当前位置',()=>{

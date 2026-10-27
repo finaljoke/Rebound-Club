@@ -22,8 +22,6 @@ export function matchSummary(s,stats){
 }
 const paths={
   glove:'M13 28c-8-2-9-12-4-15 2-1 5 0 7 3V9c0-4 6-4 6 0V6c0-4 6-4 6 0v2c0-4 6-4 6 0v3c1-4 7-3 7 1v10c0 6-5 10-11 10H17zM17 32v5h14v-5',
-  racket:'M27 25 14 38m6-8-4-4M38 5c7 5 5 15-1 20s-14 5-18 0-3-13 3-18 11-6 16-2ZM23 9l13 13m-17-5 12 11M30 5 18 21m19-11L23 27',
-  sword:'m12 34 23-25 6-3-2 7-25 23M8 28l14 12M8 39l5-5M5 42l3-3',
   arrow:'M8 20h30m-11-11 11 11-11 11',
   trophy:'M15 6h18v12c0 7-4 11-9 11s-9-4-9-11V6Zm0 3H8v7c0 5 4 7 8 7m17-14h7v7c0 5-4 7-8 7M24 29v9m-8 0h16',
   shield:'M24 5 9 11v11c0 8 7 13 15 18 8-5 15-10 15-18V11L24 5Z',
@@ -32,8 +30,8 @@ const paths={
   home:'m6 22 18-16 18 16M12 18v22h9V28h7v12h9V18',spark:'m24 3 5 15 15 5-15 5-5 15-5-15-15-5 15-5 5-15Z'
 };
 export function icon(name){return `<svg viewBox="0 0 48 44" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.glove}"/></svg>`;}
-// Per-gear contact feel: glove = punchy burst, racket = springy rings, sword = a slash arc.
-const gearFeel={glove:{flash:'burst',color:'#ff6a2b',sound:'punch',motion:1},racket:{flash:'ring',color:'#ffd23f',sound:'string',motion:.8},sword:{flash:'slash',color:'#bff4ff',sound:'blade',motion:.9}};
+// Contact feel: the glove's punchy burst.
+const gearFeel={glove:{flash:'burst',color:'#ff6a2b',sound:'punch',motion:1}};
 export function hitFeel(weapon,kind){
   const g=gearFeel[weapon]||gearFeel.glove;
   // Skills keep the gear's own sound and motion: spin is a light teal ring, burst the gear's flash at full force.

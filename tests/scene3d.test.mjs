@@ -18,11 +18,6 @@ test('3D人物和球与原有碰撞坐标保持一致，暂停时不会增加位
   assert.equal(w.ball.position.y,ballHeight(s));
   const pose=w.hero.toJSON();w.update(s,.7,false);assert.deepEqual(w.hero.toJSON(),pose);
 });
-test('球拍和剑替换持有装备',()=>{
-  const w=buildWorld();const s=createGame(0,'racket');startGame(s);stepGame(s,1,0);w.update(s,0,true);
-  assert.equal(w.gear.racket.visible,true);assert.equal(w.gear.glove.visible,false);
-  s.weapon='sword';w.update(s,0,true);assert.equal(w.gear.sword.visible,true);assert.equal(w.gear.racket.visible,false);
-});
 test('竖屏手机比例下两个球门、近端球门口和整片防守区完整可见，球场占满画面宽度',()=>{
   const w=buildWorld();
   for(const aspect of [.62,.76,.85,.96]){w.resize(aspect);
@@ -47,8 +42,8 @@ test('重炮在飞行中有专属外观',()=>{
   s.power=true;w.update(s,0,true);assert.ok(w.ball.scale.x>normal);assert.notEqual(w.ball.children[0].material.color.getHex(),color);
 });
 function incomingAt(z,weapon='glove'){const s=createGame(0,weapon);startGame(s);stepGame(s,1,0);s.ball={x:0,z,vx:0,vz:-4,z0:z,z1:PLAYER_Z};s.player.x=0;return s;}
-test('挥击全程肩袖连接球衣，球拍与剑在出手时进入球的高度带',()=>{
-  for(const weapon of ['glove','racket','sword']){
+test('挥击全程肩袖连接球衣',()=>{
+  for(const weapon of ['glove']){
     const w=buildWorld(),s=incomingAt(2.4,weapon),timing=WEAPONS[weapon];s.swing={time:0};
     const jersey=w.hero.getObjectByName('jersey-body'),torso=jersey.parent;
     for(const progress of [0,.25,.5,.75,1]){
@@ -58,12 +53,6 @@ test('挥击全程肩袖连接球衣，球拍与剑在出手时进入球的高�
         for(let i=0;i<positions.count;i++){const v=torso.worldToLocal(o.localToWorld(new THREE.Vector3().fromBufferAttribute(positions,i)));nearest=Math.min(nearest,Math.hypot(v.x,v.z));}
         assert.ok(nearest<.305,`${weapon} progress ${progress}: sleeve separated (${nearest})`);
       });
-      if(progress===.5&&weapon!=='glove'){
-        const tool=w.gear[weapon],surface=weapon==='racket'?tool.children.find(o=>o.geometry?.type==='TorusGeometry'):tool.children.find(o=>o.geometry?.type==='BoxGeometry');
-        const bounds=new THREE.Box3().setFromObject(surface);
-        assert.ok(bounds.min.y<.99&&bounds.max.y>.47,`${weapon} strike misses ball height: ${bounds.min.y}..${bounds.max.y}`);
-        assert.ok(bounds.min.z<w.hero.position.z-.65,`${weapon} must point into the court`);
-      }
     }
   }
 });

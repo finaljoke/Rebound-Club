@@ -14,9 +14,7 @@ export const LEVELS = [
 ];
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
-  glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5},
-  racket:{name:'球拍',subtitle:'宽范围 · 稳稳接住',width:1.2,reach:1.1,windup:.05,active:.13,recovery:.2,whiff:.5},
-  sword:{name:'剑',subtitle:'长距离 · 提前拦截',width:.95,reach:1.6,windup:.06,active:.14,recovery:.28,whiff:.55}
+  glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5}
 };
 export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=1.6,POWER=1.35,SOFT=.8,HIT_HEIGHT=.73,ARC=.9;
 // Aim: left/right held at contact sends the ball to that side of the goal mouth, AIM_SHARE of its half width out;
@@ -212,7 +210,7 @@ export function useSkill(s,kind,axis=0){
   }
   return {ok:true,id};
 }
-// The burst reads the held direction when it leaves the racket, so the player can still pick a side during the show.
+// The burst reads the held direction when it leaves the glove, so the player can still pick a side during the show.
 function launchBurst(s,axis){
   const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;k.angle=aimAngle(s,k.x,k.z,axis);noteAim(s,aimSide(axis));
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=Math.min(cfg.maxSpeed,s.level.speed*s.rally*cfg.speedScale);
