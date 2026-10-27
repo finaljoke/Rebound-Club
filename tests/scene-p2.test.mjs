@@ -63,7 +63,9 @@ test('暂停时整个画面静止：观众、撞墙冲击圈、门将姿态、�
   for(let i=0;i<60&&!walled;i++){stepGame(s,1/60,0);now+=1/60;walled=s.events.includes('wall');w.update(s,0,false,now);w.shake(0);}
   assert.ok(walled&&w.wallFx.some(m=>m.visible),'撞墙效果进行中');
   pauseGame(s);w.update(s,0,false,now+=1/60);w.shake(0);
-  const snap=()=>JSON.stringify({crowd:Array.from(w.crowd.instanceMatrix.array),fx:w.wallFx.map(m=>[m.visible,m.scale.x]),keeper:w.keeper.position.toArray(),cam:w.camera.position.toArray()});
+  // Skinned players: every bone's pose is part of the picture too.
+  const bones=root=>{const out=[];root.traverse(o=>{if(o.isBone)out.push(...o.quaternion.toArray(),...o.position.toArray());});return out;};
+  const snap=()=>JSON.stringify({crowd:Array.from(w.crowd.instanceMatrix.array),fx:w.wallFx.map(m=>[m.visible,m.scale.x]),keeper:w.keeper.position.toArray(),cam:w.camera.position.toArray(),heroBones:bones(w.hero),keeperBones:bones(w.keeper)});
   const frozen=snap();for(let i=0;i<60;i++){w.update(s,0,false,now+=1/60);w.shake(0);}
   assert.equal(snap(),frozen,'暂停一秒后画面不变');
   resumeGame(s);for(let i=0;i<30;i++){stepGame(s,1/60,0);w.update(s,0,false,now+=1/60);w.shake(0);}

@@ -81,7 +81,7 @@ test('撞墙时在撞击点出现冲击圈并很快消失；击球改变方向�
 
 // Sideways reach of the keeper's body at ball height (below 1.7), measured from the model.
 function keeperReach(w){const v=new THREE.Vector3(),x0=w.keeper.position.x;let reach=0;w.scene.updateMatrixWorld(true);
-  w.keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j++){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,Math.abs(v.x-x0));}});return reach;}
+  w.keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j++){(o.isSkinnedMesh?o.getVertexPosition(j,v):v.fromBufferAttribute(p,j)).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,Math.abs(v.x-x0));}});return reach;}
 test('门将：手套颜色与球明显不同，站立时伸展贴近扑救范围，扑救边缘球时向来球一侧伸出',()=>{
   const w=buildWorld(assets),s=playing();s.ball.vz=-4;w.update(s,0,false,1);
   const glove=w.keeper.getObjectByName('glove-body').material.color,ball=new THREE.Color('#ffbd35');
@@ -92,7 +92,7 @@ test('门将：手套颜色与球明显不同，站立时伸展贴近扑救范�
   assert.ok(keeperReach(w)>=rest+.25,`扑救边缘球伸展 ${keeperReach(w).toFixed(2)}`);
 });
 test('门将准备姿态：球飞向球门时下蹲前倾，球回到己方时恢复站立',()=>{
-  const w=buildWorld(assets),s=playing();const torso=w.keeper.getObjectByName('jersey-body').parent;
+  const w=buildWorld(assets),s=playing();const torso=w.keeper.userData.torso;
   s.ball.vz=-4;let now=0;for(let i=0;i<30;i++)w.update(s,0,false,now+=1/60);const idle={y:w.keeper.position.y,lean:torso.rotation.x};
   s.ball.vz=6;s.ball.z=5;for(let i=0;i<30;i++)w.update(s,0,false,now+=1/60);
   assert.ok(w.keeper.position.y<idle.y-.04,`下蹲 ${w.keeper.position.y.toFixed(3)}`);assert.ok(Math.abs(torso.rotation.x-idle.lean)>.08,'前倾');

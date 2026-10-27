@@ -18,8 +18,9 @@ function film(gap){
     stepGame(s,1/120,0);if(i%2)continue;w.update(s,0,false,t+=1/60);w.scene.updateMatrixWorld(true);
     let reach=0;const gloves=[];
     w.keeper.traverse(o=>{if(!o.isMesh)return;if(o.name==='glove-body')gloves.push(o.getWorldPosition(new THREE.Vector3()));
-      const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=2){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x);}});
-    const chest=w.keeper.getObjectByName('jersey-body').getWorldPosition(new THREE.Vector3());
+      // Skinned parts are read as drawn (getVertexPosition applies the bones), not in their bind pose.
+      const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=2){(o.isSkinnedMesh?o.getVertexPosition(j,v):v.fromBufferAttribute(p,j)).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x);}});
+    const chest=w.keeper.userData.chest.getWorldPosition(new THREE.Vector3());
     frames.push({u:(i+1)/120-cross,tilt:Math.abs(w.keeper.rotation.z),reach,gloves,chestY:chest.y,saved:s.ball.vz<0,goal:s.goals>0});
   }
   const at=u=>frames.reduce((a,f)=>Math.abs(f.u-u)<Math.abs(a.u-u)?f:a);

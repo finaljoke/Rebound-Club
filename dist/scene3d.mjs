@@ -1,10 +1,11 @@
 import * as THREE from './vendor/three.module.min.js';
-import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
+import {makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
 import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
-import {loadCharacterAssets} from './actor.mjs';
+import {loadCharacterAssets,createActor} from './actor.mjs';
+import {CHARACTERS} from './characters.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 // assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
@@ -134,18 +135,20 @@ export function buildWorld(assets){
   function cheer(now,reduceMotion){
     spectators.update(now,goalCam.goalAt,reduceMotion);
   }
-  // Shared articulated collectible athletes; visual parts stay under their joints.
-  const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
+  // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
+  // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
+  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
+  const hero=striker.root,keeper=goalie.root;
   scene.add(hero);hero.position.set(0,0,-1.6);
-  const goalie=buildAthlete({jersey:'#356f91',accent:'#edc25e',number:'1',goalie:true}),keeper=goalie.group;
   scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
-  for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#eef2ee',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
-  const leftHand=buildGlove('#ed6941',-1);leftHand.group.position.set(-.015,-.44,-.015);arms[0].add(leftHand.group);
-  const gear={glove:new THREE.Group()};
-  gear.glove.position.set(.02,-.43,-.025);arms[1].add(gear.glove);
-  gear.glove.add(buildGlove('#ed6941').group);
-  const lookedUp=new Set(['jersey-body','jersey-number','shoulder-sleeve','glove-body']);
-  for(const athlete of [hero,keeper])mergeRigidParts(athlete,{keep:o=>lookedUp.has(o.name)});
+  // The right (punching) glove keeps the old `gear.glove` handle and carries the burst's hand glow.
+  const gear={glove:striker.gloves[1].group};
+  // The frame of each punch where the fist is furthest out, measured from the clips.
+  const PUNCH={left:striker.measureReach('punchLeft'),right:striker.measureReach('punchRight')};
+  // Punch clip time for a swing time: the fist is nearly out by the end of the 0.03 s wind-up (the rules leave no time
+  // for a visible build-up), drifts through contact over the active window, then carries through over the recovery.
+  const smooth=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+  const punchTime=(t,w,c)=>{const reach=w.windup+.02,A=w.windup+w.active;return t<=reach?c-.12+.12*smooth(t/reach):t<=A?c+(t-reach)*.4:c+(A-reach)*.4+(t-A)/w.recovery*.35;};
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
   const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
@@ -185,7 +188,7 @@ export function buildWorld(assets){
   const sparks=new THREE.Group();sparks.visible=false;scene.add(sparks);
   const sparkGeo=new THREE.CircleGeometry(.06,4),sparkMat=glow('#ffd36b');
   const sparkList=Array.from({length:22},(_,i)=>{const m=new THREE.Mesh(sparkGeo,sparkMat);m.userData={a:i*2.39996,r:.42+(i*37%10)/22,o:i*.137%1};sparks.add(m);return m;});
-  const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.position.set(.02,-.43,-.025);handGlow.visible=false;arms[1].add(handGlow);
+  const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.visible=false;gear.glove.add(handGlow);
   const halo=new THREE.Mesh(new THREE.RingGeometry(.36,.46,36),glow('#fff1b0',{depthTest:false}));halo.renderOrder=7;halo.visible=false;scene.add(halo);
   const shock=new THREE.Mesh(new THREE.RingGeometry(.8,.98,56),glow('#ffb347'));shock.rotation.x=-Math.PI/2;shock.visible=false;scene.add(shock);
   function screenTexture(draw,w=512,h=512){if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const tx=new THREE.CanvasTexture(c);tx.colorSpace=THREE.SRGBColorSpace;return tx;}
@@ -234,6 +237,7 @@ export function buildWorld(assets){
   // Ring buffer for the ball trail: positions are copied into fixed vectors, never allocated per frame.
   const history=Array.from({length:trail.length},()=>new THREE.Vector3());let historyCount=0,historyHead=0;
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
+  const swingEnd={at:-9,time:0},react={state:null,goals:0,misses:0,at:-9,kind:null},lookAt3=new THREE.Vector3();
   // Render pose: the sim runs in fixed 1/120 s steps, the screen at 60/90/120/144 Hz. Positions are carried forward by
   // the unspent part of the next step at the last step's velocity (no added latency); a jump (serve, reset) snaps.
   // Rolling: the ball turns about the axis across its travel by distance / radius, and spin shots add sidespin about the
@@ -270,30 +274,41 @@ export function buildWorld(assets){
   // dive down onto its side: the hips sink to the ground and the body flattens while its leading edge stays put.
   // Returns the body's offset from its spot on the line. The arms are aimed separately (aimArms): this keeper's arms
   // are short for its head, so arms swung "overhead" end beside the head; pointing them at the ball reads as a reach.
-  const HIP=.9,ARM_SPAN=1.25,diveOffset={x:0,y:0};
+  // Hip height and hip drops come from the model (the old 0.9 / 0.35 / 0.24 were for a 0.9 m hip). The old dive also slid
+  // the hips 0.3 toward the ball; this placeholder's upper body is long enough that a full-length dive about its spot
+  // already reaches as far as a beaten keeper may (keeperReach / beatenDive), so it does not slide.
+  const HIP=goalie.hipHeight,ARM_SPAN=(goalie.height-HIP)*.7,HIP_DROP=.35*HIP/.9,HIP_DOWN=.24*HIP/.9,HIP_SLIDE=0,diveOffset={x:0,y:0};
   function poseKeeper(a,dir,land=0){
-    const lead=dir>0?0:1,trail=1-lead,out=lead?1:-1,legs=goalie.legs,flat=land*Math.min(1,a*2);
+    const flat=land*Math.min(1,a*2);
     const t0=1.42*a**1.2,tilt=t0+(1.5-t0)*flat;
     keeper.rotation.z=dir*tilt;
-    goalie.arms[0].rotation.set(.5,0,-.15);goalie.arms[1].rotation.set(.5,0,.15);
-    legs[trail].rotation.set(.85*a,0,-out*.2*a);legs[lead].rotation.set(-.15*a,0,out*.12*a);
-    const hipX=dir*(.3*a**1.3+ARM_SPAN*(Math.sin(t0)-Math.sin(tilt))),hipY=HIP-.35*a-(HIP-.35*a-.24)*flat;
+    const hipX=dir*(HIP_SLIDE*a**1.3+ARM_SPAN*(Math.sin(t0)-Math.sin(tilt))),hipY=HIP-HIP_DROP*a-(HIP-HIP_DROP*a-HIP_DOWN)*flat;
     diveOffset.x=hipX-dir*HIP*Math.sin(tilt);diveOffset.y=hipY-HIP*Math.cos(tilt);return diveOffset;
   }
   // Both arms swing from the set stance toward a world point by weight w, so the hands arrive at the ball together.
   // Once a dive lands (land 0…1) the aim sinks to the turf, so the arms stretch along the ground rather than up.
-  const armAim={v:new THREE.Vector3(),at:new THREE.Vector3(),q:new THREE.Quaternion(),p:new THREE.Quaternion(),down:new THREE.Vector3(0,-1,0),target:new THREE.Vector3()};
-  function aimArms(x,w,land=0){
-    if(w<=0)return;const A=armAim;A.target.set(x,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);keeper.updateMatrixWorld(true);
-    for(const arm of goalie.arms){arm.getWorldPosition(A.at);A.v.copy(A.target).sub(A.at).normalize();
-      arm.parent.getWorldQuaternion(A.p).invert();A.v.applyQuaternion(A.p);A.q.setFromUnitVectors(A.down,A.v);arm.quaternion.slerp(A.q,w);}
+  // The keeper's body for a frame, after its root is placed: the dive clip by stretch a (hips held, the root carries
+  // the body), a shuffle or idle otherwise; knees fold by the root's sink so the feet stay down, the upper body leans in
+  // when ready, the head follows the ball, and both arms swing toward the save point by weight w (sinking to the turf
+  // once a dive lands). react: an extra [clip, time, weight] layer (a cheer).
+  const armTarget=new THREE.Vector3();
+  function poseGoalie(a,dir,land,w,tx,ready,sink,shuffle,t,look,react){
+    const layers=[],k=Math.min(1,a*3),rw=a>0?0:react?react[2]:0;
+    if(a>0)layers.push([dir>0?'diveLeft':'diveRight',.1+.18*Math.min(1,a/.6),k],['idle',t,1-k,true]);
+    // A side shuffle is 70% side-step over idle, so the arms do not swing out past the save reach.
+    else if(shuffle)layers.push([shuffle>0?'strafeLeft':'strafeRight',t*1.3,.7*(1-rw),true],['idle',t,.3*(1-rw),true]);
+    else layers.push(['idle',t,1-rw,true]);
+    if(rw>0)layers.push(react);
+    goalie.pose(layers,{lockHips:a>0});
+    goalie.crouch(sink);goalie.lean('spine',.16*ready*(1-a));
+    if(look&&a<.15)goalie.look('head',look,.6);
+    if(w>0){armTarget.set(tx,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
   // out toward the ball side, measured once from the model.
-  const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x,y0=keeper.position.y;
-    for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;aimArms(x0+8,1);keeper.updateMatrixWorld(true);let reach=0;
-      keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=3){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x-x0);}});out.push(reach);}
-    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;keeper.updateMatrixWorld(true);return out;})();
+  const keeperReach=(()=>{const out=[],x0=keeper.position.x,y0=keeper.position.y;
+    for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;poseGoalie(i/10,1,0,1,x0+8,0,0,0,0,null,null);out.push(goalie.reach(x0));}
+    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;poseGoalie(0,1,0,0,0,0,0,0,0,null,null);return out;})();
   // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius).
   function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
   // A save's stretch follows the ball's gap: a ball at the body is a step and a low block, one at the edge of the
@@ -388,36 +403,50 @@ export function buildWorld(assets){
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
     const pose=renderPose(s);rollState=s;
-    hero.position.set(pose.px,0,-s.player.z);
-    hero.rotation.z=s.phase==='playing'?-axis*.075:0;
-    const moving=s.phase==='playing'&&Math.abs(axis)>.05;
-    const stride=moving?Math.sin(s.elapsed*16):0;
-    legs.forEach((leg,i)=>leg.rotation.x=moving?Math.sin(s.elapsed*16+i*Math.PI)*.48:0);
-    const sw=s.swing,w=WEAPONS[s.weapon];
-    const punch=sw?Math.sin(Math.min(1,sw.time/(w.windup+w.active))*Math.PI):0;
-    if(sw!==lastSwing){lastSwing=sw;punchLeft=!!sw&&s.ball.x<s.player.x-.08;}
-    for(let i=0;i<arms.length;i++){
-      const active=(i===0)===punchLeft,extension=active?punch:0;
-      // Rotate about the attached shoulder; translating this root separates its sleeve.
-      arms[i].rotation.x=.32+extension*.65*Math.min(1.5,strong)+(i===0?stride:-stride)*.18;
-    }
-    // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
-    const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=smooth;
     trackGoal(s,now,reduceMotion,pose,sm);
     const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
     lastReduce=reduceMotion;
-    if(sk){arms[1].rotation.x=.32-wind*.85+blow*1.6;arms[0].rotation.x=.32-wind*.35+blow*.45;torso.rotation.y=-wind*.45+blow*.35;torso.rotation.x=blow*.12-wind*.05;}
-    torso.rotation.y=punch*(punchLeft?.28:-.28);
-    torso.rotation.x=punch*.06*strong;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
+    // Character clocks: in play the match clock (it stops for pauses and hit-stops, so a pose is a function of the
+    // state); in the lobby and on the result screen the scene clock, so the players keep breathing.
+    const animT=['ready','won','lost'].includes(s.phase)?now:s.elapsed;
+    lookAt3.set(pose.bx,ballHeight(heightProbe),-pose.bz);
+    // Reactions to the score, shown while play is stopped: the striker cheers a goal and slumps at a miss, the keeper
+    // cheers the miss.
+    if(react.state!==s)Object.assign(react,{state:s,goals:s.goals,misses:s.misses,at:-9,kind:null});
+    if(s.goals>react.goals){react.goals=s.goals;react.at=now;react.kind='goal';}
+    if(s.misses>react.misses){react.misses=s.misses;react.at=now;react.kind='miss';}
+    const showing=!!react.kind&&s.phase!=='playing'&&s.phase!=='skill';
+    const reactEnv=(actor,clip)=>{const d=actor.duration(clip),u=now-react.at;return showing&&u>=0&&u<d?Math.min(1,u/.15,(d-u)/.3):0;};
+    // Striker: idle or a side-step by the held direction; the punch follows the rules' swing clock (or the burst's).
+    hero.position.set(pose.px,0,-s.player.z);
+    hero.rotation.z=s.phase==='playing'?-axis*.075:0;
+    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=WEAPONS[s.weapon];
+    if(sw!==lastSwing){if(lastSwing&&!sw)swingEnd.at=s.elapsed;else if(sw)punchLeft=s.ball.x<s.player.x-.08;lastSwing=sw;}
+    if(sw)swingEnd.time=sw.time;
+    const left=!sk&&punchLeft,c=left?PUNCH.left:PUNCH.right;let sTime=0,sWeight=0;
+    if(sk){sTime=kt<B.strike?c.t*.55*wind:c.t*.55+(c.t+.25-c.t*.55)*blow;sWeight=1;}
+    else if(sw){sTime=punchTime(sw.time,w,c.t);sWeight=Math.min(1,sw.time/.025);}
+    else if(swingEnd.at>=0&&s.elapsed-swingEnd.at<.12){const e=s.elapsed-swingEnd.at;sTime=punchTime(swingEnd.time+e,w,c.t);sWeight=1-e/.12;}
+    const rClip=react.kind==='goal'?'cheer':'hurt',rw=react.kind?reactEnv(striker,rClip)*(1-sWeight):0;
+    // A short squash on contact (the hit-stop holds it); none with reduced motion. Set first: it moves the bones the
+    // look-at below measures from.
+    striker.setSquash(!reduceMotion&&fxFeel&&fxFeel.flash==='burst'&&fxAge<.14?(1-fxAge/.14)*.05*Math.min(1.5,fxFeel.intensity):0);
+    striker.pose([[moving?(axis>0?'strafeRight':'strafeLeft'):'idle',moving?animT*1.25:animT,1-sWeight-rw,true],[left?'punchLeft':'punchRight',sTime,sWeight],[rClip,now-react.at,rw]]);
+    if(sk)striker.twist('chest',-wind*.45+blow*.35);
+    if(rw<.5){striker.look('chest',lookAt3,.2*(1-sWeight));striker.look('head',lookAt3,.45);}
     const k=s.keeper,dv=trackDive(s,now,pose,sm);
     // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
     const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
     keeperReady+=(readyTo-keeperReady)*Math.min(1,since*9);
-    const off=poseKeeper(dv.a,dv.dir,dv.land);goalie.torso.rotation.x=.16*keeperReady*(1-dv.a);
-    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-.07*keeperReady-dv.crouch,-KEEPER_Z);aimArms(dv.tx,dv.w,dv.land);
-    const shuffling=!dv.a&&Math.abs(k.target-k.x)>.05&&s.phase==='playing';
-    if(!dv.a)goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
+    const off=poseKeeper(dv.a,dv.dir,dv.land),sink=.07*keeperReady+dv.crouch;
+    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-sink,-KEEPER_Z);
+    // Shuffling means actually moving: the keeper's step since the last simulation tick.
+    const kStep=s.pose?k.x-s.pose.kx:0,shuffling=!dv.a&&Math.abs(kStep)>1e-4&&s.phase==='playing',kw=react.kind==='miss'?reactEnv(goalie,'cheer'):0;
+    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady,sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null);
+    // Big heads and gloves reach the turf first when the body lies on its side: lift the whole body by the deepest point.
+    const low=goalie.lowestPoint();if(low<0){keeper.position.y-=low;keeper.updateMatrixWorld(true);}
     const height=ballHeight(heightProbe);
     ball.position.set(pose.bx,height,-pose.bz);
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
@@ -556,7 +585,7 @@ export function buildWorld(assets){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a

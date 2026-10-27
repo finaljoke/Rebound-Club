@@ -44,20 +44,6 @@ test('重炮在飞行中有专属外观',()=>{
   s.power=true;w.update(s,0,true);assert.ok(w.ball.scale.x>normal);assert.notEqual(w.ball.children[0].material.color.getHex(),color);
 });
 function incomingAt(z,weapon='glove'){const s=createGame(0,weapon);startGame(s);stepGame(s,1,0);s.ball={x:0,z,vx:0,vz:-4,z0:z,z1:PLAYER_Z};s.player.x=0;return s;}
-test('挥击全程肩袖连接球衣',()=>{
-  for(const weapon of ['glove']){
-    const w=buildWorld(assets),s=incomingAt(2.4,weapon),timing=WEAPONS[weapon];s.swing={time:0};
-    const jersey=w.hero.getObjectByName('jersey-body'),torso=jersey.parent;
-    for(const progress of [0,.25,.5,.75,1]){
-      s.swing.time=progress*(timing.windup+timing.active);w.update(s,0,true);w.scene.updateMatrixWorld(true);
-      w.hero.traverse(o=>{if(o.name!=='shoulder-sleeve')return;
-        const positions=o.geometry.getAttribute('position');let nearest=Infinity;
-        for(let i=0;i<positions.count;i++){const v=torso.worldToLocal(o.localToWorld(new THREE.Vector3().fromBufferAttribute(positions,i)));nearest=Math.min(nearest,Math.hypot(v.x,v.z));}
-        assert.ok(nearest<.305,`${weapon} progress ${progress}: sleeve separated (${nearest})`);
-      });
-    }
-  }
-});
 test('击球区与甜点带的位置和尺寸与真实判定一致',()=>{
   const w=buildWorld(assets);for(const id of Object.keys(WEAPONS)){const s=incomingAt(2.4,id);s.player.x=.8;w.update(s,0,true);const r=hitZone(s);
     assert.ok(Math.abs(w.zone.fill.position.x-(r.left+r.right)/2)<1e-9);assert.ok(Math.abs(w.zone.fill.scale.x-(r.right-r.left))<1e-9);

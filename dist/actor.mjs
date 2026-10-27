@@ -4,7 +4,7 @@
 import * as THREE from './vendor/three.module.min.js';
 import {mergeGeometries} from './vendor/BufferGeometryUtils.js';
 import {clone as cloneRig} from './vendor/SkeletonUtils.js';
-import {buildGlove} from './art.mjs';
+import {buildGlove,mergeRigidParts} from './art.mjs';
 import {CHARACTERS} from './characters.mjs';
 
 // Both characters as {scene, animations}; `load(url)` is GLTFLoader.loadAsync in the page and a file parser in tests.
@@ -89,6 +89,7 @@ export function createActor(gltf,spec,name){
   const model=cloneRig(gltf.scene),found={};
   model.traverse(o=>{if(o.isBone)found[o.name]=o;});
   const bones={};for(const [k,v] of Object.entries(spec.bones)){if(!found[v])throw Error(`${name}: missing bone ${v}`);bones[k]=found[v];}
+  // Each bone's clip value as of the last pose() (the bind pose to begin with).
   const allBones=Object.values(found),rest=allBones.map(b=>({b,p:b.position.clone(),q:b.quaternion.clone(),s:b.scale.clone()}));
   model.updateMatrixWorld(true);
 
@@ -135,8 +136,12 @@ export function createActor(gltf,spec,name){
     const yAxis=along.clone().negate(),zAxis=fwd.clone().negate(),xAxis=new THREE.Vector3().crossVectors(yAxis,zAxis).normalize();
     const inward=-Math.sign(v1.x)||1,thumb=Math.sign(xAxis.x*inward)||1;
     const g=buildGlove(spec.glove.color,-thumb);
-    g.group.traverse(o=>{if(!o.isMesh)return;const c=o.material.color;o.material=toonMaterial({color:c},spec.rim);o.castShadow=o===g.body;o.receiveShadow=false;});
-    g.details.traverse(o=>{if(o.isMesh&&o.geometry.type!=='CircleGeometry'&&o.position.y>.1)o.material=toonMaterial({color:spec.glove.cuff},spec.rim);});
+    // The mitt is toon-shaded and inked; the small details (thumb, cuff, strap, patch) bake into one mesh and the seam
+    // lines are dropped, so a glove costs three draws.
+    g.body.material=toonMaterial({color:spec.glove.color},spec.rim);g.body.receiveShadow=false;
+    for(const o of [...g.details.children]){if(o.isLine||o.isLineSegments){g.details.remove(o);o.geometry.dispose();continue;}
+      o.castShadow=o.receiveShadow=false;if(o.position.y>.1&&o.geometry.type!=='CircleGeometry')o.material=new THREE.MeshStandardMaterial({color:spec.glove.cuff,roughness:.8});}
+    mergeRigidParts(g.details);
     g.group.quaternion.setFromRotationMatrix(m1.makeBasis(xAxis,yAxis,zAxis));
     g.group.position.copy(v1).addScaledVector(along,.05*1/scale);g.group.scale.setScalar(spec.glove.size*2/.38/scale);
     model.add(g.group);model.updateMatrixWorld(true);hand.attach(g.group);addOutline(g.body,ink);
@@ -153,7 +158,9 @@ export function createActor(gltf,spec,name){
     const clip=gltf.animations.find(c=>c.name===clipName);if(!clip)throw Error(`${name}: missing clip ${clipName}`);
     const a=mixer.clipAction(clip);a.play();a.setEffectiveWeight(0);actions.set(logical,a);
   }
-  const hipsRest=rest.find(r=>r.b===bones.hips).p;
+  const hipsRest=bones.hips.position.clone();
+  // The pelvis around the hip joint: half its depth, from the torso box.
+  const hipRadius=(chestBox.max.z-chestBox.min.z)*.35*scale;
   // Head probes: the eight corners of its box; the gloves by their centre and size.
   const headProbe=[];for(const x of [headBox.min.x,headBox.max.x])for(const y of [headBox.min.y,headBox.max.y])for(const z of [headBox.min.z,headBox.max.z])headProbe.push(new THREE.Vector3(x,y,z));
   // Measured with the model already scaled, so these are metres.
@@ -166,12 +173,15 @@ export function createActor(gltf,spec,name){
     root,model,body,gloves,bones,mixer,scale,hipHeight,height:spec.height,
     duration:logical=>actions.get(logical).getClip().duration,
     // layers: [logicalClip, time, weight]; weights should add up to 1. Loops wrap; one-shots clamp to their end.
+    // The mixer only writes a bone whose blended value changed since its last update, so every bone first goes back to
+    // its clip value from the last call (undoing that frame's procedural edits); untouched bones stay in the bind pose.
     pose(layers,{lockHips=false}={}){
       for(const r of rest){r.b.position.copy(r.p);r.b.quaternion.copy(r.q);r.b.scale.copy(r.s);}
       for(const a of actions.values())a.setEffectiveWeight(0);
       for(const [n,t,w,loop] of layers){if(!(w>0))continue;const a=actions.get(n),d=a.getClip().duration;
         a.time=loop?((t%d)+d)%d:Math.min(Math.max(0,t),d-1e-4);a.setEffectiveWeight(w);}
       mixer.update(0);
+      for(const r of rest){r.p.copy(r.b.position);r.q.copy(r.b.quaternion);r.s.copy(r.b.scale);}
       if(lockHips){bones.hips.position.x=hipsRest.x;bones.hips.position.z=hipsRest.z;}
       root.updateMatrixWorld(true);
     },
@@ -190,6 +200,8 @@ export function createActor(gltf,spec,name){
       root.getWorldDirection(v3).negate();v3.y=0;v3.normalize();
       const yaw=Math.atan2(v3.z*v2.x-v3.x*v2.z,v3.x*v2.x+v3.z*v2.z);turnBone(bone,UP,Math.max(-limit,Math.min(limit,yaw))*share);
     },
+    // Turns a bone about world up (a twist of the chest, say).
+    twist(boneKey,angle){turnBone(bones[boneKey],UP,angle);},
     // Leans a bone toward the facing direction (positive) about the actor's side axis.
     lean(boneKey,angle){root.getWorldDirection(v3).negate();v3.y=0;v3.normalize();turnBone(bones[boneKey],v1.crossVectors(UP,v3).normalize(),angle);},
     // Lowers the hips by `drop` with the feet kept down: thighs swing the knees forward, shins fold back under.
@@ -207,9 +219,9 @@ export function createActor(gltf,spec,name){
       upper.quaternion.copy(qa.invert().multiply(q2.multiply(qb)));upper.updateMatrixWorld(true);
     },
     setSquash(a){squash.scale.set(1+a*.5,1-a,1+a*.5);},
-    // Lowest point of the head and gloves (big heads and gloves reach the turf first when the body is on its side).
+    // Lowest point of the head, gloves and hips (big heads and gloves reach the turf first when the body is on its side).
     lowestPoint(){
-      root.updateMatrixWorld(true);let low=Infinity;
+      root.updateMatrixWorld(true);let low=bones.hips.getWorldPosition(v1).y-hipRadius;
       for(const p of headProbe)low=Math.min(low,v1.copy(p).applyMatrix4(bones.head.matrixWorld).y);
       for(const g of gloveProbe)low=Math.min(low,v1.copy(g.local).applyMatrix4(g.bone.matrixWorld).y-g.r);
       return low;
