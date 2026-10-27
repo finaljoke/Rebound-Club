@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld} from '../dist/scene3d.mjs';
 import {loadCharacters} from './helpers/characters.mjs';
-import {createGame,startGame,stepGame,WEAPONS,KEEPER_Z,PLAYER_Z} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,WEAPONS,KEEPER_Z,PLAYER_Z,GOAL_Z} from '../dist/core.mjs';
 const assets=await loadCharacters();
 
 function playing(level=0){const s=createGame(level);s.practiceLeft=0;startGame(s);for(let i=0;i<400&&s.phase!=='playing';i++)stepGame(s,1/120,0);return s;}
@@ -48,4 +48,17 @@ test('同一状态渲染两次姿态相同；减少动态效果时击中不做�
   const a=quats();w.update(s,0,false,.03);assert.deepEqual(quats(),a,'同一状态同一时刻姿态不变');
   const r=buildWorld(assets);r.update(s,0,true,0);r.update(s,0,true,.03);
   assert.equal(r.actors.striker.root.children[0].children[0].scale.y,1,'减少动态效果时不挤压');
+});
+
+test('进球后彩带从球网飞出、几秒内落下消失；减少动态效果时不放彩带',()=>{
+  for(const reduce of [false,true]){
+    const w=buildWorld(assets),s=playing();
+    const b=s.ball;b.x=-2;b.z=6;b.vx=0;b.vz=7;b.z0=6;b.z1=GOAL_Z;s.keeper.x=2;s.keeper.target=2;s.keeper.delay=0;s.keeper.err=0;s.lastShot='straight';s.shot={x:-2,z:6,kind:'straight',at:0};
+    let now=0,goalAt=null,seen=false;
+    for(let i=0;i<480;i++){stepGame(s,1/60,0);now+=1/60;if(s.events.includes('goal'))goalAt=now;w.update(s,0,reduce,now);
+      if(w.confetti.visible){seen=true;if(goalAt!==null&&now-goalAt<.3){const p=new THREE.Vector3(),m=new THREE.Matrix4();w.confetti.getMatrixAt(0,m);p.setFromMatrixPosition(m);assert.ok(-p.z>GOAL_Z-3,'从球门飞出');}}}
+    assert.ok(goalAt!==null,'应进球');
+    assert.equal(seen,!reduce,reduce?'减少动态效果时不放彩带':'进球后放彩带');
+    assert.equal(w.confetti.visible,false,'几秒后消失');
+  }
 });

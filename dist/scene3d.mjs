@@ -4,7 +4,7 @@ import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swin
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
-import {loadCharacterAssets,createActor} from './actor.mjs';
+import {loadCharacterAssets,createActor,toonMaterial,outlineMaterial,addOutline} from './actor.mjs';
 import {CHARACTERS} from './characters.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
@@ -191,9 +191,11 @@ export function buildWorld(assets){
   const punchTime=(t,w,c)=>{const reach=w.windup+.02,A=w.windup+w.active;return t<=reach?c-.12+.12*smooth(t/reach):t<=A?c+(t-reach)*.4:c+(A-reach)*.4+(t-A)/w.recovery*.35;};
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
-  const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
+  // Toon-shaded and inked like the players, with dark seams so its spin reads.
+  const ballMat=toonMaterial({color:'#ffbd35'},'#fff1c0',.35),powerMat=toonMaterial({color:'#ff5a24',emissive:'#ff3d10',emissiveIntensity:.45},'#ffd7a0',.35);
   const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball);
-  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.26,.009,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
+  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.26,.011,5,40),'#1d2a5c',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
+  addOutline(ballBody,outlineMaterial(.02));
   // Ground hints. Every shape is sized from the same numbers the rules use (hitZone, swingPreview, crossingFrom).
   const flat=(geometry,color,opacity,y)=>{const m=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false}));m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=5;scene.add(m);return m;};
   const unit=new THREE.PlaneGeometry(1,1);
@@ -244,8 +246,8 @@ export function buildWorld(assets){
   const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
-  const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
-  const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false}),scene,0,.68,-5,false);m.visible=false;return m;});
+  const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#05080f',transparent:true,opacity:.4,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
+  const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false,blending:THREE.AdditiveBlending}),scene,0,.68,-5,false);m.visible=false;return m;});
   // Contact flashes, built once and reused: the glove's burst with spikes, and a teal double ring for spin shots.
   // They face the camera, are hollow so the ball stays visible, and live for a fraction of a second.
   const fx=new THREE.Group();fx.visible=false;scene.add(fx);
@@ -257,7 +259,30 @@ export function buildWorld(assets){
   fxParts.burst.add(new THREE.Mesh(new THREE.RingGeometry(.2,.27,28),fxMat()),new THREE.Mesh(new THREE.CircleGeometry(.11,16),fxMat()));
   for(let i=0;i<8;i++){const spike=new THREE.Mesh(new THREE.PlaneGeometry(.045,.2),fxMat());const a=i/8*Math.PI*2;spike.position.set(Math.cos(a)*.42,Math.sin(a)*.42,0);spike.rotation.z=a-Math.PI/2;fxParts.burst.add(spike);}
   fxParts.ring.add(new THREE.Mesh(new THREE.RingGeometry(.22,.26,32),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.36,.385,32),fxMat()));
+  // Extra punch for each contact, also built once: a soft glow, a wide shock ring and sparks streaking out of the fist.
+  const fxGlow=new THREE.Mesh(unit,new THREE.MeshBasicMaterial({map:glowTexture,color:'#ffe2a8',transparent:true,opacity:0,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+  const fxShock=new THREE.Mesh(new THREE.RingGeometry(.86,1,48),fxMat()),sparkStreak=new THREE.PlaneGeometry(.035,.26);
+  const fxSparks=Array.from({length:14},(_,i)=>{const m=new THREE.Mesh(sparkStreak,fxMat()),a=i/14*Math.PI*2+(i%3)*.21;m.userData={a,speed:.8+(i*37%10)/12};m.rotation.z=a-Math.PI/2;return m;});
+  fx.add(fxGlow,fxShock,...fxSparks);
   fx.traverse(fxLayer);
+  // Goal confetti, built once: paper bits thrown up out of the net, timed from the goal on the scene clock (a pause
+  // freezes them mid-air); none with reduced motion.
+  const CONF=120,confetti=new THREE.InstancedMesh(new THREE.PlaneGeometry(.09,.14),new THREE.MeshBasicMaterial({side:THREE.DoubleSide,toneMapped:false}),CONF);
+  confetti.name='confetti';confetti.frustumCulled=false;confetti.visible=false;confetti.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(confetti);
+  const confColors=['#ff6a2b','#ffd23a','#1ec8b4','#3a7bff','#ffffff','#ff4f7b'].map(c=>new THREE.Color(c)),confSeed=[];
+  for(let i=0;i<CONF;i++){const r=k=>{const h=Math.sin(i*12.9898+k*78.233)*43758.5453;return h-Math.floor(h);};
+    confSeed.push({x:(r(1)-.5)*3,vx:(r(2)-.5)*5,vy:3.5+r(3)*4.5,vz:1.2+r(4)*3.2,sx:r(5)*12-6,sy:r(6)*12-6,sz:r(7)*12-6});confetti.setColorAt(i,confColors[i%confColors.length]);}
+  const confM=new THREE.Matrix4(),confQ=new THREE.Quaternion(),confE=new THREE.Euler(),confP=new THREE.Vector3(),confS=new THREE.Vector3();let confAt=-1,confGoals=0,confState=null;
+  function throwConfetti(s,now,reduceMotion){
+    if(confState!==s){confState=s;confAt=-1;confGoals=s.goals;}
+    if(s.goals>confGoals){confGoals=s.goals;confAt=now;}
+    const t=confAt>=0?now-confAt:9;confetti.visible=!reduceMotion&&t>=0&&t<2.6;if(!confetti.visible)return;
+    const drag=(1-Math.exp(-1.6*t))/1.6,fade=Math.min(1,(2.6-t)/.5);
+    for(let i=0;i<CONF;i++){const c=confSeed[i];
+      confP.set(goalCam.x+c.x+c.vx*drag,Math.max(.03,1+c.vy*drag-1.1*t*t),-GOAL_Z+c.vz*drag);
+      confM.compose(confP,confQ.setFromEuler(confE.set(c.sx*t,c.sy*t,c.sz*t)),confS.setScalar(fade));confetti.setMatrixAt(i,confM);}
+    confetti.instanceMatrix.needsUpdate=true;
+  }
   let fxShot=null,fxStart=-1,fxFeel=null,clock=0,wallClock=null;
   // Side-wall impact: a ring on the wall face at the contact point, growing and fading in 0.35 s (two pooled, built once).
   const wallFx=[0,1].map(()=>{const g=new THREE.Group(),mat=new THREE.MeshBasicMaterial({color:'#fff4d2',transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
@@ -439,7 +464,7 @@ export function buildWorld(assets){
     // Scene clock: follows the caller's time but stands still while the match is paused, so every effect timed on it
     // (crowd, wall rings, net, camera blends, keeper easing) freezes with the pause and resumes where it was.
     const raw=time??(wallClock??0)+1/60,step=wallClock===null?0:Math.max(0,Math.min(.25,raw-wallClock));wallClock=raw;if(s.phase!=='paused')clock+=step;const now=clock;
-    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
+    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}for(const m of [fxShock,...fxSparks])m.material.color.set(fxFeel.color);fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
     if(lastLevel!==s.levelIndex){accent.set(s.level.color).getHSL(accentHSL);accent.setHSL(accentHSL.h,.7,.6);
       for(const m of [ledSide,ledFar])m.color.set('#ffffff').lerp(accent,m.map?.35:.5);rim.color.set(RIM).lerp(accent,.3);buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
@@ -493,6 +518,7 @@ export function buildWorld(assets){
     const height=ballHeight(heightProbe);
     ball.position.set(pose.bx,height,-pose.bz);
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
+    throwConfetti(s,now,reduceMotion);
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
@@ -574,6 +600,12 @@ export function buildWorld(assets){
       if(fxFeel.flash==='ring'&&!reduceMotion)scale*=1+.18*Math.sin(fxU*18)*(1-fxU);
       fx.scale.setScalar(scale);
       fx.traverse(o=>{if(o.material)o.material.opacity=alpha;});
+      // The glow and shock ring swell past the flash; sparks fly out (they stay put with reduced motion) and fade.
+      const fly=reduceMotion?.5:ease,inv=1/scale;
+      fxGlow.scale.setScalar((.9+1.6*fly)*(.8+.25*peak)*inv);fxGlow.material.opacity=glowTexture?(1-fxU)**2*.9:0;
+      fxShock.scale.setScalar((.3+1.4*fly)*(.8+.3*peak)*inv);fxShock.material.opacity=alpha*.8;
+      const sparkAlpha=alpha*(fxFeel.flash==='burst'?1:.6);
+      for(const m of fxSparks){const r=.35+1.1*fly*m.userData.speed;m.position.set(Math.cos(m.userData.a)*r,Math.sin(m.userData.a)*r,0);m.scale.set(1,1+1.5*(1-fxU),1);m.material.opacity=sparkAlpha;}
     }
   }
   const PITCH_TALL=43,PITCH_PORTRAIT=39;
@@ -628,7 +660,7 @@ export function buildWorld(assets){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
