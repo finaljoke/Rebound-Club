@@ -62,3 +62,10 @@ test('进球后彩带从球网飞出、几秒内落下消失；减少动态效�
     assert.equal(w.confetti.visible,false,'几秒后消失');
   }
 });
+
+test('LED 广告板按场景时钟滚动：暂停时不动，减少动态效果时不滚动',()=>{
+  const w=buildWorld(assets),s=playing();w.update(s,0,false,1);w.update(s,0,false,2);const moving=w.led.offset;
+  w.update(s,0,false,3);assert.notEqual(w.led.offset,moving,'对局中滚动');
+  s.phase='paused';const held=w.led.offset;for(let i=0;i<30;i++)w.update(s,0,false,4+i/30);assert.equal(w.led.offset,held,'暂停时不动');
+  const r=buildWorld(assets),t=playing();r.update(t,0,true,1);const still=r.led.offset;for(let i=0;i<30;i++)r.update(t,0,true,2+i/30);assert.equal(r.led.offset,still,'减少动态效果时不滚动');
+});
