@@ -1,11 +1,9 @@
 // Rendering budget QA on the real page (node scripts/perf-qa.mjs, needs the local server on :4173).
 // Test-browser-only interceptions read renderer.info and the game state; nothing in dist/ exposes them.
-import {createRequire} from 'node:module';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
-const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
-const {chromium}=require('playwright');
+import {chromium,CHROME} from './qa-env.mjs';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
 const OUT='artifacts/perf';await mkdir(OUT,{recursive:true});
 const SAVE=JSON.stringify({unlocked:5,scores:{0:2200},perfect:{},tutorialDone:true});
-const b=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true});
+const b=await chromium.launch({executablePath:CHROME,headless:true});
 const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true});const p=await ctx.newPage();const errors=[];
 p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 await p.addInitScript(v=>{localStorage.setItem('rebound-club-v2',v);

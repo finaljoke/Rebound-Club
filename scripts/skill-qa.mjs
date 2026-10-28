@@ -2,9 +2,7 @@
 // test-browser-only interception of game.js (window.__qa); nothing in dist/ exposes it. Energy for burst is
 // earned by a keyboard bot returning balls, never written. Screenshots go to the ignored artifacts/ folder.
 // Usage: node scripts/skill-qa.mjs   (needs the local server on :4173; uses this machine's Playwright + Chrome)
-import {createRequire} from 'node:module';import {mkdir} from 'node:fs/promises';
-const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
-const {chromium}=require('playwright');
+import {chromium,CHROME} from './qa-env.mjs';import {mkdir} from 'node:fs/promises';
 const OUT='artifacts/skills';await mkdir(OUT,{recursive:true});
 const R={},errors=[];
 const SAVE=JSON.stringify({unlocked:5,scores:{0:2200},perfect:{},tutorialDone:true});
@@ -42,7 +40,7 @@ async function earnFull(p){for(let n=0;n<6;n++){await bot(p,{until:async s=>(s.e
 async function pickLevel(p,i){await click(p,'[data-action=choose-level]');await click(p,`[data-level="${i}"]`);await click(p,'#selection-done');}
 async function waitPhase(p,phase,ms=3000){const t0=Date.now();while(Date.now()-t0<ms){if((await st(p)).phase===phase)return true;await p.waitForTimeout(15);}return false;}
 
-const browser=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true});
+const browser=await chromium.launch({executablePath:CHROME,headless:true});
 // 1) Layout at four sizes: controls visible, hit-testable, no horizontal scroll.
 R.layout={};
 for(const [name,viewport,mobile] of [['390x844',{width:390,height:844},true],['360x640',{width:360,height:640},true],['844x390',{width:844,height:390},true],['1440x1000',{width:1440,height:1000},false]]){
@@ -97,7 +95,7 @@ for(const [name,viewport,mobile] of [['390x844',{width:390,height:844},true],['3
   R.plainPlay={phase:w.phase,goals:w.goals,usedSkills:w.seq,nextLevel:n.level,nextEnergy:n.energy};await ctx.close();}
 await browser.close();
 // 6) 2D fallback (no WebGL): skills work with the simplified show.
-{const b2=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true,args:['--disable-webgl','--disable-webgl2']});
+{const b2=await chromium.launch({executablePath:CHROME,headless:true,args:['--disable-webgl','--disable-webgl2']});
   const {ctx,p}=await open(b2);await pickLevel(p,5);await click(p,'#start-match');await waitPhase(p,'playing');await waitReady(p,'spin');const a=await st(p);await p.keyboard.press('KeyJ');await p.waitForTimeout(80);
   await p.screenshot({path:`${OUT}/spin-2d-390.png`});const b=await st(p);await earnFull(p);await waitReady(p,'burst');const c=await st(p);await p.keyboard.press('KeyK');await p.waitForTimeout(250);
   await p.screenshot({path:`${OUT}/burst-2d-390.png`});await waitPhase(p,'playing');const d=await st(p);

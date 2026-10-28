@@ -52,7 +52,7 @@ node scripts/keeper-balance.mjs
 
 新版界面由准备、对局、暂停、结算四种状态组成。关卡在准备页原生对话框内选择；对局采用沉浸式全屏布局；结算亮点从实际事件统计。`dist/ui.mjs` 管理界面状态、图标和本局摘要，不修改物理或存档。
 
-`scripts/ui-qa.mjs` 为当前界面检查：`--play` 使用独立参考模拟按帧向真实页面发送键盘事件，验证实际胜利/下一关/解锁；不读取或修改运行中游戏状态。`--fallback` 验证无 WebGL，`--context-loss` 验证运行中丢失图形上下文。旧脚本仅保留历史参考。脚本使用本机已有的浏览器与 Playwright 路径，换机器需调整脚本顶部路径。
+`scripts/ui-qa.mjs` 为当前界面检查：`--play` 使用独立参考模拟按帧向真实页面发送键盘事件，验证实际胜利/下一关/解锁；不读取或修改运行中游戏状态。`--fallback` 验证无 WebGL，`--context-loss` 验证运行中丢失图形上下文。旧脚本仅保留历史参考。浏览器 QA 脚本都需要先 `npm start`；Playwright 与 Chrome 由 `scripts/qa-env.mjs` 查找：Playwright 先找仓库的 `node_modules` 和 `NODE_PATH`（新机器执行一次 `npm i --no-save playwright` 即可），Chrome 先看环境变量 `QA_CHROME`，再找常见安装路径，都没有时用 Playwright 自带的 Chromium。
 
 ## 文件
 
