@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,useSkill,swingPreview,inHitRange,spinPreview,crossingFrom,WEAPONS,LEVELS,SKILLS,PLAYER_Z,PERFECT_BAND,POWER,RALLY_STEP,AIM_SHARE} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,useSkill,swingPreview,inHitRange,spinPreview,crossingFrom,WEAPONS,LEVELS,SKILLS,PLAYER_Z,PERFECT_BAND,POWER,RALLY_STEP,AIM_SHARE,PACE} from '../dist/core.mjs';
 
 // Aim comes from the direction held at contact; timing only decides power.
 function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
@@ -52,7 +52,8 @@ test('球进入亮框后角色站定，提前按住方向不会滑离来球',()=
   const s=play(),w=WEAPONS.glove;incoming(s,0,6);
   for(let i=0;i<2000&&!inHitRange(s);i++)stepGame(s,1/120,0);
   assert.equal(inHitRange(s),true);
-  for(let i=0;i<24;i++)stepGame(s,1/120,-1);assert.equal(s.player.x,0,'框内按住方向不移动');
+  // 0.8 m of the ball's travel inside the box (24 ticks at the authored pace), held to the left.
+  for(let i=0;i<Math.round(24/PACE);i++)stepGame(s,1/120,-1);assert.equal(s.player.x,0,'框内按住方向不移动');
   attack(s);for(let i=0;i<30&&s.ball.vz<0;i++)stepGame(s,1/120,-1);
   assert.equal(s.lastShot,'left');assert.ok(s.ball.vz>0,'提前按住方向仍能打中');
   const far=play();incoming(far,0,6);stepGame(far,.1,1);assert.ok(far.player.x>.5,`框外照常移动 ${far.player.x}`);

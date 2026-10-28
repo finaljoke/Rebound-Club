@@ -2,13 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
 import {buildWorld} from '../dist/scene3d.mjs';
+import {loadCharacters} from './helpers/characters.mjs';
+const assets=await loadCharacters();
 import {createGame,startGame,stepGame,KEEPER_Z} from '../dist/core.mjs';
 
 // The keeper's save is staged like a real goalkeeper's: it springs before the ball arrives, meets it with both hands,
 // stretches only as far as the ball is from it, and after a full dive lands on its side and gets back up.
 // A still keeper (speed 0, no misread) faces a straight shot passing `gap` to its side; frames are rendered at 60 Hz.
 function film(gap){
-  const w=buildWorld(),s=createGame(3);s.practiceLeft=0;startGame(s);for(let i=0;i<240&&s.phase!=='playing';i++)stepGame(s,1/120,0);
+  const w=buildWorld(assets),s=createGame(3);s.practiceLeft=0;startGame(s);for(let i=0;i<240&&s.phase!=='playing';i++)stepGame(s,1/120,0);
   s.level={...s.level,keeper:{...s.level.keeper,speed:0,delay:0,error:0,read:0,pattern:0}};s.keeper.x=s.keeper.target=0;s.keeper.err=0;s.keeper.delay=0;
   s.ball={x:gap,z:5.5,vx:0,vz:6,z0:5.5,z1:KEEPER_Z};s.shot={x:gap,z:5.5,angle:0,kind:'straight',at:s.elapsed};s.lastShot='straight';s.swing=null;
   const cross=(KEEPER_Z-5.5)/6,v=new THREE.Vector3(),frames=[];let t=1;
@@ -16,8 +18,9 @@ function film(gap){
     stepGame(s,1/120,0);if(i%2)continue;w.update(s,0,false,t+=1/60);w.scene.updateMatrixWorld(true);
     let reach=0;const gloves=[];
     w.keeper.traverse(o=>{if(!o.isMesh)return;if(o.name==='glove-body')gloves.push(o.getWorldPosition(new THREE.Vector3()));
-      const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=2){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x);}});
-    const chest=w.keeper.getObjectByName('jersey-body').getWorldPosition(new THREE.Vector3());
+      // Skinned parts are read as drawn (getVertexPosition applies the bones), not in their bind pose.
+      const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=2){(o.isSkinnedMesh?o.getVertexPosition(j,v):v.fromBufferAttribute(p,j)).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x);}});
+    const chest=w.keeper.userData.chest.getWorldPosition(new THREE.Vector3());
     frames.push({u:(i+1)/120-cross,tilt:Math.abs(w.keeper.rotation.z),reach,gloves,chestY:chest.y,saved:s.ball.vz<0,goal:s.goals>0});
   }
   const at=u=>frames.reduce((a,f)=>Math.abs(f.u-u)<Math.abs(a.u-u)?f:a);

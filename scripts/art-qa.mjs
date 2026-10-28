@@ -1,43 +1,41 @@
+// Character close-ups from the real assets (node scripts/art-qa.mjs, needs the local server on :4173): the striker idle
+// and at its measured punch contact, the keeper idle and mid-dive, lit like the night arena. Writes
+// artifacts/character-sheet.png (git-ignored); nothing is added to the game for it (game.js is blanked in the test browser).
 import {createRequire} from 'node:module';import {mkdir} from 'node:fs/promises';
 const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
 const {chromium}=require('playwright');
 const browser=await chromium.launch({executablePath:'C:/Users/HUFAN/AppData/Local/Google/Chrome/Application/chrome.exe',headless:true});
-const page=await browser.newPage({viewport:{width:1200,height:840}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+const page=await browser.newPage({viewport:{width:1200,height:760}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
   await mkdir('artifacts',{recursive:true});
   await page.route('**/game.js',route=>route.fulfill({status:200,contentType:'text/javascript',body:''}));
   await page.goto('http://localhost:4173');
   const result=await page.evaluate(async()=>{
-    const T=await import('/vendor/three.module.min.js'),A=await import('/art.mjs');
-    document.body.innerHTML=`<div style="width:1200px;height:840px;background:#f4f1e8;position:relative;font-family:Arial,'Microsoft YaHei',sans-serif"><div style="position:absolute;left:55px;top:38px;z-index:2;color:#244b3a"><div style="font-size:11px;letter-spacing:3px;color:#8c9b79">REBOUND CLUB · CHARACTER STUDY</div><h1 style="font-size:30px;margin:12px 0">精致的潮玩运动场</h1><p style="font-size:12px;color:#8a9879">实际3D素材 · 正面、背面与守门员</p></div><canvas id="art-view" style="width:1200px;height:840px"></canvas><div style="position:absolute;bottom:85px;left:60px;right:60px;display:flex;justify-content:space-around;color:#58704a;font-size:13px"><span>01 / 球员 · 橙白</span><span>02 / 球衣与装备细节</span><span>03 / 守门员 · 蓝黄</span></div></div>`;
-    const canvas=document.getElementById('art-view'),renderer=new T.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});renderer.setSize(1200,840,false);renderer.setPixelRatio(1);
-    renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.1;
-    const scene=new T.Scene();scene.background=new T.Color('#f4f1e8');scene.add(new T.HemisphereLight('#fff3da','#80927c',2));
-    const sun=new T.DirectionalLight('#fff1d7',2.5);sun.position.set(-3,8,6);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-5;sun.shadow.camera.right=5;sun.shadow.camera.top=5;sun.shadow.camera.bottom=-5;sun.shadow.normalBias=.02;scene.add(sun);
-    const ground=new T.Mesh(new T.PlaneGeometry(200,200),new T.MeshStandardMaterial({color:'#f4f1e8',roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.12;ground.receiveShadow=true;scene.add(ground);
-    const athletes=[];
-    for(let i=0;i<3;i++){
-      const goalie=i===2,a=A.buildAthlete({jersey:goalie?'#356f91':'#f6e9ce',accent:goalie?'#edc25e':'#ed774b',number:goalie?'1':'01',goalie});
-      a.group.position.set((i-1)*1.95,0,0);a.group.rotation.y=i===1?.25:Math.PI+(i===0?.2:-.2);scene.add(a.group);athletes.push(a.group);
-      for(let side=0;side<2;side++){const glove=A.buildGlove(goalie?'#eef2ee':'#ed6941',side?1:-1);glove.group.position.set(side?.02:-.015,-.44,-.015);a.arms[side].add(glove.group);a.arms[side].rotation.x=.32;}
-      const stand=new T.Mesh(new T.CylinderGeometry(.68,.72,.15,48),new T.MeshStandardMaterial({color:i===2?'#ccd6bd':'#dbe2ca',roughness:.9}));stand.position.set((i-1)*1.95,-.045,0);stand.receiveShadow=true;scene.add(stand);
-    }
-    const camera=new T.PerspectiveCamera(31,1200/840,.1,100);camera.position.set(0,3.5,9.6);camera.lookAt(0,1.05,0);renderer.render(scene,camera);
-    window.artPreview={scene,camera,renderer,athletes};
-    return {preview:'actual 3D assets',webgl:!!renderer.getContext()};
+    const T=await import('/vendor/three.module.min.js'),{GLTFLoader}=await import('/vendor/GLTFLoader.js'),A=await import('/actor.mjs'),{CHARACTERS}=await import('/characters.mjs');
+    const labels=['01 / 主角待机','02 / 主角出拳（实测击球帧）','03 / 门将待机','04 / 门将飞扑'];
+    document.body.innerHTML=`<div style="width:1200px;height:760px;background:#0b1022;position:relative;font-family:system-ui,'Microsoft YaHei',sans-serif;color:#f4f1ea">
+      <div style="position:absolute;left:48px;top:34px;z-index:2"><div style="font-size:11px;letter-spacing:3px;color:#9aa6c9">REBOUND CLUB · CHARACTER SHEET</div>
+      <h1 style="margin:10px 0 4px;font-size:28px;font-style:italic;font-weight:900">卡通动感竞技风 · 角色近景</h1><p style="margin:0;font-size:12px;color:#9aa6c9">实际游戏模型（占位：KayKit CC0）· 卡通着色 + 描边 + 轮廓光</p></div>
+      <canvas id="art-view" style="position:absolute;inset:0;width:1200px;height:760px"></canvas>
+      ${labels.map((t,i)=>`<span style="position:absolute;bottom:40px;left:${80+i*280}px;width:240px;text-align:center;font-size:13px;color:#cfd6ef">${t}</span>`).join('')}</div>`;
+    const canvas=document.getElementById('art-view'),renderer=new T.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});renderer.setSize(1200,760,false);renderer.setPixelRatio(1);
+    renderer.shadowMap.enabled=true;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
+    const scene=new T.Scene();scene.background=new T.Color('#0b1022');scene.add(new T.HemisphereLight('#9fb4ff','#2a2140',1.15));
+    const key=new T.DirectionalLight('#fff2dc',3);key.position.set(-3,8,6);key.castShadow=true;key.shadow.mapSize.set(1024,1024);Object.assign(key.shadow.camera,{left:-7,right:7,top:5,bottom:-3});scene.add(key);
+    const rim=new T.DirectionalLight('#7fb6ff',1.4);rim.position.set(2,5,-8);scene.add(rim);
+    const assets=await A.loadCharacterAssets(url=>new GLTFLoader().loadAsync(url));
+    const slot=i=>(i-1.5)*2.8;
+    for(let i=0;i<4;i++){const stand=new T.Mesh(new T.CylinderGeometry(.9,.95,.12,48),new T.MeshStandardMaterial({color:'#1a2147',roughness:.9}));stand.position.set(slot(i),-.06,0);stand.receiveShadow=true;scene.add(stand);}
+    const place=(a,i,turn)=>{a.root.position.set(slot(i),0,0);a.root.rotation.y=turn;scene.add(a.root);};
+    const idle=A.createActor(assets.striker,CHARACTERS.striker,'striker');place(idle,0,Math.PI+.35);idle.pose([['idle',.3,1,true]]);
+    const punch=A.createActor(assets.striker,CHARACTERS.striker,'striker');place(punch,1,Math.PI+.9);const c=punch.measureReach('punchRight');punch.pose([['punchRight',c.t,1]]);
+    const keep=A.createActor(assets.keeper,CHARACTERS.keeper,'keeper');place(keep,2,Math.PI-.35);keep.pose([['idle',.3,1,true]]);keep.crouch(.07);keep.lean('spine',.16);
+    const dive=A.createActor(assets.keeper,CHARACTERS.keeper,'keeper');place(dive,3,Math.PI);dive.root.rotation.z=1.1;dive.root.position.set(slot(3)-1.1,.45,0);
+    dive.pose([['diveRight',.28,1]],{lockHips:true});const at=new T.Vector3(slot(3)+3,.9,.3);dive.aimArm('L',at,1);dive.aimArm('R',at,1);
+    const low=dive.lowestPoint();if(low<0)dive.root.position.y-=low;
+    const camera=new T.PerspectiveCamera(30,1200/760,.1,100);camera.position.set(0,3,12.5);camera.lookAt(0,1,0);renderer.render(scene,camera);
+    return {preview:'actual 3D assets',webgl:!!renderer.getContext(),punchContact:+c.t.toFixed(3)};
   });
-  await page.screenshot({path:'artifacts/character-material-sheet.png'});
-  await page.evaluate(async()=>{
-    const {buildWorld}=await import('/scene3d.mjs'),C=await import('/core.mjs'),{scene,camera,renderer,athletes}=window.artPreview;
-    for(const a of athletes)scene.remove(a);
-    document.querySelector('h1').textContent='潮玩运动员 · 出手姿态';document.querySelector('p').textContent='实际游戏模型 · 挥击中段 · 固定肩部与手腕转动';
-    document.querySelectorAll('span').forEach((e,i)=>e.textContent=['01 / 拳套出击','02 / 球拍挥击','03 / 运动剑挥击'][i]);
-    for(const [i,weapon] of ['glove','racket','sword'].entries()){
-      const w=buildWorld(),s=C.createGame(0,weapon);C.startGame(s);C.stepGame(s,1,0);s.swing={time:(C.WEAPONS[weapon].windup+C.WEAPONS[weapon].active)*.5};
-      w.update(s,0,true);w.hero.position.set((i-1)*1.95,0,0);w.hero.rotation.y=Math.PI+.65;scene.add(w.hero);
-    }
-    renderer.render(scene,camera);
-  });
-  await page.screenshot({path:'artifacts/character-strike-sheet.png'});
-  if(errors.length)throw Error(errors.join(';'));console.log(JSON.stringify({...result,strikePreview:true,errors}));
+  await page.screenshot({path:'artifacts/character-sheet.png'});
+  if(errors.length)throw Error(errors.join(';'));console.log(JSON.stringify({...result,errors}));
 }finally{await browser.close();}

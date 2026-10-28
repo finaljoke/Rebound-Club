@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f4f1e8">
+<meta name="theme-color" content="#0b1022">
 <meta name="description" content="反弹守卫：移动、挥击，守住自家球门，再打出一记漂亮进球。">
 <title>反弹守卫 · REBOUND CLUB</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23ed6843'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23fff5da' stroke-width='3'/%3E%3Cpath d='M15 32h34M32 15c-12 10-12 24 0 34m0-34c12 10 12 24 0 34' fill='none' stroke='%23fff5da' stroke-width='3'/%3E%3C/svg%3E">
@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="./lobby.css">
 </head>
 <body data-screen="ready">
-<div class="boot" id="boot" role="status" aria-live="polite"><span class="boot-ball" aria-hidden="true"></span><b>正在载入球场…</b><small id="boot-note">首次打开约需下载 1 MB</small></div>
+<div class="boot" id="boot" role="status" aria-live="polite"><span class="boot-ball" aria-hidden="true"></span><b>正在载入球场…</b><small id="boot-note">首次打开约需下载 2 MB</small></div>
 <script>setTimeout(function(){if(document.body.dataset.booted!=='1'){var n=document.getElementById('boot-note');if(n)n.textContent='网络较慢，仍在载入；如长时间无反应，请刷新页面。';}},15000);</script>
 <div class="app">
 <header class="site-header">
@@ -43,7 +43,6 @@
   <aside class="sidebar prep-panel lobby-menu" aria-label="赛前准备">
     <div class="lobby-options">
       <button class="lobby-option lobby-level" data-action="choose-level" aria-label="选择关卡"><span id="prep-stage">第 01 关</span><b id="prep-level-name">初次交锋</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
-      <button class="lobby-option lobby-gear" data-action="choose-gear" aria-label="上场装备"><span class="selected-gear-icon" id="prep-weapon-icon"></span><b id="prep-weapon">拳套</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
     </div>
     <button class="primary-button start-button" id="start-match" data-action="start">开始游戏 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7Z"/></svg></button>
     <p class="lobby-record" id="best-record" hidden>本关最佳 <b id="best">—</b></p>
@@ -51,10 +50,9 @@
   </aside>
 </main>
 </div>
-<dialog id="selection-dialog" aria-labelledby="selection-title" data-kind="levels">
+<dialog id="selection-dialog" aria-labelledby="selection-title">
   <button class="selector-close" id="selection-close" aria-label="关闭赛前选择">×</button><span class="eyebrow">赛前准备</span><h2 id="selection-title">选择关卡</h2>
   <section class="level-options"><p class="dialog-intro" id="prep-rule">进 2 球通关 · 丢 3 球结束</p><div class="level-grid" id="levels"></div><p class="selection-note" id="level-note"></p></section>
-  <section class="gear-options"><p class="dialog-intro">选一件顺手的装备，打出你的节奏。</p><div id="weapons"></div><p class="selection-note" id="weapon-note"></p></section>
   <button class="primary-button" id="selection-done">就这样，上场</button>
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-title">

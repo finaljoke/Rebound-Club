@@ -1,12 +1,17 @@
 import * as THREE from './vendor/three.module.min.js';
-import {buildAthlete,buildGlove,makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
+import {makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
 import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
+import {GLTFLoader} from './vendor/GLTFLoader.js';
+import {loadCharacterAssets,createActor,toonMaterial,outlineMaterial,addOutline} from './actor.mjs';
+import {CHARACTERS} from './characters.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
-export function buildWorld(){
-  const scene=new THREE.Scene();scene.background=new THREE.Color('#d7dfc5');
+// assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
+export function buildWorld(assets){
+  // Night arena: a dark venue around a bright court, so the players and the ball carry the picture.
+  const scene=new THREE.Scene();scene.background=new THREE.Color('#070b1d');scene.fog=new THREE.Fog('#0d1233',26,70);
   const camera=new THREE.PerspectiveCamera(34,.85,.1,100);
   camera.position.set(2.8,18.5,9.8);camera.lookAt(0,.15,-4.6);
   const mats=new Map();
@@ -17,50 +22,61 @@ export function buildWorld(){
   const sphere=(r,color,parent,x,y,z,sx=1,sy=1,sz=1)=>{const m=mesh(new THREE.SphereGeometry(r,20,14),color,parent,x,y,z);m.scale.set(sx,sy,sz);return m;};
   const rod=(a,b,r,color,parent=scene)=>{const v1=new THREE.Vector3(...a),v2=new THREE.Vector3(...b),delta=v2.clone().sub(v1);const m=mesh(new THREE.CylinderGeometry(r,r,delta.length(),8),color,parent);m.position.copy(v1).add(v2).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());return m;};
   // Court markings sit just above the stripe tops (y .030) so they never depth-fight with them, whatever the draw order.
-  const floorLine=(x,z,width,depth,color='#e0e6c3')=>box(width,.016,depth,color,scene,x,.027,z);
-  const hemisphere=new THREE.HemisphereLight('#fff3d7','#516a5a',2.0);scene.add(hemisphere);
-  const sun=new THREE.DirectionalLight('#fff0cc',3.1);sun.position.set(-7,15,5);sun.target.position.set(0,0,-4);scene.add(sun.target);scene.add(sun);
+  const floorLine=(x,z,width,depth,color='#f3f6ff')=>box(width,.016,depth,color,scene,x,.027,z);
+  // Floodlight key (it keeps the name `sun` and casts the shadows), a cool sky fill and a warm fill from the camera side.
+  const HEMI=1.15,SUN=3;
+  const hemisphere=new THREE.HemisphereLight('#9fb4ff','#2a2140',HEMI);scene.add(hemisphere);
+  const sun=new THREE.DirectionalLight('#fff2dc',SUN);sun.position.set(-7,15,5);sun.target.position.set(0,0,-4);scene.add(sun.target);scene.add(sun);
   sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-10;sun.shadow.camera.right=10;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-10;sun.shadow.camera.near=1;sun.shadow.camera.far=40;sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;
-  const fill=new THREE.DirectionalLight('#dce9ee',.75);fill.position.set(7,8,-10);scene.add(fill);
-  const ground=mesh(new THREE.PlaneGeometry(200,200),'#d7dfc5',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;ground.name='ground';
-  const platform=softBox(10.3,.55,13.6,'#b5bda5',scene,0,-.3,-4.6,.13);platform.name='platform';
+  const fill=new THREE.DirectionalLight('#ffc2a8',.45);fill.position.set(6,7,9);scene.add(fill);
+  const ground=mesh(new THREE.PlaneGeometry(200,200),'#141a31',scene,0,-.65,-4,false);ground.rotation.x=-Math.PI/2;ground.name='ground';
+  const platform=softBox(10.3,.55,13.6,'#1b2240',scene,0,-.3,-4.6,.13);platform.name='platform';
   const stone=makeSurfaceTexture('stone');
-  softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#e5dfc5',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
+  softBox(10.45,.13,13.75,new THREE.MeshStandardMaterial({color:'#2a335f',map:stone,roughness:.95}),scene,0,-.08,-4.6,.04);
   const turf=makeSurfaceTexture('turf'),turfMaterials=new Map();
   function fieldMaterial(color){if(!turfMaterials.has(color))turfMaterials.set(color,new THREE.MeshStandardMaterial({color,map:turf,bumpMap:turf,bumpScale:.012,roughness:.94}));return turfMaterials.get(color);}
-  const court=box(8.25,.06,10.2,fieldMaterial('#286659'),scene,0,-.015,-4.9);court.name='court';
-  // Ten stripes, two tints: one mesh per tint, re-tinted per level (stripes[0] even rows, stripes[1] odd rows).
+  const court=box(8.25,.06,10.2,fieldMaterial('#24974c'),scene,0,-.015,-4.9);court.name='court';
+  // Ten stripes in two fixed greens, one mesh per tint (stripes[0] even rows, stripes[1] odd rows). The level's colour goes
+  // to the LED boards and the rim light instead (see `accent`).
   const stripes=[0,1].map(parity=>{const rows=[];for(let i=parity;i<10;i+=2)rows.push(new THREE.Mesh(new THREE.BoxGeometry(8,.016,.97)).translateZ(-.45-i).translateY(.022));
-    const m=new THREE.Mesh(mergeMeshGeometry(rows),fieldMaterial(parity?'#286659':'#2c6c5e'));rows.forEach(r=>r.geometry.dispose());m.name=`stripes-${parity}`;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;});
+    const m=new THREE.Mesh(mergeMeshGeometry(rows),fieldMaterial(parity?'#28a253':'#2fae5a'));rows.forEach(r=>r.geometry.dispose());m.name=`stripes-${parity}`;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;});
   const paving=[];for(let z=-10.4;z<2;z+=1.45)for(const side of [-1,1])paving.push(new THREE.Vector3(side*4.35,-.008,z),new THREE.Vector3(side*5.07,-.008,z));
-  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#c9c6ac',transparent:true,opacity:.5})));
+  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(paving),new THREE.LineBasicMaterial({color:'#2c3560',transparent:true,opacity:.6})));
   for(const x of [-3.75,3.75])floorLine(x,-4.9,.035,9.6);
   for(const z of [-.25,-4.9,-9.55])floorLine(0,z,7.5,.035);
   floorLine(-2.4,-1.25,.035,2);floorLine(2.4,-1.25,.035,2);floorLine(0,-2.25,4.8,.035);
-  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#e0e6c3',scene,0,.036,-4.9,false);centerRing.rotation.x=-Math.PI/2;
-  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#e0e6c3',scene,0,.038,-4.9,false);centerDot.rotation.x=-Math.PI/2;
-  // Rails have real front/back faces; the lower beams don't hide the incoming ball.
+  const centerRing=mesh(new THREE.RingGeometry(.95,.98,48),'#f3f6ff',scene,0,.036,-4.9,false);centerRing.rotation.x=-Math.PI/2;
+  const centerDot=mesh(new THREE.CircleGeometry(.045,12),'#f3f6ff',scene,0,.038,-4.9,false);centerDot.rotation.x=-Math.PI/2;
+  // LED boards: club messages on a dark strip, one canvas shared by the side and far walls (each with its own repeat),
+  // scrolling on the scene clock. Without a DOM (node tests) they are plain blue panels.
+  const ledCanvas=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=2048;c.height=128;const g=c.getContext('2d');
+    const blocks=[['REBOUND CLUB','#ff6a2b'],['反弹守卫','#1ec8b4'],['NIGHT CUP','#ffd23a'],['反弹守卫','#3a7bff']],bw=c.width/blocks.length;
+    blocks.forEach(([text,col],i)=>{g.fillStyle='#0b1022';g.fillRect(i*bw,0,bw,128);g.fillStyle=col;g.fillRect(i*bw+6,12,bw-12,104);
+      g.fillStyle='#0b1022';g.font='900 64px system-ui,"PingFang SC","Microsoft YaHei",sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,i*bw+bw/2,67);});return c;})();
+  const ledMaterial=repeat=>{if(!ledCanvas)return new THREE.MeshBasicMaterial({color:'#2a3a7a'});const t=new THREE.CanvasTexture(ledCanvas);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.RepeatWrapping;t.repeat.set(repeat,1);return new THREE.MeshBasicMaterial({map:t,toneMapped:false});};
+  const ledSide=ledMaterial(1.5),ledFar=ledMaterial(.35);let ledOffset=0;
+  // Side walls: dark boards with the LED strip facing the court; low enough not to hide the incoming ball.
   for(const x of [-4.2,4.2]){
-    box(.18,.27,10.6,'#a6b599',scene,x,.15,-4.9);
-    rod([x,.65,.4],[x,.65,-10.2],.045,'#ece9d5');
-    for(let z=.3;z>=-10.3;z-=1.8)rod([x,.05,z],[x,.68,z],.045,'#eee9cf');
+    box(.18,.62,10.6,'#141a33',scene,x,.31,-4.9);
+    const face=mesh(new THREE.PlaneGeometry(10.4,.44),ledSide,scene,x-Math.sign(x)*.095,.33,-4.9,false);face.rotation.y=-Math.sign(x)*Math.PI/2;face.receiveShadow=false;
   }
   // The far wall is split around the goal mouth; both are rebuilt whenever the level's goal width changes.
   const farGoal=new THREE.Group();farGoal.position.set(0,0,-FAR_WALL);scene.add(farGoal);
-  const farNet=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.4});
+  const farNet=new THREE.LineBasicMaterial({color:'#e8f0ff',transparent:true,opacity:.5});
   let farNetLines=null,netRest=null,netDirty=false;
   function buildFarGoal(g){
     for(const child of [...farGoal.children]){farGoal.remove(child);if(child!==sign)child.geometry?.dispose();}
     const edge=SIDE+.4,span=edge-g;
     for(const side of [-1,1]){
-      box(span,.32,.65,'#244d40',farGoal,side*(g+span/2),.17,-.3);
-      box(span,.95,.32,'#cfdda8',farGoal,side*(g+span/2),.82,-.42);
-      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#fff2db',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
-      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#fff2db',farGoal);
-      sphere(.078,'#e6ddc5',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
+      box(span,.32,.65,'#141a33',farGoal,side*(g+span/2),.17,-.3);
+      box(span,.95,.32,'#1a2142',farGoal,side*(g+span/2),.82,-.42);
+      mesh(new THREE.PlaneGeometry(span-.08,.72),ledFar,farGoal,side*(g+span/2),.84,-.255,false).receiveShadow=false;
+      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#ffffff',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
+      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#e8edf8',farGoal);
+      sphere(.078,'#ffffff',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
     }
-    rod([-g,1.25,.1],[g,1.25,.1],.07,'#fff7e3',farGoal);
-    rod([-g,.9,-.75],[g,.9,-.75],.045,'#e9e8c9',farGoal);
+    rod([-g,1.25,.1],[g,1.25,.1],.07,'#ffffff',farGoal);
+    rod([-g,.9,-.75],[g,.9,-.75],.045,'#e8edf8',farGoal);
     farNetLines=new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
     mergeRigidParts(farGoal);
   }
@@ -70,9 +86,10 @@ export function buildWorld(){
     const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');
     if(background){ctx.fillStyle=background;ctx.fillRect(0,0,512,128);}ctx.fillStyle=color;ctx.font='bold 52px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(value,256,66);
     const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
-    return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({map:texture,transparent:!background,depthWrite:false}));
+    return new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({map:texture,transparent:!background,depthWrite:false,toneMapped:false}));
   }
-  const sign=label('REBOUND CLUB',2.9,.45);
+  // The club banner is a lit sign over the far stands.
+  const sign=label('REBOUND CLUB',2.9,.45,'#ffb347','#0d1430');
   // A low transparent goal leaves the defender and the interception area visible.
   // The camera sits behind it, so it is drawn see-through: its crossbar and net never hide the defender or the ball.
   const goal=new THREE.Group();scene.add(goal);
@@ -87,31 +104,26 @@ export function buildWorld(){
   rod([-4,.75,1.04],[4,.75,1.04],.045,back,goal);
   const netMat=new THREE.LineBasicMaterial({color:'#eee5cc',transparent:true,opacity:.16});
   goal.add(new THREE.LineSegments(netGeometry(4,1.04,.75,.05,1.04),netMat));
-  for(const side of [-1,1]){const joint=sphere(.075,ghost('#e6ddc5',.4),goal,side*4,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,ghost('#7d8b72',.45),goal,side*4,.015,.05,.015);foot.castShadow=false;}
+  for(const side of [-1,1]){const joint=sphere(.075,ghost('#e6ddc5',.4),goal,side*4,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,ghost('#2a3150',.45),goal,side*4,.015,.05,.015);foot.castShadow=false;}
   goal.traverse(o=>{if(o.isMesh)o.castShadow=false;});
-  // Small bleachers, planted corners, and front steps establish scale and depth.
-  for(const side of [-1,1]){
-    for(let i=-1;i<=1;i++)softBox(.19,.095,3.1,'#d2b78a',scene,side*4.75+i*.21,.44,-7.6,.035);
-    for(const z of [-6.45,-8.75]){softBox(.61,.39,.09,'#677c65',scene,side*4.75,.2,z,.025);rod([side*5.04,.2,z],[side*5.04,.91,z],.035,'#677c65');}
-    softBox(.075,.22,3.1,'#d8bf97',scene,side*5.04,.8,-7.6,.025);
-    for(const z of [-10.6,-3.4]){
-      mesh(new THREE.CylinderGeometry(.45,.38,.34,18),'#d3bba0',scene,side*4.65,.13,z);
-      const rim=mesh(new THREE.TorusGeometry(.44,.025,6,22),'#efe1c7',scene,side*4.65,.3,z,false);rim.rotation.x=Math.PI/2;
-      sphere(.52,'#819d68',scene,side*4.65,.68,z,1,.9,1);
-      sphere(.36,'#9ab47b',scene,side*4.83,.91,z+.1);
-    }
-  }
-  for(let i=0;i<2;i++)box(2.4,.14, .55,'#c8ccb5',scene,2.0,-.43-i*.12,2.3+i*.45);
+  // Side stands: dark tiers beyond the walls frame the court (the crowd sits on the far stands).
+  for(const side of [-1,1])for(let i=0;i<3;i++){const top=.45+i*.5,x=side*(5.05+i*.95);
+    mesh(new THREE.BoxGeometry(.95,top,11.6),i%2?'#1d2550':'#1a2147',scene,x,top/2-.02,-5.2,false);mesh(new THREE.BoxGeometry(.95,.05,11.6),'#2c3a72',scene,x,top+.005,-5.2,false);}
+  // Floodlight towers: poles and heads are static scenery (merged below); the lit panels, glows and beams come after.
+  const FLOODS=[[-9.5,3],[9.5,3],[-9.5,-15],[9.5,-15]],floodHeads=[];
+  for(const [x,z] of FLOODS){mesh(new THREE.CylinderGeometry(.16,.26,11.6,8),'#232a4a',scene,x,5.8,z,false);
+    const head=new THREE.Object3D();head.position.set(x,11.8,z);head.lookAt(0,0,-5);head.updateMatrixWorld(true);floodHeads.push(head);
+    const frame=mesh(new THREE.BoxGeometry(2.6,1.5,.25),'#232a4a',scene,0,0,0,false);frame.position.copy(head.position);frame.quaternion.copy(head.quaternion);}
   // Far stands: three tiers behind the far wall and a back wall carrying the club sign, so the top of a tall screen
   // shows a venue instead of bare ground. Built before the merge below, so they cost a couple of draws; no shadows.
   const STAND_Z=11.9,TIER=[.15,.7,1.25];
-  TIER.forEach((top,i)=>{mesh(new THREE.BoxGeometry(13,top+.65,.9),i%2?'#d9d2b8':'#e2dcc4',scene,0,(top-.65)/2,-(STAND_Z+.9*i),false);mesh(new THREE.BoxGeometry(13,.06,.9),'#c9bf9e',scene,0,top+.03,-(STAND_Z+.9*i),false);});
-  mesh(new THREE.BoxGeometry(13.4,3.3,.3),'#cfd9c0',scene,0,1,-(STAND_Z+2.75),false);
-  for(const x of [-6.6,6.6])mesh(new THREE.BoxGeometry(.3,3.3,3),'#c3cfb2',scene,x,1,-(STAND_Z+1.35),false);
+  TIER.forEach((top,i)=>{mesh(new THREE.BoxGeometry(13,top+.65,.9),i%2?'#1d2550':'#1a2147',scene,0,(top-.65)/2,-(STAND_Z+.9*i),false);mesh(new THREE.BoxGeometry(13,.06,.9),'#2c3a72',scene,0,top+.03,-(STAND_Z+.9*i),false);});
+  mesh(new THREE.BoxGeometry(13.4,3.3,.3),'#141b38',scene,0,1,-(STAND_Z+2.75),false);
+  for(const x of [-6.6,6.6])mesh(new THREE.BoxGeometry(.3,3.3,3),'#18203f',scene,x,1,-(STAND_Z+1.35),false);
   // The club banner hangs on two poles above the keeper's head. Only tall screens have room for it there; on wide ones
   // the keeper's head sits near the top edge and every spot beside its range (±4 with a dive) is cut off by the stands,
   // so it is not shown (the page header carries the name).
-  const signPoles=[0,1].map(()=>{const pole=mesh(new THREE.CylinderGeometry(.035,.035,1,8),'#8e9a80',scene,0,0,0,false);pole.name='sign-pole';return pole;});
+  const signPoles=[0,1].map(()=>{const pole=mesh(new THREE.CylinderGeometry(.035,.035,1,8),'#2a3150',scene,0,0,0,false);pole.name='sign-pole';return pole;});
   if(sign)scene.add(sign);
   function placeSign(aspect){
     if(!sign)return;const shown=aspect<1;sign.visible=shown;signPoles.forEach(pole=>pole.visible=shown);if(!shown)return;
@@ -120,10 +132,42 @@ export function buildWorld(){
     signPoles.forEach((pole,i)=>{const top=y-h/2,px=x+(i?1:-1)*width*.42;pole.scale.set(1,top+.65,1);pole.position.set(px,(top-.65)/2,-z-.02);});
   }
   // A cool rim light from the far end separates the players from the turf (no shadow, so no extra pass).
-  const rim=new THREE.DirectionalLight('#e6f0ff',.9);rim.name='rim';rim.position.set(3,6,-16);rim.target.position.set(0,0,-4);scene.add(rim,rim.target);
+  const RIM='#7fb6ff',rim=new THREE.DirectionalLight(RIM,1.4);rim.name='rim';rim.position.set(3,6,-16);rim.target.position.set(0,0,-4);scene.add(rim,rim.target);
   // Everything above is static scenery: bake it into one mesh per material before any animated or pooled object exists.
   mergeRigidParts(scene);
-  const courtText=label('REBOUND',4.4,.85,'#a7c5a2');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.22;scene.add(courtText);}
+  const courtText=label('REBOUND',4.4,.85,'#ffffff');if(courtText){courtText.rotation.x=-Math.PI/2;courtText.position.set(0,.04,-3.35);courtText.material.opacity=.12;scene.add(courtText);}
+  // Sky: a gradient dome (deep blue overhead, a violet glow on the horizon) and a few stars; neither takes fog.
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(80,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
+    vertexShader:'varying vec3 p;void main(){p=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader:'varying vec3 p;void main(){float y=p.y;vec3 top=vec3(.02,.03,.09),hor=vec3(.17,.10,.32),low=vec3(.03,.04,.10);gl_FragColor=vec4(y>0.?mix(hor,top,smoothstep(0.,.55,y)):mix(hor,low,smoothstep(0.,.2,-y)),1.);}'}));
+  sky.name='sky';sky.renderOrder=-1;scene.add(sky);
+  const starPos=new Float32Array(240*3);for(let i=0;i<240;i++){const h=Math.sin(i*91.17)*43758.55,r1=h-Math.floor(h),h2=Math.sin(i*17.31)*24634.6,r2=h2-Math.floor(h2),a=r1*Math.PI*2,y=.25+r2*.75,rr=Math.sqrt(1-y*y);starPos.set([Math.cos(a)*rr*75,y*75,Math.sin(a)*rr*75],i*3);}
+  const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
+  scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:'#dfe6ff',size:.35,fog:false,transparent:true,opacity:.8,depthWrite:false})));
+  // Floodlights: lit panels (one mesh), soft glows (one point batch) and faint beams (one mesh), none of them shadowed.
+  const glowTexture=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d'),r=g.createRadialGradient(64,64,0,64,64,64);
+    r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.25,'rgba(255,236,190,.45)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,128,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  // Placed on each head, then detached with their world transform as their own (mergeMeshGeometry uses local matrices).
+  const panels=[],beams=[],glowPos=[];
+  const onHead=(head,m)=>{head.add(m);m.updateMatrixWorld(true);head.remove(m);m.matrixWorld.decompose(m.position,m.quaternion,m.scale);return m;};
+  for(const head of floodHeads){for(let i=0;i<3;i++)for(let j=0;j<2;j++){const p=new THREE.Mesh(new THREE.PlaneGeometry(.7,.55));p.position.set(-.85+i*.85,-.35+j*.7,.14);panels.push(onHead(head,p));}
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(1.1,4.2,15,20,1,true));beam.rotation.x=Math.PI/2;beam.position.z=7.6;beams.push(onHead(head,beam));
+    glowPos.push(...new THREE.Vector3(0,0,.6).applyMatrix4(head.matrixWorld).toArray());}
+  const floodPanels=new THREE.Mesh(mergeMeshGeometry(panels),new THREE.MeshBasicMaterial({color:'#fffbe6',toneMapped:false,fog:false}));floodPanels.name='flood-panels';scene.add(floodPanels);
+  const beamFade=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=4;c.height=128;const g=c.getContext('2d'),l=g.createLinearGradient(0,0,0,128);
+    l.addColorStop(0,'rgba(255,245,215,0)');l.addColorStop(.15,'rgba(255,245,215,.5)');l.addColorStop(1,'rgba(255,245,215,0)');g.fillStyle=l;g.fillRect(0,0,4,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const floodBeams=new THREE.Mesh(mergeMeshGeometry(beams),new THREE.MeshBasicMaterial({map:beamFade,color:'#fff4d8',transparent:true,opacity:beamFade?.14:0,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,fog:false}));
+  floodBeams.name='flood-beams';scene.add(floodBeams);
+  for(const m of [...panels,...beams])m.geometry.dispose();
+  const glowGeo=new THREE.BufferGeometry();glowGeo.setAttribute('position',new THREE.Float32BufferAttribute(glowPos,3));
+  scene.add(new THREE.Points(glowGeo,new THREE.PointsMaterial({map:glowTexture,color:'#fff1d0',size:9,transparent:true,opacity:glowTexture?1:0,depthWrite:false,blending:THREE.AdditiveBlending,fog:false})));
+  // A brighter pool of light on the court keeps the eye in the middle; the edges fall off into the dark venue.
+  const poolTexture=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d'),r=g.createRadialGradient(64,64,0,64,64,64);
+    r.addColorStop(0,'rgba(255,250,230,.22)');r.addColorStop(.6,'rgba(255,240,210,.08)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,128,128);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const pool=new THREE.Mesh(new THREE.CircleGeometry(7.5,40),new THREE.MeshBasicMaterial({map:poolTexture,transparent:true,opacity:poolTexture?1:0,depthWrite:false,blending:THREE.AdditiveBlending}));
+  pool.rotation.x=-Math.PI/2;pool.position.set(0,.031,-4.8);pool.scale.set(.72,1.12,1);pool.name='court-light';scene.add(pool);
+  // The level's colour as a lit accent: LED tint and rim light.
+  const accent=new THREE.Color(),accentHSL={h:0,s:0,l:0};
   // Crowd on the far stands: seated toy spectators share eight unshadowed instance batches.
   // The original seat layout and body-instance interface remain unchanged.
   const seats=[];for(let i=0;i<TIER.length;i++)for(let c=0;c<14;c++){const h=Math.sin(i*12.9898+c*78.233)*43758.5453,r=h-Math.floor(h);if(r<.15)continue;seats.push({x:-5.6+c*.86+(r-.5)*.2,y:TIER[i],z:-(STAND_Z+.9*i)+.12,phase:r*6.28,lift:.22+.12*r});}
@@ -131,33 +175,32 @@ export function buildWorld(){
   function cheer(now,reduceMotion){
     spectators.update(now,goalCam.goalAt,reduceMotion);
   }
-  // Shared articulated collectible athletes; visual parts stay under their joints.
-  const player=buildAthlete({jersey:'#f6e9ce',accent:'#ed774b',number:'01'}),hero=player.group,torso=player.torso,legs=player.legs,arms=player.arms;
-  const skin=player.skin;scene.add(hero);hero.position.set(0,0,-1.6);
-  const goalie=buildAthlete({jersey:'#356f91',accent:'#edc25e',number:'1',goalie:true}),keeper=goalie.group;
+  // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
+  // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
+  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
+  const hero=striker.root,keeper=goalie.root;
+  scene.add(hero);hero.position.set(0,0,-1.6);
   scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
-  for(let i=0;i<goalie.arms.length;i++){const g=buildGlove('#eef2ee',i===0?-1:1);g.group.position.set(0,-.44,-.015);goalie.arms[i].add(g.group);}
-  const leftHand=buildGlove('#ed6941',-1);leftHand.group.position.set(-.015,-.44,-.015);arms[0].add(leftHand.group);
-  const leftGlove=leftHand.body;
-  const gear={glove:new THREE.Group(),racket:new THREE.Group(),sword:new THREE.Group()};
-  for(const g of Object.values(gear)){g.position.set(.02,-.43,-.025);arms[1].add(g);}
-  gear.glove.add(buildGlove('#ed6941').group);
-  rod([0,-.06,0],[0,.45,0],.045,'#c99d60',gear.racket);
-  const racket=mesh(new THREE.TorusGeometry(.3,.035,8,36),'#edb85f',gear.racket,0,.65,0);racket.scale.set(1,1.3,1);racket.name='racket-head';
-  for(let y=.02;y<.24;y+=.055)mesh(new THREE.CylinderGeometry(.048,.048,.022,10),'#345c4a',gear.racket,0,y,0,false);
-  for(let p=-.2;p<=.201;p+=.1){rod([p,.43,-.005],[p,.87,-.005],.006,'#e9e4c4',gear.racket);rod([-.24,.65+p,-.005],[.24,.65+p,-.005],.006,'#e9e4c4',gear.racket);}
-  rod([0,-.09,0],[0,.2,0],.055,'#345c4a',gear.sword);softBox(.38,.06,.12,'#e9c56f',gear.sword,0,.22,0,.025);
-  for(let y=-.05;y<.16;y+=.06)mesh(new THREE.CylinderGeometry(.058,.058,.014,10),'#d5ba78',gear.sword,0,y,0,false);
-  const blade=box(.105,.9,.045,material('#d8e6df',.25),gear.sword,0,.68,0);blade.rotation.z=-.03;blade.name='sword-blade';
-  box(.025,.82,.054,'#f5f1d7',gear.sword,-.007,.68,0).castShadow=false;
-  const tip=mesh(new THREE.ConeGeometry(.073,.23,4),material('#d8e6df',.25),gear.sword,0,1.24,0);tip.rotation.y=Math.PI/4;
-  const lookedUp=new Set(['jersey-body','jersey-number','shoulder-sleeve','glove-body','racket-head','sword-blade']);
-  for(const athlete of [hero,keeper])mergeRigidParts(athlete,{keep:o=>lookedUp.has(o.name)});
+  // The right (punching) glove keeps the old `gear.glove` handle and carries the burst's hand glow.
+  const gear={glove:striker.gloves[1].group};
+  // The frame of each punch where the fist is furthest out, measured from the clips.
+  const PUNCH={left:striker.measureReach('punchLeft'),right:striker.measureReach('punchRight')};
+  // Punch clip time for a swing time: the fist is nearly out by the end of the 0.03 s wind-up (the rules leave no time
+  // for a visible build-up), drifts through contact over the active window, then carries through over the recovery.
+  const smooth=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+  const punchTime=(t,w,c)=>{const reach=w.windup+.02,A=w.windup+w.active;return t<=reach?c-.12+.12*smooth(t/reach):t<=A?c+(t-reach)*.4:c+(A-reach)*.4+(t-A)/w.recovery*.35;};
   const ball=new THREE.Group();scene.add(ball);
   // A power shot swells and burns orange-red for its whole flight, trail included.
-  const ballMat=material('#ffbd35',.33),powerMat=new THREE.MeshStandardMaterial({color:'#ff5a24',roughness:.3,emissive:'#ff3d10',emissiveIntensity:.45});
-  const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball);
-  for(const axis of [0,1,2]){const seam=mesh(new THREE.TorusGeometry(.26,.009,5,40),'#7c5b2d',ball,0,0,0,false);if(axis===0)seam.rotation.x=Math.PI/2;if(axis===1)seam.rotation.y=Math.PI/2;}
+  // Toon-shaded and inked like the players: a cream ball with club-orange and navy waves, so its spin reads. Without a DOM
+  // (node tests) it is plain amber. A power shot burns orange through the same waves.
+  const ballWaves=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=256;c.height=128;const g=c.getContext('2d');g.fillStyle='#fff7e8';g.fillRect(0,0,256,128);g.lineWidth=14;
+    for(const [col,off] of [['#ff6a2b',0],['#1d2a5c',64],['#ff6a2b',128],['#1d2a5c',192]]){g.strokeStyle=col;g.beginPath();for(let x=0;x<=256;x+=4){const y=64+Math.sin((x+off)/256*Math.PI*2)*38;x?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();}
+    const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const ballMat=toonMaterial(ballWaves?{map:ballWaves}:{color:'#ffbd35'},'#fff1c0',.35),powerMat=toonMaterial({color:'#ff7a3a',map:ballWaves,emissive:'#ff3d10',emissiveIntensity:.45},'#ffd7a0',.35);
+  const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball),ballInk=addOutline(ballBody,outlineMaterial(.02));
+  // The body and its ink take a stretch matrix (along the flight, about the centre) while the group keeps the spin.
+  ballBody.matrixAutoUpdate=ballInk.matrixAutoUpdate=false;
+  const stretchDir=new THREE.Vector3(),stretchQ=new THREE.Quaternion(),stretchM=new THREE.Matrix4();
   // Ground hints. Every shape is sized from the same numbers the rules use (hitZone, swingPreview, crossingFrom).
   const flat=(geometry,color,opacity,y)=>{const m=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false}));m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=5;scene.add(m);return m;};
   const unit=new THREE.PlaneGeometry(1,1);
@@ -192,7 +235,7 @@ export function buildWorld(){
   const sparks=new THREE.Group();sparks.visible=false;scene.add(sparks);
   const sparkGeo=new THREE.CircleGeometry(.06,4),sparkMat=glow('#ffd36b');
   const sparkList=Array.from({length:22},(_,i)=>{const m=new THREE.Mesh(sparkGeo,sparkMat);m.userData={a:i*2.39996,r:.42+(i*37%10)/22,o:i*.137%1};sparks.add(m);return m;});
-  const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.position.set(.02,-.43,-.025);handGlow.visible=false;arms[1].add(handGlow);
+  const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.visible=false;gear.glove.add(handGlow);
   const halo=new THREE.Mesh(new THREE.RingGeometry(.36,.46,36),glow('#fff1b0',{depthTest:false}));halo.renderOrder=7;halo.visible=false;scene.add(halo);
   const shock=new THREE.Mesh(new THREE.RingGeometry(.8,.98,56),glow('#ffb347'));shock.rotation.x=-Math.PI/2;shock.visible=false;scene.add(shock);
   function screenTexture(draw,w=512,h=512){if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const tx=new THREE.CanvasTexture(c);tx.colorSpace=THREE.SRGBColorSpace;return tx;}
@@ -208,21 +251,49 @@ export function buildWorld(){
   const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
-  const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#12372d',transparent:true,opacity:.3,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
-  const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false}),scene,0,.68,-5,false);m.visible=false;return m;});
-  // Contact flashes, built once and reused: glove = burst with spikes, racket = springy double ring, sword = slash arc.
+  const ballShadow=mesh(new THREE.CircleGeometry(.22,24),new THREE.MeshBasicMaterial({color:'#05080f',transparent:true,opacity:.4,depthWrite:false}),scene,0,.038,-4,false);ballShadow.rotation.x=-Math.PI/2;
+  const RIB=16,ribPts=Array.from({length:RIB},()=>new THREE.Vector3());let ribCount=0,ribHead=0;
+  const ribGeo=new THREE.BufferGeometry(),ribPos=new Float32Array(RIB*6),ribCol=new Float32Array(RIB*8),ribIdx=[];for(let i=0;i<RIB-1;i++){const a=i*2;ribIdx.push(a,a+1,a+2,a+1,a+3,a+2);}
+  ribGeo.setAttribute('position',new THREE.BufferAttribute(ribPos,3).setUsage(THREE.DynamicDrawUsage));ribGeo.setAttribute('color',new THREE.BufferAttribute(ribCol,4).setUsage(THREE.DynamicDrawUsage));ribGeo.setIndex(ribIdx);
+  const ribbon=new THREE.Mesh(ribGeo,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
+  ribbon.name='ball-ribbon';ribbon.frustumCulled=false;ribbon.renderOrder=4;ribbon.visible=false;scene.add(ribbon);
+  const ribColor=new THREE.Color(),ribSide=new THREE.Vector3(),ribDir=new THREE.Vector3(),ribCam=new THREE.Vector3();
+  const trail=Array.from({length:7},(_,i)=>{const m=mesh(new THREE.SphereGeometry(.07+i*.012,8,6),new THREE.MeshBasicMaterial({color:'#ffda7d',transparent:true,opacity:(i+1)*.035,depthWrite:false,blending:THREE.AdditiveBlending}),scene,0,.68,-5,false);m.visible=false;return m;});
+  // Contact flashes, built once and reused: the glove's burst with spikes, and a teal double ring for spin shots.
   // They face the camera, are hollow so the ball stays visible, and live for a fraction of a second.
   const fx=new THREE.Group();fx.visible=false;scene.add(fx);
   // Drawn over the defender (the camera sits behind them) but hollow, so the ball itself stays visible.
   const fxMat=()=>new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:0,depthWrite:false,depthTest:false});
-  const fxParts={burst:new THREE.Group(),ring:new THREE.Group(),slash:new THREE.Group()};
+  const fxParts={burst:new THREE.Group(),ring:new THREE.Group()};
   for(const g of Object.values(fxParts))fx.add(g);
   const fxLayer=o=>{o.renderOrder=7;};
   fxParts.burst.add(new THREE.Mesh(new THREE.RingGeometry(.2,.27,28),fxMat()),new THREE.Mesh(new THREE.CircleGeometry(.11,16),fxMat()));
   for(let i=0;i<8;i++){const spike=new THREE.Mesh(new THREE.PlaneGeometry(.045,.2),fxMat());const a=i/8*Math.PI*2;spike.position.set(Math.cos(a)*.42,Math.sin(a)*.42,0);spike.rotation.z=a-Math.PI/2;fxParts.burst.add(spike);}
   fxParts.ring.add(new THREE.Mesh(new THREE.RingGeometry(.22,.26,32),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.36,.385,32),fxMat()));
-  fxParts.slash.add(new THREE.Mesh(new THREE.RingGeometry(.34,.43,28,1,-.2,Math.PI*.85),fxMat()),new THREE.Mesh(new THREE.RingGeometry(.47,.5,28,1,0,Math.PI*.7),fxMat()));
+  // Extra punch for each contact, also built once: a soft glow, a wide shock ring and sparks streaking out of the fist.
+  const fxGlow=new THREE.Mesh(unit,new THREE.MeshBasicMaterial({map:glowTexture,color:'#ffe2a8',transparent:true,opacity:0,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+  const fxShock=new THREE.Mesh(new THREE.RingGeometry(.86,1,48),fxMat()),sparkStreak=new THREE.PlaneGeometry(.035,.26);
+  const fxSparks=Array.from({length:14},(_,i)=>{const m=new THREE.Mesh(sparkStreak,fxMat()),a=i/14*Math.PI*2+(i%3)*.21;m.userData={a,speed:.8+(i*37%10)/12};m.rotation.z=a-Math.PI/2;return m;});
+  fx.add(fxGlow,fxShock,...fxSparks);
   fx.traverse(fxLayer);
+  // Goal confetti, built once: paper bits thrown up out of the net, timed from the goal on the scene clock (a pause
+  // freezes them mid-air); none with reduced motion.
+  const CONF=120,confetti=new THREE.InstancedMesh(new THREE.PlaneGeometry(.09,.14),new THREE.MeshBasicMaterial({side:THREE.DoubleSide,toneMapped:false}),CONF);
+  confetti.name='confetti';confetti.frustumCulled=false;confetti.visible=false;confetti.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(confetti);
+  const confColors=['#ff6a2b','#ffd23a','#1ec8b4','#3a7bff','#ffffff','#ff4f7b'].map(c=>new THREE.Color(c)),confSeed=[];
+  for(let i=0;i<CONF;i++){const r=k=>{const h=Math.sin(i*12.9898+k*78.233)*43758.5453;return h-Math.floor(h);};
+    confSeed.push({x:(r(1)-.5)*3,vx:(r(2)-.5)*5,vy:3.5+r(3)*4.5,vz:1.2+r(4)*3.2,sx:r(5)*12-6,sy:r(6)*12-6,sz:r(7)*12-6});confetti.setColorAt(i,confColors[i%confColors.length]);}
+  const confM=new THREE.Matrix4(),confQ=new THREE.Quaternion(),confE=new THREE.Euler(),confP=new THREE.Vector3(),confS=new THREE.Vector3();let confAt=-1,confGoals=0,confState=null;
+  function throwConfetti(s,now,reduceMotion){
+    if(confState!==s){confState=s;confAt=-1;confGoals=s.goals;}
+    if(s.goals>confGoals){confGoals=s.goals;confAt=now;}
+    const t=confAt>=0?now-confAt:9;confetti.visible=!reduceMotion&&t>=0&&t<2.6;if(!confetti.visible)return;
+    const drag=(1-Math.exp(-1.6*t))/1.6,fade=Math.min(1,(2.6-t)/.5);
+    for(let i=0;i<CONF;i++){const c=confSeed[i];
+      confP.set(goalCam.x+c.x+c.vx*drag,Math.max(.03,1+c.vy*drag-1.1*t*t),-GOAL_Z+c.vz*drag);
+      confM.compose(confP,confQ.setFromEuler(confE.set(c.sx*t,c.sy*t,c.sz*t)),confS.setScalar(fade));confetti.setMatrixAt(i,confM);}
+    confetti.instanceMatrix.needsUpdate=true;
+  }
   let fxShot=null,fxStart=-1,fxFeel=null,clock=0,wallClock=null;
   // Side-wall impact: a ring on the wall face at the contact point, growing and fading in 0.35 s (two pooled, built once).
   const wallFx=[0,1].map(()=>{const g=new THREE.Group(),mat=new THREE.MeshBasicMaterial({color:'#fff4d2',transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
@@ -242,6 +313,7 @@ export function buildWorld(){
   // Ring buffer for the ball trail: positions are copied into fixed vectors, never allocated per frame.
   const history=Array.from({length:trail.length},()=>new THREE.Vector3());let historyCount=0,historyHead=0;
   let lastBall=null,lastLevel=-1,lastSwing=null,punchLeft=false;
+  const swingEnd={at:-9,time:0},react={state:null,goals:0,misses:0,at:-9,kind:null},lookAt3=new THREE.Vector3();
   // Render pose: the sim runs in fixed 1/120 s steps, the screen at 60/90/120/144 Hz. Positions are carried forward by
   // the unspent part of the next step at the last step's velocity (no added latency); a jump (serve, reset) snaps.
   // Rolling: the ball turns about the axis across its travel by distance / radius, and spin shots add sidespin about the
@@ -278,30 +350,41 @@ export function buildWorld(){
   // dive down onto its side: the hips sink to the ground and the body flattens while its leading edge stays put.
   // Returns the body's offset from its spot on the line. The arms are aimed separately (aimArms): this keeper's arms
   // are short for its head, so arms swung "overhead" end beside the head; pointing them at the ball reads as a reach.
-  const HIP=.9,ARM_SPAN=1.25,diveOffset={x:0,y:0};
+  // Hip height and hip drops come from the model (the old 0.9 / 0.35 / 0.24 were for a 0.9 m hip). The old dive also slid
+  // the hips 0.3 toward the ball; this placeholder's upper body is long enough that a full-length dive about its spot
+  // already reaches as far as a beaten keeper may (keeperReach / beatenDive), so it does not slide.
+  const HIP=goalie.hipHeight,ARM_SPAN=(goalie.height-HIP)*.7,HIP_DROP=.35*HIP/.9,HIP_DOWN=.24*HIP/.9,HIP_SLIDE=0,diveOffset={x:0,y:0};
   function poseKeeper(a,dir,land=0){
-    const lead=dir>0?0:1,trail=1-lead,out=lead?1:-1,legs=goalie.legs,flat=land*Math.min(1,a*2);
+    const flat=land*Math.min(1,a*2);
     const t0=1.42*a**1.2,tilt=t0+(1.5-t0)*flat;
     keeper.rotation.z=dir*tilt;
-    goalie.arms[0].rotation.set(.5,0,-.15);goalie.arms[1].rotation.set(.5,0,.15);
-    legs[trail].rotation.set(.85*a,0,-out*.2*a);legs[lead].rotation.set(-.15*a,0,out*.12*a);
-    const hipX=dir*(.3*a**1.3+ARM_SPAN*(Math.sin(t0)-Math.sin(tilt))),hipY=HIP-.35*a-(HIP-.35*a-.24)*flat;
+    const hipX=dir*(HIP_SLIDE*a**1.3+ARM_SPAN*(Math.sin(t0)-Math.sin(tilt))),hipY=HIP-HIP_DROP*a-(HIP-HIP_DROP*a-HIP_DOWN)*flat;
     diveOffset.x=hipX-dir*HIP*Math.sin(tilt);diveOffset.y=hipY-HIP*Math.cos(tilt);return diveOffset;
   }
   // Both arms swing from the set stance toward a world point by weight w, so the hands arrive at the ball together.
   // Once a dive lands (land 0…1) the aim sinks to the turf, so the arms stretch along the ground rather than up.
-  const armAim={v:new THREE.Vector3(),at:new THREE.Vector3(),q:new THREE.Quaternion(),p:new THREE.Quaternion(),down:new THREE.Vector3(0,-1,0),target:new THREE.Vector3()};
-  function aimArms(x,w,land=0){
-    if(w<=0)return;const A=armAim;A.target.set(x,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);keeper.updateMatrixWorld(true);
-    for(const arm of goalie.arms){arm.getWorldPosition(A.at);A.v.copy(A.target).sub(A.at).normalize();
-      arm.parent.getWorldQuaternion(A.p).invert();A.v.applyQuaternion(A.p);A.q.setFromUnitVectors(A.down,A.v);arm.quaternion.slerp(A.q,w);}
+  // The keeper's body for a frame, after its root is placed: the dive clip by stretch a (hips held, the root carries
+  // the body), a shuffle or idle otherwise; knees fold by the root's sink so the feet stay down, the upper body leans in
+  // when ready, the head follows the ball, and both arms swing toward the save point by weight w (sinking to the turf
+  // once a dive lands). react: an extra [clip, time, weight] layer (a cheer).
+  const armTarget=new THREE.Vector3();
+  function poseGoalie(a,dir,land,w,tx,ready,sink,shuffle,t,look,react){
+    const layers=[],k=Math.min(1,a*3),rw=a>0?0:react?react[2]:0;
+    if(a>0)layers.push([dir>0?'diveLeft':'diveRight',.1+.18*Math.min(1,a/.6),k],['idle',t,1-k,true]);
+    // A side shuffle is 70% side-step over idle, so the arms do not swing out past the save reach.
+    else if(shuffle)layers.push([shuffle>0?'strafeLeft':'strafeRight',t*1.3,.7*(1-rw),true],['idle',t,.3*(1-rw),true]);
+    else layers.push(['idle',t,1-rw,true]);
+    if(rw>0)layers.push(react);
+    goalie.pose(layers,{lockHips:a>0});
+    goalie.crouch(sink);goalie.lean('spine',.16*ready*(1-a));
+    if(look&&a<.15)goalie.look('head',look,.6);
+    if(w>0){armTarget.set(tx,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
   // out toward the ball side, measured once from the model.
-  const keeperReach=(()=>{const out=[],v=new THREE.Vector3(),x0=keeper.position.x,y0=keeper.position.y;
-    for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;aimArms(x0+8,1);keeper.updateMatrixWorld(true);let reach=0;
-      keeper.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let j=0;j<p.count;j+=3){v.fromBufferAttribute(p,j).applyMatrix4(o.matrixWorld);if(v.y<1.7)reach=Math.max(reach,v.x-x0);}});out.push(reach);}
-    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;keeper.updateMatrixWorld(true);return out;})();
+  const keeperReach=(()=>{const out=[],x0=keeper.position.x,y0=keeper.position.y;
+    for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;poseGoalie(i/10,1,0,1,x0+8,0,0,0,0,null,null);out.push(goalie.reach(x0));}
+    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;poseGoalie(0,1,0,0,0,0,0,0,0,null,null);return out;})();
   // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius).
   function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
   // A save's stretch follows the ball's gap: a ball at the body is a step and a low block, one at the edge of the
@@ -392,51 +475,63 @@ export function buildWorld(){
     // Scene clock: follows the caller's time but stands still while the match is paused, so every effect timed on it
     // (crowd, wall rings, net, camera blends, keeper easing) freezes with the pause and resumes where it was.
     const raw=time??(wallClock??0)+1/60,step=wallClock===null?0:Math.max(0,Math.min(.25,raw-wallClock));wallClock=raw;if(s.phase!=='paused')clock+=step;const now=clock;
-    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
+    if(s.shot!==fxShot){fxShot=s.shot;if(s.shot&&s.elapsed-s.shot.at<.15){fxStart=now;fxFeel=hitFeel(s.weapon,['perfect','soft','spin','burst'].includes(s.shot.kind)?s.shot.kind:'hit');fx.position.set(s.shot.x,.73,-s.shot.z);for(const [key,g] of Object.entries(fxParts)){g.visible=key===fxFeel.flash;g.traverse(o=>o.material?.color.set(fxFeel.color));}for(const m of [fxShock,...fxSparks])m.material.color.set(fxFeel.color);fx.userData.flash=fxFeel.flash;fx.userData.peak=fxFeel.intensity;}}
     const fxAge=fxFeel?now-fxStart:9,fxU=fxFeel?fxAge/fxFeel.life:1,strong=fxFeel&&fxAge<.28?fxFeel.motion:1;
-    if(lastLevel!==s.levelIndex){court.material=fieldMaterial(s.level.color);stripes.forEach((stripe,i)=>{const tint=new THREE.Color(s.level.color).offsetHSL(0,0,i%2?.025:0);stripe.material=fieldMaterial('#'+tint.getHexString());});buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
+    if(lastLevel!==s.levelIndex){accent.set(s.level.color).getHSL(accentHSL);accent.setHSL(accentHSL.h,.7,.6);
+      for(const m of [ledSide,ledFar])m.color.set('#ffffff').lerp(accent,m.map?.35:.5);rim.color.set(RIM).lerp(accent,.3);buildFarGoal(s.level.goalHalf);lastLevel=s.levelIndex;}
+    // LED boards scroll on the scene clock (still while paused); with reduced motion they hold still.
+    if(!reduceMotion)ledOffset=(now*.04)%1;for(const m of [ledSide,ledFar])if(m.map)m.map.offset.x=ledOffset;
     const pose=renderPose(s);rollState=s;
-    hero.position.set(pose.px,0,-s.player.z);
-    hero.rotation.z=s.phase==='playing'?-axis*.075:0;
-    const moving=s.phase==='playing'&&Math.abs(axis)>.05;
-    const stride=moving?Math.sin(s.elapsed*16):0;
-    legs.forEach((leg,i)=>leg.rotation.x=moving?Math.sin(s.elapsed*16+i*Math.PI)*.48:0);
-    const sw=s.swing,w=WEAPONS[s.weapon];
-    const punch=sw?Math.sin(Math.min(1,sw.time/(w.windup+w.active))*Math.PI):0;
-    if(sw!==lastSwing){lastSwing=sw;punchLeft=!!sw&&s.weapon==='glove'&&s.ball.x<s.player.x-.08;}
-    for(let i=0;i<arms.length;i++){
-      const active=(i===0)===punchLeft,extension=active?punch:0;
-      // Rotate about the attached shoulder; translating this root separates its sleeve.
-      arms[i].rotation.x=.32+extension*(s.weapon==='glove'?.65:.1)*Math.min(1.5,strong)+(i===0?stride:-stride)*.18;
-    }
-    // Tools pivot at the wrist so their striking surface sweeps towards the low ball.
     // Burst: wind up from 0.08s, strike at 0.28–0.38s, settle by 0.50s — all from the core's skill clock.
-    const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x);};
+    const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=smooth;
     trackGoal(s,now,reduceMotion,pose,sm);
     const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
     lastReduce=reduceMotion;
-    if(sk){arms[1].rotation.x=.32-wind*.85+blow*1.6;arms[0].rotation.x=.32-wind*.35+blow*.45;torso.rotation.y=-wind*.45+blow*.35;torso.rotation.x=blow*.12-wind*.05;}
-    for(const tool of [gear.racket,gear.sword])tool.rotation.x=-1.15-punch-blow;
-    // Racket strings spring back after contact; the sword's blade carries through in a flat slash.
-    gear.racket.rotation.z=fxU<1&&s.weapon==='racket'?Math.sin(fxAge*34)*.16*(1-fxU)*strong:0;
-    gear.sword.rotation.y=s.weapon==='sword'?-punch*.35*strong:0;
-    torso.rotation.y=punch*(punchLeft?.28:-.28);
-    torso.rotation.x=punch*.06*strong;torso.position.y=punch*-.035+(moving?Math.abs(stride)*.018:0);
-    for(const [key,g] of Object.entries(gear))g.visible=key===s.weapon;
-    leftGlove.material=s.weapon==='glove'?leftHand.material:skin;leftHand.details.visible=s.weapon==='glove';leftGlove.scale.setScalar(s.weapon==='glove'?1:.74);
+    // Character clocks: in play the match clock (it stops for pauses and hit-stops, so a pose is a function of the
+    // state); in the lobby and on the result screen the scene clock, so the players keep breathing.
+    const animT=['ready','won','lost'].includes(s.phase)?now:s.elapsed;
+    lookAt3.set(pose.bx,ballHeight(heightProbe),-pose.bz);
+    // Reactions to the score, shown while play is stopped: the striker cheers a goal and slumps at a miss, the keeper
+    // cheers the miss.
+    if(react.state!==s)Object.assign(react,{state:s,goals:s.goals,misses:s.misses,at:-9,kind:null});
+    if(s.goals>react.goals){react.goals=s.goals;react.at=now;react.kind='goal';}
+    if(s.misses>react.misses){react.misses=s.misses;react.at=now;react.kind='miss';}
+    const showing=!!react.kind&&s.phase!=='playing'&&s.phase!=='skill';
+    const reactEnv=(actor,clip)=>{const d=actor.duration(clip),u=now-react.at;return showing&&u>=0&&u<d?Math.min(1,u/.15,(d-u)/.3):0;};
+    // Striker: idle or a side-step by the held direction; the punch follows the rules' swing clock (or the burst's).
+    hero.position.set(pose.px,0,-s.player.z);follow=pose.px*FOLLOW;
+    hero.rotation.z=s.phase==='playing'?-axis*.075:0;
+    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=WEAPONS[s.weapon];
+    if(sw!==lastSwing){if(lastSwing&&!sw)swingEnd.at=s.elapsed;else if(sw)punchLeft=s.ball.x<s.player.x-.08;lastSwing=sw;}
+    if(sw)swingEnd.time=sw.time;
+    const left=!sk&&punchLeft,c=left?PUNCH.left:PUNCH.right;let sTime=0,sWeight=0;
+    if(sk){sTime=kt<B.strike?c.t*.55*wind:c.t*.55+(c.t+.25-c.t*.55)*blow;sWeight=1;}
+    else if(sw){sTime=punchTime(sw.time,w,c.t);sWeight=Math.min(1,sw.time/.025);}
+    else if(swingEnd.at>=0&&s.elapsed-swingEnd.at<.12){const e=s.elapsed-swingEnd.at;sTime=punchTime(swingEnd.time+e,w,c.t);sWeight=1-e/.12;}
+    const rClip=react.kind==='goal'?'cheer':'hurt',rw=react.kind?reactEnv(striker,rClip)*(1-sWeight):0;
+    // A short squash on contact (the hit-stop holds it); none with reduced motion. Set first: it moves the bones the
+    // look-at below measures from.
+    striker.setSquash(!reduceMotion&&fxFeel&&fxFeel.flash==='burst'&&fxAge<.14?(1-fxAge/.14)*.05*Math.min(1.5,fxFeel.intensity):0);
+    striker.pose([[moving?(axis>0?'strafeRight':'strafeLeft'):'idle',moving?animT*1.25:animT,1-sWeight-rw,true],[left?'punchLeft':'punchRight',sTime,sWeight],[rClip,now-react.at,rw]]);
+    if(sk)striker.twist('chest',-wind*.45+blow*.35);
+    if(rw<.5){striker.look('chest',lookAt3,.2*(1-sWeight));striker.look('head',lookAt3,.45);}
     const k=s.keeper,dv=trackDive(s,now,pose,sm);
     // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
     const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
     keeperReady+=(readyTo-keeperReady)*Math.min(1,since*9);
-    const off=poseKeeper(dv.a,dv.dir,dv.land);goalie.torso.rotation.x=.16*keeperReady*(1-dv.a);
-    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-.07*keeperReady-dv.crouch,-KEEPER_Z);aimArms(dv.tx,dv.w,dv.land);
-    const shuffling=!dv.a&&Math.abs(k.target-k.x)>.05&&s.phase==='playing';
-    if(!dv.a)goalie.legs.forEach((leg,i)=>leg.rotation.x=shuffling?Math.sin(s.elapsed*14+i*Math.PI)*.35:0);
+    const off=poseKeeper(dv.a,dv.dir,dv.land),sink=.07*keeperReady+dv.crouch;
+    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-sink,-KEEPER_Z);
+    // Shuffling means actually moving: the keeper's step since the last simulation tick.
+    const kStep=s.pose?k.x-s.pose.kx:0,shuffling=!dv.a&&Math.abs(kStep)>1e-4&&s.phase==='playing',kw=react.kind==='miss'?reactEnv(goalie,'cheer'):0;
+    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady,sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null);
+    // Big heads and gloves reach the turf first when the body lies on its side: lift the whole body by the deepest point.
+    const low=goalie.lowestPoint();if(low<0){keeper.position.y-=low;keeper.updateMatrixWorld(true);}
     const height=ballHeight(heightProbe);
     ball.position.set(pose.bx,height,-pose.bz);
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
+    throwConfetti(s,now,reduceMotion);
     const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
-    ball.scale.set(size*(1+.28*squash),size*(1-.24*squash),size*(1+.28*squash));ballBody.material=powered?powerMat:ballMat;
+    ball.scale.setScalar(size);ballBody.material=powered?powerMat:ballMat;
     const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
     // Speed reads in the trail: from 3 up to 10 it grows brighter and thicker (the gaps already widen with speed).
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
@@ -477,7 +572,7 @@ export function buildWorld(){
     // The push-in sweeps ~50° round the defender, then the hold keeps easing closer until the strike.
     cine.theta=sk&&kt<B.push?(1-sm((kt-B.freeze)/(B.push-B.freeze)))*.9:0;cine.r=1-.04*sm((kt-B.push)/(B.strike-B.push));
     if(sk){focus.set((s.player.x+sk.x)/2,1.02,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
-    hemisphere.intensity=2*(1-.42*cine.dim);sun.intensity=3.1*(1-.3*cine.dim);
+    hemisphere.intensity=HEMI*(1-.42*cine.dim);sun.intensity=SUN*(1-.3*cine.dim);
     keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
     chargeRing.visible=!!sk;if(sk){chargeRing.position.set(s.player.x,.055,-s.player.z);chargeRing.scale.setScalar(.7+.7*kp);chargeRing.material.opacity=.85*(1-kp*.5);}
     // Aura: hoops rise and fade on a loop, sparks stream upward; static when motion is reduced.
@@ -498,8 +593,11 @@ export function buildWorld(){
       banner.position.x=reduceMotion?0:(1-inn)*-span+out*span;banner.material.opacity=reduceMotion?Math.min(inn,1-out):1;}
     const opening=kt<.07,striking=kt>=B.strike&&kt<B.strike+.12;
     flash.visible=!!sk&&!reduceMotion&&(opening||striking);if(flash.visible)flash.material.opacity=opening?.4*(1-kt/.07):.5*(1-(kt-B.strike)/.12);
-    // A short kick when the burst actually leaves (camera shake, skipped with reduced motion).
-    kick=!reduceMotion&&fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:0;
+    // A short forward kick of the camera on contact (bigger for a perfect strike, biggest when the burst leaves); a render
+    // offset like the shake, skipped with reduced motion.
+    // Only the striker's own contacts kick (in play, struck near its line), not a serve.
+    const struck=s.phase==='playing'&&fxShot&&fxShot.z<PLAYER_Z+2.5;
+    kick=reduceMotion||!fxFeel?0:fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:struck&&fxFeel.flash==='burst'&&fxAge<.22?(1-fxAge/.22)**2*(.06+.05*Math.min(2,fxFeel.intensity)):0;
     reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(pose.bx,.035,-pose.bz);ballMarker.visible=ball.visible&&s.phase==='playing';
@@ -508,14 +606,34 @@ export function buildWorld(){
     else if(s.phase==='playing'&&!reduceMotion&&s.ball!==lastBall){lastBall=s.ball;}
     if(s.phase==='playing'&&!reduceMotion){history[historyHead].copy(ball.position);historyHead=(historyHead+1)%history.length;historyCount=Math.min(history.length,historyCount+1);}
     trail.forEach((m,i)=>{m.visible=!reduceMotion&&ball.visible&&historyCount>i;m.position.copy(i<historyCount?history[(historyHead-historyCount+i+history.length)%history.length]:ball.position);});
+    // The ball stretches along its flight as it speeds up and flattens for an instant at contact (none with reduced motion).
+    const flightSpeed=Math.hypot(s.ball.vx,s.ball.vz),st=reduceMotion||!ball.visible?0:Math.min(.3,Math.max(0,(flightSpeed-3)*.03))-.35*squash;
+    if(Math.abs(st)>1e-4&&flightSpeed>1e-6){const v=stretchDir.set(s.ball.vx/flightSpeed,0,-s.ball.vz/flightSpeed).applyQuaternion(stretchQ.copy(ball.quaternion).invert()),a=1+st,p=1-st*.45,k=a-p;
+      stretchM.set(p+k*v.x*v.x,k*v.x*v.y,k*v.x*v.z,0, k*v.y*v.x,p+k*v.y*v.y,k*v.y*v.z,0, k*v.z*v.x,k*v.z*v.y,p+k*v.z*v.z,0, 0,0,0,1);}
+    else stretchM.identity();
+    ballBody.matrix.copy(stretchM);ballInk.matrix.copy(stretchM);
+    // The ribbon: a glowing tail through the last positions, as wide and bright as the same speed reading makes the beads.
+    if(s.phase==='playing'&&!reduceMotion&&ball.visible){ribPts[ribHead].copy(ball.position);ribHead=(ribHead+1)%RIB;ribCount=Math.min(RIB,ribCount+1);}else if(s.phase!=='paused')ribCount=0;
+    ribColor.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffc66a');camera.getWorldPosition(ribCam);
+    for(let i=0;i<RIB;i++){const on=i<ribCount,p=on?ribPts[(ribHead-1-i+RIB)%RIB]:ball.position,n=i+1<ribCount?ribPts[(ribHead-2-i+RIB)%RIB]:p,f=1-i/(RIB-1);
+      ribDir.subVectors(p,n);ribSide.subVectors(ribCam,p).cross(ribDir).normalize();const width=on&&ribDir.lengthSq()>1e-8?(.05+.09*quick)*(burstTrail?1.8:powered?1.3:1)*f:0;
+      ribPos.set([p.x+ribSide.x*width,p.y+ribSide.y*width,p.z+ribSide.z*width,p.x-ribSide.x*width,p.y-ribSide.y*width,p.z-ribSide.z*width],i*6);
+      const alpha=f*f*(.3+.5*quick);ribCol.set([ribColor.r,ribColor.g,ribColor.b,alpha,ribColor.r,ribColor.g,ribColor.b,alpha],i*8);}
+    ribGeo.attributes.position.needsUpdate=ribGeo.attributes.color.needsUpdate=true;ribbon.visible=ribCount>1;
     // Contact flash: a short pop centred on the contact point, oldest first to fade.
     fx.visible=!!fxFeel&&fxU<1&&s.phase!=='ready';
     if(fx.visible){
       fx.quaternion.copy(camera.quaternion);const ease=1-(1-fxU)**3,peak=fxFeel.intensity,alpha=(1-fxU)**1.4*Math.min(1,.55+.25*peak);
       let scale=(reduceMotion?.9:.55+.75*ease)*(.7+.3*peak);
       if(fxFeel.flash==='ring'&&!reduceMotion)scale*=1+.18*Math.sin(fxU*18)*(1-fxU);
-      fx.scale.setScalar(scale);fxParts.slash.rotation.z=reduceMotion?0:-.9+1.3*ease;
+      fx.scale.setScalar(scale);
       fx.traverse(o=>{if(o.material)o.material.opacity=alpha;});
+      // The glow and shock ring swell past the flash; sparks fly out (they stay put with reduced motion) and fade.
+      const fly=reduceMotion?.5:ease,inv=1/scale;
+      fxGlow.scale.setScalar((.9+1.6*fly)*(.8+.25*peak)*inv);fxGlow.material.opacity=glowTexture?(1-fxU)**2*.9:0;
+      fxShock.scale.setScalar((.3+1.4*fly)*(.8+.3*peak)*inv);fxShock.material.opacity=alpha*.8;
+      const sparkAlpha=alpha*(fxFeel.flash==='burst'?1:.6);
+      for(const m of fxSparks){const r=.35+1.1*fly*m.userData.speed;m.position.set(Math.cos(m.userData.a)*r,Math.sin(m.userData.a)*r,0);m.scale.set(1,1+1.5*(1-fxU),1);m.material.opacity=sparkAlpha;}
     }
   }
   const PITCH_TALL=43,PITCH_PORTRAIT=39;
@@ -541,7 +659,8 @@ export function buildWorld(){
     const boundary=[];
     for(const x of [-4.35,4.35])boundary.push(new THREE.Vector3(x,0,-10.65),new THREE.Vector3(x,1.3,-9.7));
     for(const x of tall?[-1.6,1.6]:[-3.95,3.95])boundary.push(new THREE.Vector3(x,0,tall?.9:1.15),new THREE.Vector3(x,1.15,0));
-    for(const x of [-SIDE-.1,SIDE+.1])boundary.push(new THREE.Vector3(x,0,-PLAYER_Z));
+    // The side walls at the defender's depth may leave the frame (user choice, 2026-10-27: a closer camera, players about
+    // 1.4x larger); the camera slides along with the defender instead (follow, in shake) so it never leaves the screen.
     boundary.push(new THREE.Vector3(0,2.3,-PLAYER_Z),new THREE.Vector3(0,2.3,-KEEPER_Z));
     // The keeper's toes must clear the back of the defender's head: on a wide screen a close camera would otherwise blow
     // the defender up over it.
@@ -559,18 +678,21 @@ export function buildWorld(){
   }
   // Camera shake is a pure render offset around the framed position.
   let baseFov=39;
+  // Sideways follow of the defender: a share of its x, as a pure slide (no turn), set every update.
+  let follow=0;const FOLLOW=.4;
   const base=new THREE.Vector3(),jolt=new THREE.Vector3(),baseQuat=new THREE.Quaternion(),aim0=new THREE.Vector3(),hudSize={w:1,h:1};
   // Camera = the framed shot, blended toward a side close-up during a burst, plus any shake. The normal frame
   // always comes from the latest resize, so a close-up never restores an old screen shape.
-  function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);
+  function shake(amount=0){camera.position.copy(base);camera.quaternion.copy(baseQuat);camera.position.x+=follow;
     if(cine.w>0){const a=cine.side*cine.theta,ox=cine.side*3.4*cine.r,oz=2.4*cine.r,ca=Math.cos(a),sa=Math.sin(a);closePos.set(focus.x+ox*ca+oz*sa,focus.y+1.2*cine.r,focus.z-ox*sa+oz*ca);camera.position.lerp(closePos,cine.w);lookAt.copy(aim0).lerp(focus,cine.w);camera.lookAt(lookAt);}
     else if(goalCam.w>0){camera.position.lerp(chasePos,goalCam.w);lookAt.copy(aim0).lerp(chaseAim,goalCam.w);camera.lookAt(lookAt);}
     // Close-ups open the lens (burst 40°, goal shot 52°) for a closer, more dynamic frame; exactly the framed lens otherwise.
     const fov=baseFov+(40-baseFov)*cine.w+(52-baseFov)*goalCam.w;if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+   if(kick>0)camera.position.addScaledVector(camera.getWorldDirection(jolt),kick);
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
@@ -585,31 +707,34 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
     this.tier++;slow=0;ema=16.7;return true;
   }};
 }
-export function create3DRenderer(canvas){
+// Returns at once; `ready` settles when the characters are loaded and the world is built (nothing is drawn before).
+// A failed load rejects `ready`, and the caller falls back to the 2D court.
+export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url)){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
   const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
   if(!context)throw new Error('WebGL2 is unavailable');
   const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true});
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-  const world=buildWorld(),governor=createQualityGovernor();let width=0,height=0,size=null,last=0;
+  const governor=createQualityGovernor();let world=null,width=0,height=0,size=null,last=0;
   function applyQuality(){
     const q=QUALITY_TIERS[governor.tier];renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,q.pixelRatio));
     const shadow=world.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}
     width=0;
   }
-  applyQuality();
+  const ready=loadCharacterAssets(load).then(assets=>{world=buildWorld(assets);applyQuality();});
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
   return {
+    ready,
     get quality(){return governor.tier;},
     render(state,axis,reduceMotion,shake=0){
-      if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
+      if(!world)return;if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
       const now=performance.now();if(last&&governor.sample(now-last))applyQuality();last=now;
       if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);world.resize(width/height);}
       world.update(state,axis,reduceMotion,now/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
     },
-    dispose(){observer?.disconnect();world.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    dispose(){observer?.disconnect();world?.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
   };
 }

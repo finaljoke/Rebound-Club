@@ -24,11 +24,11 @@ test('一次击球只产生一个击球事件，挥空也只报一次',()=>{
     const ev=swingAndCollect(s);assert.equal(ev.filter(e=>['hit','perfect','soft'].includes(e)).length,1,id);
     const t=play(id);t.ball={x:0,z:7,vx:0,vz:-4,z0:7,z1:PLAYER_Z};assert.equal(swingAndCollect(t).filter(e=>e==='whiff').length,1,id);}
 });
-test('装备手感互不相同，完美击球强度明显高于普通击球',()=>{
+test('拳套手感：完美击球强度明显高于普通击球',()=>{
   const shapes=new Set(),sounds=new Set();
   for(const id of Object.keys(WEAPONS)){const n=hitFeel(id,'hit'),p=hitFeel(id,'perfect'),soft=hitFeel(id,'soft');
     shapes.add(n.flash);sounds.add(n.sound);
     assert.ok(p.intensity>=n.intensity*1.6,`${id} 完美 ${p.intensity} 普通 ${n.intensity}`);assert.ok(soft.intensity<n.intensity);
     assert.ok(p.life<=.3&&n.life<=.3,'特效短促');assert.ok(p.motion>n.motion);}
-  assert.equal(shapes.size,3);assert.equal(sounds.size,3);
+  assert.deepEqual([...shapes],['burst']);assert.deepEqual([...sounds],['punch']);
 });

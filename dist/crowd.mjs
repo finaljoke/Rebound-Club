@@ -1,6 +1,7 @@
 import * as THREE from './vendor/three.module.min.js';
 import {RoundedBoxGeometry} from './vendor/RoundedBoxGeometry.js';
 import {mergeMeshGeometry} from './art.mjs';
+import {toonMaterial} from './actor.mjs';
 
 // Small background figures use low-segment rounded parts, merged once per batch.
 // All models face +z, towards the court. No textures or shadow passes are needed.
@@ -53,9 +54,10 @@ function hairGeometry(kind){
 
 export function buildSpectatorCrowd(seats){
   const group=new THREE.Group();group.name='spectators';
-  const plain=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.85});
-  const cloth=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.85,vertexColors:true});
-  const ink=new THREE.MeshStandardMaterial({color:'#273c32',roughness:.9});
+  // Toon-shaded like the players, with a faint rim so the stands read against the dark venue.
+  const plain=toonMaterial({color:'#ffffff'},'#5f7cff',.3);
+  const cloth=toonMaterial({color:'#ffffff',vertexColors:true},'#5f7cff',.3);
+  const ink=new THREE.MeshBasicMaterial({color:'#141826'});
   const batches=[];
   function batch(name,geometry,count,material=plain){
     const m=new THREE.InstancedMesh(geometry,material,count);m.name=name;m.castShadow=false;m.receiveShadow=false;
@@ -69,7 +71,8 @@ export function buildSpectatorCrowd(seats){
   const hair=counts.map((count,kind)=>batch('spectator-hair-'+kind,hairGeometry(kind),count));
   const arms=batch('spectator-arms',new THREE.CapsuleGeometry(.06,.08,2,6).translate(0,-.06,0),seats.length*2);
   const hands=batch('spectator-hands',combined([[new THREE.CylinderGeometry(.043,.038,.12,6),'#fff',0,.075,0],[smallBall(.055),'#fff',0,0,0,[.8,1,.8]]]),seats.length*2);
-  const shirts=['#658b9a','#ce8669','#ded6ba','#aaac74','#7d9982','#ad8076'];
+  // Supporters' colours: club orange and gold, teal, blue, white and pink.
+  const shirts=['#ff6a2b','#1ec8b4','#ffb02e','#3a7bff','#f4f1ea','#ff4f7b'];
   const skins=['#bd8b68','#93674d','#d9b391','#b78560'];
   const hairs=['#3d392e','#514236','#72604a','#38463a'],tint=new THREE.Color();
   seats.forEach((seat,i)=>{

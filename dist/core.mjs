@@ -4,20 +4,25 @@
 // practice: misses forgiven at the start of a level. Levels 1-3 keep ball speed and goal width fixed so
 // each one teaches a single thing through the keeper alone; later levels change one variable at a time, with the
 // keeper's speed raised alongside the faster ball (5) so a plain shot to the open side is not a sure goal.
+// Ball pace (user request, 2026-10-27): the game runs PACE times faster than these authored numbers. Ball speeds, the
+// serve's sideways drift, the burst cap and the striker's run scale up with it, and the keeper moves PACE times faster
+// after a reaction PACE times shorter, so every chase keeps its geometry. Swing timings stay as they are (they are the
+// player's reactions); the first-visit tutorial keeps its own slow serves.
+export const PACE=1.5;
 export const LEVELS = [
   {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。挥击时按住 ← 或 →，球就往那边飞。',goals:2,practice:3,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
   {name:'左右开弓',tag:'按住方向，指哪打哪',lesson:'门将守住了正中。挥击时按住 ← 打左边，按住 → 打右边，看准它站哪边。',goals:3,practice:2,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
   {name:'预判时刻',tag:'甜点重炮与旋转',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或用旋转绕过门将。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.5,pattern:.3,recover:.7},color:'#5c5a8b'},
   {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠，还会盯着你在框里按的方向。按住另一侧打对角，或最后一刻再换方向骗它。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.6,pattern:.3,recover:.6},color:'#867045'},
-  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.5,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
+  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.45,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
   {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将会读招。变向、重炮、旋转都要用上，出手前别暴露方向。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4,read:.8,pattern:.5,recover:.9},color:'#285b54'}
-];
+].map(l=>({...l,speed:l.speed*PACE,keeper:{...l.keeper,speed:l.keeper.speed*PACE,delay:l.keeper.delay/PACE}}));
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
-  glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5},
-  racket:{name:'球拍',subtitle:'宽范围 · 稳稳接住',width:1.2,reach:1.1,windup:.05,active:.13,recovery:.2,whiff:.5},
-  sword:{name:'剑',subtitle:'长距离 · 提前拦截',width:.95,reach:1.6,windup:.06,active:.14,recovery:.28,whiff:.55}
+  glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5}
 };
+// The striker's run speed (m/s), scaled with the pace.
+export const RUN=6.2*PACE;
 export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=1.6,POWER=1.35,SOFT=.8,HIT_HEIGHT=.73,ARC=.9;
 // Aim: left/right held at contact sends the ball to that side of the goal mouth, AIM_SHARE of its half width out;
 // nothing held goes straight, pulled in to the same mark when the defender stands outside it. Spins land further out.
@@ -28,7 +33,7 @@ export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
   spin:{cost:50,angle:.22,curve:.06,maxAngle:.65,curveShare:.7},
   // Burst show beats in seconds (user-requested longer, punchier show): freeze → push in → hold → strike → return → launch.
-  burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5,duration:1.1,freeze:.12,push:.45,strike:.75,release:.85}};
+  burst:{cost:100,widthScale:1.15,frontExtra:.15,speedScale:1.65,maxSpeed:12.5*PACE,duration:1.1,freeze:.12,push:.45,strike:.75,release:.85}};
 // Goal camera (presentation only; rules never read it). Key goals get the full show: the camera starts moving camStart
 // sim-seconds before the ball reaches the goal line, the sim runs at `slow` for the last slowWindow, then the shot is held
 // for `hold` and the camera returns over `back` (real seconds, inside the 1.2 s before the next serve). Other goals get
@@ -71,7 +76,7 @@ function tutorialReset(s,event){s.events.push(event);s.swing=null;s.power=false;
 function serve(s){
   if(s.tutorial){tutorialServe(s);return;}
   const z=KEEPER_Z-.3,dir=(s.misses+s.goals)%2?-1:1;
-  s.ball={x:clamp(s.keeper.x,-1.5,1.5),z,vx:.65*dir,vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;
+  s.ball={x:clamp(s.keeper.x,-1.5,1.5),z,vx:.65*PACE*dir,vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;
 }
 export function createGame(level=0,weapon='glove',options={}){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
@@ -116,8 +121,8 @@ export function crossingFrom(x,z,vx,vz,s){
 export function predictCrossing(s){const b=s.ball;return b.vz>0?crossingFrom(b.x,b.z,b.vx,b.vz,s):null;}
 // Visual height only: each leg of flight is a parabola that starts and ends at hitting height.
 // Drawn height only (no rule reads it). One fixed gravity: the apex follows the flight time over the span, so a fast
-// ball flies flat and a slow one lobs. GRAVITY keeps level 1's serve at the old ARC apex; MAX_APEX caps slow lobs.
-export const GRAVITY=8*ARC/((KEEPER_Z-.3-PLAYER_Z)/4)**2,MAX_APEX=1.5;
+// ball flies flat and a slow one lobs. GRAVITY keeps level 1's serve (speed 4·PACE) at the old ARC apex; MAX_APEX caps slow lobs.
+export const GRAVITY=8*ARC/((KEEPER_Z-.3-PLAYER_Z)/(4*PACE))**2,MAX_APEX=1.5;
 export function ballHeight(s){
   const b=s.ball,span=(b.z1??PLAYER_Z)-(b.z0??b.z);
   const u=Math.abs(span)<1e-6?1:clamp((b.z-b.z0)/span,0,1),time=Math.abs(span)/Math.max(1e-6,Math.abs(b.vz??0));
@@ -146,7 +151,8 @@ function strike(s,w,sw,axis){
   s.lastShot=soft?'soft':perfect?'perfect':['left','straight','right'][aimSide(axis)+1];noteAim(s,aimSide(axis));
   s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
-  if(perfect)s.hitstop=.07;
+  // Every contact holds the frame for a moment (user request, 2026-10-27); a perfect strike holds longer.
+  s.hitstop=perfect?.07:.05;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
   b.kind=perfect?'perfect':null;b.curve=null;
   if(!s.tutorial)addEnergy(s,soft?0:perfect?SKILLS.gainPerfect:SKILLS.gainHit,s.events);
@@ -212,7 +218,7 @@ export function useSkill(s,kind,axis=0){
   }
   return {ok:true,id};
 }
-// The burst reads the held direction when it leaves the racket, so the player can still pick a side during the show.
+// The burst reads the held direction when it leaves the glove, so the player can still pick a side during the show.
 function launchBurst(s,axis){
   const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;k.angle=aimAngle(s,k.x,k.z,axis);noteAim(s,aimSide(axis));
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=Math.min(cfg.maxSpeed,s.level.speed*s.rally*cfg.speedScale);
@@ -353,7 +359,7 @@ function tick(s,dt,axis){
   s.held=axis;
   // Once the ball is in the hit box, and while a swing can still connect, the defender is planted: the held direction
   // aims instead of sliding off the ball, so pressing it a beat before the swing is safe.
-  if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*6.2*dt,-3.45,3.45);
+  if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*RUN*dt,-3.45,3.45);
   if(sw){
     sw.time+=dt;
     if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');}

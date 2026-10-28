@@ -17,10 +17,9 @@ let canvas=$('court'),ctx=null,court3D=null;
 const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
-let selected=0,weapon='glove',game=createGame(),uiPhase='',soundOn=true,audio=null;
+let selected=0,game=createGame(),uiPhase='',soundOn=true,audio=null;
 let shareShot=null,resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const icons=Object.fromEntries(['glove','racket','sword'].map(id=>[id,icon(id)]));
 let matchStats=createMatchStats();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
@@ -59,10 +58,8 @@ const cues={
   win:()=>[523,659,784,1046,1318].forEach((f,i)=>tone(f,f,i===4?.5:.14,'triangle',.08,i*.1)),
   wide:()=>{tone(180,110,.12,'sine',.14);noise(.07,.1,900);},
   practice:()=>tone(440,330,.16,'triangle',.06),
-  // Contact sounds per gear, scaled by hitFeel intensity: glove thumps, racket strings spring, sword rings.
+  // Glove contact thump, scaled by hitFeel intensity.
   punch:i=>{tone(170,55,.14,'sine',.3*i);noise(.05,.24*i,1500);},
-  string:i=>{tone(360,640,.1,'triangle',.13*i);tone(760,1280,.12,'sine',.05*i,.012);noise(.04,.1*i,3600);},
-  blade:i=>{noise(.17,.16*i,5400);tone(1600,880,.15,'sine',.05*i);tone(190,80,.08,'sine',.16*i);},
   impact:()=>{tone(72,36,.3,'sine',.38);tone(1320,1760,.18,'triangle',.06,.04);},
   // Skill cues: burst charge rises with quickening pulses up to the strike beat, strike lands a deep boom and crack;
   // spin adds a short whirl; a refused request blips low.
@@ -97,21 +94,17 @@ function sound(kind,intensity=1){
 function selections(){
   const busy=[...ACTIVE_PHASES,'paused'].includes(game.phase);
   $('levels').innerHTML=LEVELS.map((l,i)=>`<button class='level-button ${selected===i?'selected':''}' data-level='${i}' aria-label='第${i+1}关 ${l.name}${i>progress.unlocked?'，未解锁':''}' aria-pressed='${selected===i}' ${i>progress.unlocked||busy?'disabled':''}><strong>${String(i+1).padStart(2,'0')}</strong><span>${l.name}</span><small>${i>progress.unlocked?icon('lock'):progress.perfect[i]?icon('spark'):progress.scores[i]?icon('check'):''}</small></button>`).join('');
-  $('weapons').innerHTML=Object.entries(WEAPONS).map(([id,w])=>`<button class='weapon-button ${weapon===id?'selected':''}' data-weapon='${id}' aria-pressed='${weapon===id}' ${busy||(id!=='glove'&&progress.unlocked===0)?'disabled':''}><span class='weapon-icon'>${icons[id]}</span><span class='weapon-copy'><b>${w.name}</b><small>${w.subtitle}</small></span><span class='weapon-check'>${id!=='glove'&&progress.unlocked===0?icon('lock'):weapon===id?icon('check'):''}</span></button>`).join('');
   $('stage-name').textContent=LEVELS[selected].name;
   document.querySelector('.game-top .mini-label').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
   $('level-note').textContent=LEVELS[selected].lesson;
-  $('weapon-note').textContent=progress.unlocked===0?'完成第一关，解锁球拍和剑。':'三种装备各有手感，找到自己的节奏。';
   $('prep-level-name').textContent=LEVELS[selected].name;
   $('prep-rule').textContent=`进 ${LEVELS[selected].goals} 球通关 · 丢 3 球结束`;
   $('prep-stage').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
-  $('prep-weapon').textContent=WEAPONS[weapon].name;$('prep-weapon-icon').innerHTML=icons[weapon];
-  $('attack').querySelector('svg').outerHTML=icons[weapon];
   $('best').textContent=progress.scores[selected]??'—';
   $('best-record').hidden=!progress.scores[selected];
   $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
 }
-function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,weapon,{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
@@ -122,7 +115,6 @@ function phaseUI(){
   if(game.phase==='ready'){$('overlay').hidden=true;}
   else if(game.phase==='paused')overlay(`<div class='overlay-symbol'>${icon('shield')}</div><span class='eyebrow'>暂停时刻</span><h3>这一球，等你回来。</h3><p>休息一下，球和本关进度都会保留。</p><button class='primary-button' data-action='resume'>继续防守 ${icon('arrow')}</button><div class='pause-actions'><button class='secondary-button' data-action='retry'>重新开始本关</button><button class='secondary-button' data-action='ready'>返回俱乐部</button></div>`);
   else if(['won','lost'].includes(game.phase)){
-    const newlyUnlocked=game.phase==='won'&&selected===0&&progress.unlocked===0;
     if(game.phase==='won'){
       progress.unlocked=Math.max(progress.unlocked,Math.min(5,selected+1));
       progress.scores[selected]=Math.max(progress.scores[selected]||0,game.score);
@@ -133,7 +125,7 @@ function phaseUI(){
     // The share card is drawn now, so the button can share a ready file inside the tap.
     const card={...r,level:selected+1,levelName:game.level.name},shot=shareShot={card,blob:null};
     renderShareCard(card).then(blob=>{if(shareShot!==shot)return;shot.blob=blob;const b=$('overlay-content').querySelector('[data-action=share]');if(b)b.disabled=false;}).catch(()=>{});
-    overlay(`<div class='overlay-symbol ${r.won?'':'loss'}'>${icon(r.won?'trophy':'retry')}</div><span class='eyebrow'>第 ${String(selected+1).padStart(2,'0')} 关 · ${game.level.name}</span><h3>${r.title}</h3><div class='result-subtitle'>${newlyUnlocked?'新装备就位：球拍与剑':r.won?(selected===5?'六关全部完成，你就是守门王牌。':'这一球，打得有点漂亮。'):'稳住节奏，下一个空当属于你。'}</div><div class='result-score'>${r.goals}<small>/ ${r.target} 球</small></div><div class='result-highlight'>${icon('spark')}${r.highlight}</div><div class='result-stats'><span><b>${r.bestCombo}</b>最高连击</span><span><b>${r.powerHits}</b>重炮击球</span><span><b>${r.score}</b>本局得分</span></div>${r.won?'':`<div class='result-advice'><b>下局试试</b>${r.advice}</div>`}<button class='primary-button' data-action='${r.action}'>${r.actionLabel} ${icon(r.action==='next'?'arrow':'retry')}</button><div class='result-links'><button class='secondary-button share-button' data-action='share' disabled>${icon('spark')} 分享战绩</button><button class='secondary-button' data-action='ready'>返回俱乐部</button></div>`);
+    overlay(`<div class='overlay-symbol ${r.won?'':'loss'}'>${icon(r.won?'trophy':'retry')}</div><span class='eyebrow'>第 ${String(selected+1).padStart(2,'0')} 关 · ${game.level.name}</span><h3>${r.title}</h3><div class='result-subtitle'>${r.won?(selected===5?'六关全部完成，你就是守门王牌。':'这一球，打得有点漂亮。'):'稳住节奏，下一个空当属于你。'}</div><div class='result-score'>${r.goals}<small>/ ${r.target} 球</small></div><div class='result-highlight'>${icon('spark')}${r.highlight}</div><div class='result-stats'><span><b>${r.bestCombo}</b>最高连击</span><span><b>${r.powerHits}</b>重炮击球</span><span><b>${r.score}</b>本局得分</span></div>${r.won?'':`<div class='result-advice'><b>下局试试</b>${r.advice}</div>`}<button class='primary-button' data-action='${r.action}'>${r.actionLabel} ${icon(r.action==='next'?'arrow':'retry')}</button><div class='result-links'><button class='secondary-button share-button' data-action='share' disabled>${icon('spark')} 分享战绩</button><button class='secondary-button' data-action='ready'>返回俱乐部</button></div>`);
     input.reset();
   }else $('overlay').hidden=true;
   selections();
@@ -200,10 +192,10 @@ try{
 
 document.querySelector('.app').addEventListener('click',e=>{
   const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
-  if(action==='choose-level'||action==='choose-gear'){
+  if(action==='choose-level'){
     if(game.phase!=='ready')return;
-    const dialog=$('selection-dialog');dialog.dataset.kind=action==='choose-level'?'levels':'gear';$('selection-title').textContent=action==='choose-level'?'选择关卡':'选择装备';dialog.showModal();
-    dialog.querySelector(action==='choose-level'?'.level-button.selected':'.weapon-button.selected')?.focus();return;
+    const dialog=$('selection-dialog');dialog.showModal();
+    dialog.querySelector('.level-button.selected')?.focus();return;
   }
   if(action==='help'){suspend();$('help-dialog').showModal();return;}
   if(action==='share'){const b=e.target.closest('[data-action]');if(shareShot?.blob)shareCard(shareShot.blob,shareShot.card).then(how=>{if(how!=='cancelled')b.textContent=how==='shared'?'已分享':'战绩图已保存';});return;}
@@ -216,7 +208,6 @@ document.querySelector('.app').addEventListener('click',e=>{
   phaseUI();hud();
 });
 $('levels').addEventListener('click',e=>{const b=e.target.closest('[data-level]');if(b&&!b.disabled){selected=Number(b.dataset.level);ready();$('levels').querySelector('.selected')?.focus();}});
-$('weapons').addEventListener('click',e=>{const b=e.target.closest('[data-weapon]');if(b&&!b.disabled){weapon=b.dataset.weapon;ready();$('weapons').querySelector('.selected')?.focus();}});
 for(const id of ['selection-close','selection-done'])$(id).addEventListener('click',()=>$('selection-dialog').close());
 $('pause').addEventListener('click',suspend);
 $('tutorial-skip').addEventListener('click',()=>{if(game.tutorial)finishTutorial(false);});
@@ -295,7 +286,7 @@ function stage(){
   ctx.restore();
 }
 function player(){
-  const p=project(game.player.x,game.player.z),w=WEAPONS[weapon];
+  const p=project(game.player.x,game.player.z),w=WEAPONS.glove;
   const moving=Math.abs(input.axis())>.05&&game.phase==='playing';const gait=moving?Math.sin(game.elapsed*19)*4:0;
   const sw=game.swing;const swingAmount=sw?Math.sin(Math.min(1,sw.time/(w.windup+w.active))*Math.PI):0;
   ellipse(p.x,p.y+3,23,8,'#12372d45');
@@ -308,17 +299,9 @@ function player(){
   const armY=p.y-39-swingAmount*12;
   line(p.x-15,p.y-42,p.x-23,p.y-30-swingAmount*12,'#bc8b65',8);
   line(p.x+15,p.y-42,p.x+23,armY+4,'#bc8b65',8);
-  if(weapon==='glove'){
-    ellipse(p.x-24,p.y-31-swingAmount*14,10,11,'#bd4834');ellipse(p.x-24,p.y-34-swingAmount*14,9,10,'#f1784f');
-    ellipse(p.x+24,armY+2,10,11,'#bd4834');ellipse(p.x+24,armY-1,9,10,'#f1784f');
-    line(p.x-30,p.y-28-swingAmount*14,p.x-18,p.y-28-swingAmount*14,'#f8cba2',3);line(p.x+18,armY+5,p.x+30,armY+5,'#f8cba2',3);
-  }else if(weapon==='racket'){
-    const ry=armY-16;line(p.x+23,armY+4,p.x+29,ry,'#ddba79',5);
-    ctx.save();ctx.translate(p.x+32,ry-9);ctx.rotate(-.25-swingAmount*.5);ctx.beginPath();ctx.ellipse(0,0,13,20,0,0,Math.PI*2);ctx.fillStyle='#d4e9ba44';ctx.fill();ctx.strokeStyle='#eacd8d';ctx.lineWidth=4;ctx.stroke();for(let x=-6;x<=6;x+=6)line(x,-13,x,13,'#d4e9ba',.7);for(let y=-12;y<=12;y+=6)line(-9,y,9,y,'#d4e9ba',.7);ctx.restore();
-  }else{
-    const sx=p.x+23,sy=armY;line(sx,sy+5,sx+3,sy-10,'#b58453',5);line(sx-5,sy-8,sx+12,sy-10,'#edcc77',4);
-    polygon([[sx+2,sy-10],[sx-1,sy-50-swingAmount*10],[sx+7,sy-61-swingAmount*10],[sx+10,sy-12]],'#e9f2e9','#b7cfc3',1);line(sx+5,sy-16,sx+6,sy-52-swingAmount*10,'#fff9e8',1);
-  }
+  ellipse(p.x-24,p.y-31-swingAmount*14,10,11,'#bd4834');ellipse(p.x-24,p.y-34-swingAmount*14,9,10,'#f1784f');
+  ellipse(p.x+24,armY+2,10,11,'#bd4834');ellipse(p.x+24,armY-1,9,10,'#f1784f');
+  line(p.x-30,p.y-28-swingAmount*14,p.x-18,p.y-28-swingAmount*14,'#f8cba2',3);line(p.x+18,armY+5,p.x+30,armY+5,'#f8cba2',3);
   ellipse(p.x,p.y-54,12,13,'#bf8f69');ellipse(p.x,p.y-58,12,9,'#30392f');round(p.x-12,p.y-57,24,6,3,'#30392f');
   if(sw&&!reduceMotion){ctx.beginPath();ctx.ellipse(p.x+6,p.y-47,38+Math.sin(sw.time*8)*6,17,-.3,Math.PI*1.05,Math.PI*1.85);ctx.strokeStyle=`rgba(245,241,192,${swingAmount*.65})`;ctx.lineWidth=4;ctx.stroke();}
 }
@@ -417,7 +400,10 @@ function frame(time){
   phaseUI();hud();draw(dt);requestAnimationFrame(frame);
 }
 ready();requestAnimationFrame(frame);
-// Everything is wired: lift the loading cover from index.html.
-document.body.dataset.booted='1';
+// Everything is wired: lift the loading cover from index.html once the court can draw. The 3D court first loads its
+// two characters; if that fails the match continues on the 2D court.
+const booted=()=>{document.body.dataset.booted='1';};
+if(court3D)court3D.ready.then(booted,()=>{fallbackRenderer();$('feedback').textContent='已切换兼容画面，可以继续防守。';booted();});
+else booted();
 // Offline play and install: release builds ship sw.js; local development (localhost) never registers it.
 if('serviceWorker' in navigator&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))navigator.serviceWorker.register('./sw.js').catch(()=>{});
