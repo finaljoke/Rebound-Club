@@ -109,6 +109,24 @@ export function buildWorld(assets,{duel=false}={}){
   goal.add(new THREE.LineSegments(netGeometry(N,1.04,.75,.05,1.04),netMat));
   for(const side of [-1,1]){const joint=sphere(.075,ghost('#e6ddc5',.4),goal,side*N,1.04,.05);joint.castShadow=false;const foot=softBox(.18,.05,.19,ghost('#2a3150',.45),goal,side*N,.015,.05,.015);foot.castShadow=false;}
   goal.traverse(o=>{if(o.isMesh)o.castShadow=false;});
+  // In a duel both ends defend the same mouth, so the near end mirrors the far one: solid white posts with the dark
+  // LED boards beside them (their lit face turned to the camera, the side that can be seen). The crossbar, back bars
+  // and net stay see-through: on a wide screen they cross the near player's legs.
+  if(duel){
+    for(const o of [...goal.children]){goal.remove(o);o.geometry?.dispose();}
+    const edge=SIDE+.4,span=edge-N,boards=new THREE.Group();boards.name='near-boards';scene.add(boards);
+    for(const side of [-1,1]){
+      box(span,.32,.65,'#141a33',boards,side*(N+span/2),.17,.35);
+      box(span,.95,.32,'#1a2142',boards,side*(N+span/2),.82,.47);
+      const face=mesh(new THREE.PlaneGeometry(span-.08,.72),ledFar,boards,side*(N+span/2),.84,.635,false);face.receiveShadow=false;
+      rod([side*N,.02,.05],[side*N,1.25,.05],.07,'#ffffff',goal);
+      rod([side*N,1.25,.05],[side*N,.9,.85],.045,back,goal);
+      sphere(.078,'#ffffff',goal,side*N,1.25,.05).castShadow=false;
+    }
+    rod([-N,1.25,.05],[N,1.25,.05],.07,ghost('#ffffff',.45),goal);
+    rod([-N,.9,.85],[N,.9,.85],.045,back,goal);
+    goal.add(new THREE.LineSegments(netGeometry(N,1.25,.9,.05,.85),netMat));
+  }
   // Side stands: dark tiers beyond the walls frame the court (the crowd sits on the far stands).
   for(const side of [-1,1])for(let i=0;i<3;i++){const top=.45+i*.5,x=side*(5.05+i*.95);
     mesh(new THREE.BoxGeometry(.95,top,11.6),i%2?'#1d2550':'#1a2147',scene,x,top/2-.02,-5.2,false);mesh(new THREE.BoxGeometry(.95,.05,11.6),'#2c3a72',scene,x,top+.005,-5.2,false);}
