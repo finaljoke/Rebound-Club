@@ -17,7 +17,7 @@ let canvas=$('court'),ctx=null,court3D=null;
 const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
-let selected=0,game=createGame(),uiPhase='',soundOn=true,audio=null;
+let selected=0,game=createGame(),uiPhase='',soundOn=!progress.muted,audio=null;
 let shareShot=null,resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let matchStats=createMatchStats();
@@ -250,7 +250,10 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>input.key(e.key,false));
 window.addEventListener('blur',suspend);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)suspend();lastTime=0;});
-$('sound').addEventListener('click',()=>{soundOn=!soundOn;$('sound').setAttribute('aria-pressed',String(soundOn));$('sound').setAttribute('aria-label',soundOn?'关闭音效':'开启音效');$('sound').innerHTML=`${soundOn?'♪':'♩'} <span>音效${soundOn?'开':'关'}</span>`;if(soundOn)sound('start');else if(navigator.audioSession)navigator.audioSession.type='auto';});
+// The sound choice is saved with the progress, so a muted game stays muted after a reload.
+function showSound(){const b=$('sound');b.setAttribute('aria-pressed',String(soundOn));b.setAttribute('aria-label',soundOn?'关闭音效':'开启音效');b.innerHTML=`<span class="sound-glyph">${soundOn?'♪':'♩'}</span><span>音效${soundOn?'开':'关'}</span>`;}
+showSound();
+$('sound').addEventListener('click',()=>{soundOn=!soundOn;showSound();progress.muted=!soundOn;progress.saved=saveProgress(storage,progress);if(soundOn)sound('start');else if(navigator.audioSession)navigator.audioSession.type='auto';});
 $('help').addEventListener('click',()=>{suspend();$('help-dialog').showModal();});
 for(const b of [$('help-close'),document.querySelector('.dialog-close')])b.addEventListener('click',()=>$('help-dialog').close());
 

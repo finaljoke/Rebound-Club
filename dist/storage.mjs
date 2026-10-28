@@ -1,6 +1,6 @@
 const KEY='rebound-club-v2';
 function clean(p){
-  const result={unlocked:Math.max(0,Math.min(5,Math.floor(Number(p?.unlocked)||0))),scores:{},perfect:{},tutorialDone:p?.tutorialDone===true,saved:true};
+  const result={unlocked:Math.max(0,Math.min(5,Math.floor(Number(p?.unlocked)||0))),scores:{},perfect:{},tutorialDone:p?.tutorialDone===true,muted:p?.muted===true,saved:true};
   for(let i=0;i<6;i++){
     if(Number.isFinite(p?.scores?.[i])&&p.scores[i]>=0)result.scores[i]=Math.floor(p.scores[i]);
     if(p?.perfect?.[i]===true)result.perfect[i]=true;
