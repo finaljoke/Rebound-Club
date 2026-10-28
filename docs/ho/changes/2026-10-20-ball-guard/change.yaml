@@ -1,0 +1,19 @@
+id: 2026-10-20-ball-guard
+slug: ball-guard
+title: 单球回弹防守小游戏第一版
+mode: solo
+round: 1
+status: implementing
+roles:
+  designer: Codex
+  implementer: Codex
+  reviewer: final_game_review
+created_at: '2026-10-20'
+updated_at: '2026-10-22'
+design_document: .ho/changes/2026-10-20-ball-guard/01-design.md
+review_copy: docs/superpowers/specs/2026-10-20-ball-guard-design.md
+approval: 用户回复“欧克”确认网页优先，并明确要求“那就开始做吧”
+implementation_plan: docs/superpowers/plans/2026-10-21-ball-guard-web.md
+implementation_report: .ho/changes/2026-10-20-ball-guard/02-implementation.md
+pending: 微信真机兼容未验证；网页3D版已发布，22项测试及实际浏览器游玩通过
+site_project_id: appgprj_6ad87d4201948191bab039f7713d38e4

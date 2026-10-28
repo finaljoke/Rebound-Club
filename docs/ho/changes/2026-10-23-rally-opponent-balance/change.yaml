@@ -1,0 +1,33 @@
+id: 2026-10-23-rally-opponent-balance
+slug: rally-opponent-balance
+title: 对打小样 · 对手平衡实验：追球与回位分开、重炮施压留机会、两种打法对比、提示分档
+mode: relay
+round: 3
+status: complete
+roles:
+  designer: Claude Code
+  implementer: Codex
+  reviewer: Claude Code（自审；另有实施方内部审阅 04/05/06）
+created_at: '2026-10-23'
+updated_at: '2026-10-23'
+review_kind: self
+review_document: .ho/changes/2026-10-23-rally-opponent-balance/03-review.md
+design_document: .ho/changes/2026-10-23-rally-opponent-balance/01-design.md
+depends_on: 2026-10-23-rally-prototype
+approval: 用户于 2026-10-23 在本对话回复“确定”，批准本轮设计及 C 节全部实验目标
+implementation_document: .ho/changes/2026-10-23-rally-opponent-balance/02-implementation.md
+baseline_commit: 0040c3a5ddb80a3e6762406b7a7c7335b2f2afa3
+implementation_commit_round_1: 19226fcf6cda53e86e4fd45274506a89d5ea7362
+implementation_commit: 668f2fbc9953b40b942fc103adf15e5f320ed7ae
+internal_review_round_1: .ho/changes/2026-10-23-rally-opponent-balance/04-internal-review.md
+internal_review: .ho/changes/2026-10-23-rally-opponent-balance/06-round3-internal-review.md
+experiment: sites/ball-guard/artifacts/rally/balance.json
+experiment_round_1: sites/ball-guard/artifacts/rally/round1/balance.json
+experiment_round_2: sites/ball-guard/artifacts/rally/round2/final-1.json
+verification: 第3轮187/187单测、三尺寸两档整局、原版回归与发布包排除/离线均通过；默认参数两次各2000/2000局在500秒内完成，JSON与stdout逐字一致，C节五行目标全部达成，AC1–AC14通过
+pending: 审阅完成（AC1–AC14 全部通过，无阻塞）；真人试玩前建议先看 03-review.md 非阻塞建议 1、2（不会反制几乎赢不了整局、反制成功即得分）
+approval_round_2: 用户明确选择“按推荐量法修正”“加入施压升级”“改为按球场位置”，见设计Amendments第2轮
+approval_round_3: 用户选择“自动打空当＋保底速度（推荐）”“回合越长球越快（推荐）”“允许在每3–5拍之间调（推荐）”，见Amendments第3轮
+implementation_commit_round_2: 4dd90b2315710983a61d5ed1d9803f4d5a76ef00
+internal_review_round_2: .ho/changes/2026-10-23-rally-opponent-balance/05-round2-internal-review.md
+experiment_round_3: sites/ball-guard/artifacts/rally/round3/final-1.json

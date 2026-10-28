@@ -1,0 +1,21 @@
+id: 2026-10-27-ball-guard-cartoon-arena
+slug: ball-guard-cartoon-arena
+title: 卡通动感竞技风：正式游戏画面改造，装备只保留拳套
+mode: solo
+round: 1
+status: complete
+roles:
+  designer: Claude Code
+  implementer: Claude Code
+  reviewer: 用户（真人试玩）与独立复审
+created_at: '2026-10-27'
+updated_at: '2026-10-28'
+design_document: .ho/changes/2026-10-27-ball-guard-cartoon-arena/01-design.md
+reference_branch: spike/cartoon-arena (f44e8e5)
+base: main (fcac352)
+approved: '2026-10-27 用户：「ok 那就开工吧」（含 4 项设计者决定）'
+pending: 2026-10-28 用户同意合并并打包——已合并 main（a36dbed），发布包 release/rebound-club-2026-10-28-a36dbed.zip（含 .sha256，release-qa 通过）；尚未部署上线（Sites 托管需用户或 Codex 操作）
+ac19: 2026-10-28 用户确认已试玩改良画面版本，记为通过
+open_followups: 中低端安卓真机帧率未实测；第 4、6 关「老实提前按」进球率升约 12 个百分点，尚未处理
+implementation_document: .ho/changes/2026-10-27-ball-guard-cartoon-arena/02-implementation.md
+branch: feat/cartoon-arena (77f0608)

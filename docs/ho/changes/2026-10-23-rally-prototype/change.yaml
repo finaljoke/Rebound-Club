@@ -1,0 +1,21 @@
+id: 2026-10-23-rally-prototype
+slug: rally-prototype
+title: 墙网球对打小样：隔网对打、强攻型重炮前兆与精准反制
+mode: relay
+round: 1
+status: complete
+roles:
+  designer: Claude Code
+  implementer: Codex
+  reviewer: Claude Code（自审；另有实施方内部审阅 rally_prototype_review）
+created_at: '2026-10-23'
+updated_at: '2026-10-23'
+review_kind: self
+review_document: .ho/changes/2026-10-23-rally-prototype/03-review.md
+design_document: .ho/changes/2026-10-23-rally-prototype/01-design.md
+approval: 用户于2026-10-23在本对话明确回复“批准”
+implementation_document: .ho/changes/2026-10-23-rally-prototype/02-implementation.md
+implementation_plan: .ho/changes/2026-10-23-rally-prototype/03-plan.md
+internal_review: .ho/changes/2026-10-23-rally-prototype/04-internal-review.md
+verification: 163项单测、三尺寸整局、原版对局回归与发布排除/离线检查全部通过
+pending: 审阅完成（15/15 通过，无阻塞）；建议真人试玩前先提高对手横向速度（见 03-review.md 非阻塞建议 1），并把小样提交到独立分支

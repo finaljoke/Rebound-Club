@@ -1,0 +1,18 @@
+id: 2026-10-28-ball-guard-duel-local
+slug: ball-guard-duel-local
+title: 对战版 P0：两名玩家互攻互守（本机验证 + 同步层原型）
+mode: solo
+round: 1
+status: implementing
+roles:
+  designer: Claude Code
+  implementer: Claude Code
+  reviewer: 用户（真人试玩）与独立复审
+created_at: '2026-10-28'
+updated_at: '2026-10-28'
+design_document: .ho/changes/2026-10-28-ball-guard-duel-local/01-design.md
+base: main (a36dbed)
+branch: feat/duel-local (e24e0aa)
+pending: 任务 1–12 完成，AC1–AC20 通过（AC15 按 Amendments A1，用户选 a）；大厅入口按 Amendments A2 已加；AC21 待用户试玩
+approved: '2026-10-28 用户回复「批准」（含 D2、D5、D7、D8、D9 设计者决定）'
+implementation_document: .ho/changes/2026-10-28-ball-guard-duel-local/02-implementation.md
