@@ -26,7 +26,9 @@ export const CHARACTERS={
     glove:{color:'#f4f6ff',cuff:'#1ec8b4',size:.19},rim:'#ffb37a',
     // Barbarian leather browns become the keeper's deep blue kit.
     recolor:(h,s,l)=>h>14&&h<48&&s>.18&&s<.62&&l<.42?[205,.75,l*1.15+.06]:null,
+    // The punches are for the duel (duel.html), where this figure is the second player and strikes like the striker.
     clips:{idle:'Unarmed_Idle',strafeLeft:'Running_Strafe_Left',strafeRight:'Running_Strafe_Right',
-      diveLeft:'Dodge_Left',diveRight:'Dodge_Right',cheer:'Cheer',hurt:'Hit_B'}
+      diveLeft:'Dodge_Left',diveRight:'Dodge_Right',cheer:'Cheer',hurt:'Hit_B',
+      punchRight:'Unarmed_Melee_Attack_Punch_A',punchLeft:'Unarmed_Melee_Attack_Punch_B'}
   }
 };
