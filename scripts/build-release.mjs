@@ -19,6 +19,8 @@ const rewrite=text=>text.replace(/(['"])(\.{1,2}\/[^'"]+?)\.mjs\1/g,'$1$2.js$1')
 const files=[];
 for await(const src of walk(path.join(root,'dist'))){
   const rel=path.relative(path.join(root,'dist'),src).replace(/\\/g,'/'),target=rel.replace(/\.mjs$/,'.js'),dest=path.join(site,target);
+  // The duel (duel.html and its duel-* modules) is a local test build until online play exists: not shipped.
+  if(/^duel[.-]/.test(rel))continue;
   await mkdir(path.dirname(dest),{recursive:true});
   if(/\.(m?js|html|css)$/.test(rel))await writeFile(dest,rewrite(await readFile(src,'utf8')));else await copyFile(src,dest);
   files.push(target);

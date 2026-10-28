@@ -1,0 +1,20 @@
+/* Duel page (duel.html): the club's layout and night skin (styles.css, lobby.css), plus the opponent and network
+   choices in the lobby panel. */
+.duel-menu{display:grid;gap:10px}
+.duel-group{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.duel-group[hidden]{display:none}
+.duel-label{flex:0 0 100%;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.duel-choice{flex:1 1 0;min-width:0;height:44px;padding:0 10px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(20,27,56,.88);color:var(--ink);font-size:14px;font-weight:700;white-space:nowrap}
+.duel-choice:hover{background:#1b2448}
+.duel-choice[aria-checked=true]{border-color:var(--orange);background:#2a1d2a;color:#fff;box-shadow:inset 0 0 0 1px var(--orange)}
+.duel-choice[hidden]{display:none}
+.duel-keys{margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+.duel-keys b{color:var(--ink);font-weight:700}
+.duel-back{justify-self:center;font-size:12px}
+#hearts{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap}
+.duel-unsupported{max-width:320px;margin:0 auto;text-align:center;line-height:1.7}
+@media(max-height:570px) and (min-width:701px){
+  body[data-screen=ready] .duel-menu{gap:6px}
+  body[data-screen=ready] .duel-choice{height:36px;font-size:12px}
+  body[data-screen=ready] .duel-keys{font-size:11px}
+}
