@@ -19,6 +19,8 @@ let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,game=createGame(),uiPhase='',soundOn=!progress.muted,audio=null;
 let shareShot=null,resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
+// Resuming a rally holds the court still for a countdown as long as the serve's, so both hands are back on the controls.
+const RESUME_HOLD=.8;let resumeHold=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let matchStats=createMatchStats();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -105,7 +107,7 @@ function selections(){
   $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
 }
 // The lobby hides the pops with display:none, which would replay a leftover .show animation when the next match shows them.
-function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;resumeHold=0;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
@@ -150,11 +152,11 @@ function hud(){
   put($('attack'),'disabled',game.phase!=='playing');
   $('attack').classList.toggle('recovering',!!game.swing);
   put($('attack').querySelector('span'),'text',game.swing?'收招':'挥击');
-  const aimNow=input.axis(),aimWord=aimNow<0?'往左 ←':aimNow>0?'往右 →':'直线 ↑',cue=game.phase==='playing'&&!game.swing?swingPreview(game,aimNow):{kind:'none'};
+  const aimNow=input.axis(),aimWord=aimNow<0?'往左 ←':aimNow>0?'往右 →':'直线 ↑',cue=game.phase==='playing'&&!game.swing&&!resumeHold?swingPreview(game,aimNow):{kind:'none'};
   $('attack').classList.toggle('ready-cue',['clean','perfect'].includes(cue.kind));
   put($('attack-hint'),'text',game.swing?'收招中':cue.kind==='perfect'?`重炮时机 · ${aimWord}`:cue.kind==='clean'?`现在挥击 · ${aimWord}`:'看准再出手');
   const status={ready:'热身准备',serving:'发球准备',playing:'对决进行中',miss:'稳住，再来',goal:'进球！',skill:'爆发蓄力',paused:'已暂停',won:'本关完成',lost:'挑战结束'};
-  put($('court-status'),'text',game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase]);
+  put($('court-status'),'text',game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:resumeHold?`继续倒数 ${Math.ceil(resumeHold*2)}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase]);
   const teaching=!!game.tutorial&&[...ACTIVE_PHASES,'paused'].includes(game.phase);put(document.body,'data-tutorial',teaching?'on':'');
   put($('tutorial-bar'),'hidden',!teaching);if(teaching){put($('tutorial-step'),'text',`${game.tutorial.step+1}/3`);put($('tutorial-tip'),'text',TUTORIAL_TIPS[game.tutorial.step]);}
   put($('practice'),'hidden',!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching);put($('practice'),'text',`练习 ×${game.practiceLeft}`);
@@ -174,10 +176,10 @@ function hud(){
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}
 // Shot quality pops mid-court; what the shot achieved gets its own banner at the top.
 function verdict(text,kind){const el=$('result-pop');el.textContent=text;el.className=`result-pop ${kind}`;void el.offsetWidth;el.classList.add('show');}
-function swing(){if(attack(game))sound('swing');}
+function swing(){if(resumeHold)return;if(attack(game))sound('swing');}
 // A refused request costs nothing and says why; acceptance is announced by the core's own events.
 function trySkill(kind){
-  if(!ACTIVE_PHASES.includes(game.phase))return;
+  if(!ACTIVE_PHASES.includes(game.phase)||resumeHold)return;
   const r=useSkill(game,kind,input.axis());
   if(!r.ok){sound('deny');pop(SKILL_STATE[r.reason]||'现在不行',true);}
 }
@@ -213,7 +215,7 @@ document.querySelector('.app').addEventListener('click',e=>{
   if(action==='share'){const b=e.target.closest('[data-action]');if(shareShot?.blob)shareCard(shareShot.blob,shareShot.card).then(how=>{if(how!=='cancelled')b.textContent=how==='shared'?'已分享':'战绩图已保存';});return;}
   if(['start','retry','next'].includes(action))goFullscreen();
   if(action==='start'){if(selected===0&&needsTutorial(progress)&&!game.tutorial){beginTutorial();return;}startGame(game);sound('start');}
-  if(action==='resume')resumeGame(game);
+  if(action==='resume'){resumeGame(game);if(game.phase==='playing')resumeHold=RESUME_HOLD;}
   if(action==='retry'){ready(!!game.tutorial);startGame(game);sound('start');}
   if(action==='ready')ready();
   if(action==='next'){selected=Math.min(5,selected+1);ready();startGame(game);sound('start');}
@@ -369,13 +371,15 @@ function draw(dt){
   stage();hints();keeper();player();ball();
   for(const particle of particles){if(game.phase!=='paused'){particle.life-=dt;particle.x+=particle.vx*dt;particle.y+=particle.vy*dt;}ellipse(particle.x,particle.y,Math.max(.1,particle.life*5),Math.max(.1,particle.life*5),'#fff0a3');}
   particles=particles.filter(p=>p.life>0);
-  if(game.phase==='serving'){const n=Math.max(1,Math.ceil(game.countdown*2));round(190,233,70,66,16,'#fff5dbed');text(String(n),225,280,39,'#2c5f4a','900');}
+  const count=game.phase==='serving'?game.countdown:resumeHold;
+  if(count>0){const n=Math.max(1,Math.ceil(count*2));round(190,233,70,66,16,'#fff5dbed');text(String(n),225,280,39,'#2c5f4a','900');}
 }
 function frame(time){
   const dt=lastTime?Math.min((time-lastTime)/1000,.05):0;lastTime=time;
   // Key goals play their last moments in slow motion (goalLock); the rules just see ordinary, slower time.
   const lock=reduceMotion?null:goalLock(game),slow=lock?.key&&lock.t<=GOAL_CAM.slowWindow?GOAL_CAM.slow:1;
-  stepGame(game,dt*slow,input.axis());
+  const held=resumeHold>0&&game.phase==='playing';resumeHold=held?Math.max(0,resumeHold-dt):0;
+  stepGame(game,held?0:dt*slow,input.axis());
   const events=game.events;game.events=[];
   const aim={left:'往左 ←',right:'往右 →',straight:'直线 ↑'},say=text=>$('feedback').textContent=text;
   for(const e of events){
