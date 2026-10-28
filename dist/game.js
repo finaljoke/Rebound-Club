@@ -104,7 +104,8 @@ function selections(){
   $('best-record').hidden=!progress.scores[selected];
   $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
 }
-function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+// The lobby hides the pops with display:none, which would replay a leftover .show animation when the next match shows them.
+function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
