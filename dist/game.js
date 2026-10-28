@@ -3,6 +3,7 @@ import {createInput} from './input.mjs';
 import {renderShareCard,shareCard} from './share.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
+import {PLAYERS,playerSpec} from './characters.mjs';
 import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
@@ -102,7 +103,23 @@ function selections(){
   $('prep-stage').textContent=`第 ${String(selected+1).padStart(2,'0')} 关`;
   $('best').textContent=progress.scores[selected]??'—';
   $('best-record').hidden=!progress.scores[selected];
+  players();
   $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
+}
+// The figure the lobby shows: a pick still loading, else the one on court (a figure that failed to load falls back to the
+// default), else the saved pick. The court's figure is also on the canvas (data-player) for checks.
+let pendingPlayer=null;
+const shownPlayer=()=>pendingPlayer??court3D?.player??playerSpec(progress.player).id;
+function players(){
+  const shown=shownPlayer();if(court3D?.player)canvas.dataset.player=court3D.player;$('prep-player-name').textContent=playerSpec(shown).name;
+  $('players').innerHTML=PLAYERS.map(p=>`<button class='player-card ${p.id===shown?'selected':''}' data-player='${p.id}' aria-label='${p.name}' aria-pressed='${p.id===shown}'><img src='./portraits/${p.id}.png' alt='' width='256' height='256'><b>${p.name}</b></button>`).join('');
+}
+// One dialog, two pickers: the lobby button says which one shows.
+function openSelection(mode){
+  const dialog=$('selection-dialog'),player=mode==='player';
+  dialog.querySelector('.player-options').hidden=!player;dialog.querySelector('.level-options').hidden=player;
+  $('selection-title').textContent=player?'选择人物':'选择关卡';dialog.showModal();
+  dialog.querySelector(player?'.player-card.selected':'.level-button.selected')?.focus();
 }
 function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
@@ -185,8 +202,10 @@ function fallbackRenderer(){
   const replacement=canvas.cloneNode(false);canvas.replaceWith(replacement);canvas=replacement;
   ctx=canvas.getContext('2d');canvas.dataset.renderer='2d';viewWidth=0;viewHeight=0;
 }
+// Checks (scripts/player-qa.mjs) read the renderer: which figure is shown, how many worlds were built, GPU memory.
+window.qaCourt=()=>court3D;
 try{
-  court3D=create3DRenderer(canvas);canvas.dataset.renderer='3d';
+  court3D=create3DRenderer(canvas,undefined,{player:progress.player});canvas.dataset.renderer='3d';
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();suspend();fallbackRenderer();$('feedback').textContent='已切换兼容画面，可以继续防守。';});
 }catch{fallbackRenderer();}
 
@@ -194,9 +213,9 @@ document.querySelector('.app').addEventListener('click',e=>{
   const action=e.target.closest('[data-action]')?.dataset.action;if(!action)return;
   if(action==='choose-level'){
     if(game.phase!=='ready')return;
-    const dialog=$('selection-dialog');dialog.showModal();
-    dialog.querySelector('.level-button.selected')?.focus();return;
+    openSelection('level');return;
   }
+  if(action==='choose-player'){if(game.phase!=='ready')return;openSelection('player');return;}
   if(action==='help'){suspend();$('help-dialog').showModal();return;}
   if(action==='share'){const b=e.target.closest('[data-action]');if(shareShot?.blob)shareCard(shareShot.blob,shareShot.card).then(how=>{if(how!=='cancelled')b.textContent=how==='shared'?'已分享':'战绩图已保存';});return;}
   if(['start','retry','next'].includes(action))goFullscreen();
@@ -208,6 +227,11 @@ document.querySelector('.app').addEventListener('click',e=>{
   phaseUI();hud();
 });
 $('levels').addEventListener('click',e=>{const b=e.target.closest('[data-level]');if(b&&!b.disabled){selected=Number(b.dataset.level);ready();$('levels').querySelector('.selected')?.focus();}});
+// A pick is saved at once and shown on the lobby court as soon as its model is in.
+$('players').addEventListener('click',e=>{const b=e.target.closest('[data-player]');if(!b||game.phase!=='ready')return;
+  progress.player=b.dataset.player;progress.saved=saveProgress(storage,progress);
+  if(court3D){const pick=pendingPlayer=progress.player;court3D.setPlayer(pick).then(()=>{if(pendingPlayer===pick)pendingPlayer=null;players();$('players').querySelector('.selected')?.focus();});}
+  players();$('players').querySelector('.selected')?.focus();});
 for(const id of ['selection-close','selection-done'])$(id).addEventListener('click',()=>$('selection-dialog').close());
 $('pause').addEventListener('click',suspend);
 $('tutorial-skip').addEventListener('click',()=>{if(game.tutorial)finishTutorial(false);});
@@ -402,7 +426,7 @@ function frame(time){
 ready();requestAnimationFrame(frame);
 // Everything is wired: lift the loading cover from index.html once the court can draw. The 3D court first loads its
 // two characters; if that fails the match continues on the 2D court.
-const booted=()=>{document.body.dataset.booted='1';};
+const booted=()=>{document.body.dataset.booted='1';players();};
 if(court3D)court3D.ready.then(booted,()=>{fallbackRenderer();$('feedback').textContent='已切换兼容画面，可以继续防守。';booted();});
 else booted();
 // Offline play and install: release builds ship sw.js; local development (localhost) never registers it.
