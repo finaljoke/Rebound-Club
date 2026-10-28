@@ -104,7 +104,7 @@ function selections(){
   $('best-record').hidden=!progress.scores[selected];
   $('save-note').hidden=progress.saved;$('save-note').textContent=progress.saved?'':'进度暂时无法保存';
 }
-function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){lessonShown=false;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
@@ -180,13 +180,16 @@ function trySkill(kind){
   const r=useSkill(game,kind,input.axis());
   if(!r.ok){sound('deny');pop(SKILL_STATE[r.reason]||'现在不行',true);}
 }
-// Finished or skipped: remember it and start the real level 1 from a brand-new state.
+// Finished or skipped: remember it. A first-time player goes straight into the real level 1 from a brand-new state; a
+// tutorial replayed from help goes back to the lobby on the level chosen there (the tutorial never touches `selected`).
 function finishTutorial(completed){
+  const firstTime=needsTutorial(progress);
   progress.tutorialDone=true;progress.saved=saveProgress(storage,progress);
+  if(!firstTime){ready();return;}
   selected=0;ready(false);startGame(game);sound('start');phaseUI();hud();
   verdict(completed?'教学完成 · 正式开始！':'已跳过教学 · 正式开始','info');$('feedback').textContent=game.level.lesson;lessonShown=true;
 }
-function beginTutorial(){selected=0;ready(true);startGame(game);sound('start');phaseUI();hud();}
+function beginTutorial(){ready(true);startGame(game);sound('start');phaseUI();hud();}
 function suspend(){pauseGame(game);input.reset();phaseUI();hud();}
 function fallbackRenderer(){
   court3D?.dispose();court3D=null;
