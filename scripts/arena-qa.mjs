@@ -22,7 +22,7 @@ for(const viewport of [{width:390,height:844},{width:844,height:390}]){
   const p=await open(viewport),tag=`${viewport.width}x${viewport.height}`;
   assert.equal(await p.evaluate(()=>document.getElementById('court').dataset.renderer),'3d','3D 画面');
   await p.waitForTimeout(600);await p.screenshot({path:`${OUT}/lobby-${tag}.png`});
-  await p.getByRole('button',{name:'开始游戏'}).click();await p.waitForFunction(()=>__qa.game().phase==='playing',null,{timeout:20000});
+  await p.getByRole('button',{name:'单机对战'}).click();await p.waitForFunction(()=>__qa.game().phase==='playing',null,{timeout:20000});
   await p.waitForTimeout(500);await p.screenshot({path:`${OUT}/match-${tag}.png`});
   // Meet each ball and send it to the far side from the keeper until one goes in.
   let goal=false;const t0=Date.now();
@@ -39,6 +39,6 @@ for(const viewport of [{width:390,height:844},{width:844,height:390}]){
 {const p=await open({width:390,height:844},{blockModels:true});
   assert.equal(await p.evaluate(()=>document.getElementById('court').dataset.renderer),'2d','模型加载失败退回 2D');
   await p.waitForTimeout(400);assert.equal(await p.locator('#boot').isVisible(),false,'启动遮罩已撤（淡出 0.3 秒后）');
-  await p.getByRole('button',{name:'开始游戏'}).click();await p.waitForFunction(()=>__qa.game().phase==='playing',null,{timeout:20000});
+  await p.getByRole('button',{name:'单机对战'}).click();await p.waitForFunction(()=>__qa.game().phase==='playing',null,{timeout:20000});
   await p.screenshot({path:`${OUT}/fallback-390x844.png`});results.fallback='2d court, match running';await p.context().close();}
 assert.deepEqual(errors,[]);console.log(JSON.stringify(results));console.log('PASS');await b.close();

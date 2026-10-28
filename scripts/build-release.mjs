@@ -22,13 +22,16 @@ for await(const src of walk(path.join(root,'dist'))){
   // The duel (duel.html and its duel-* modules) is a local test build until online play exists: not shipped.
   if(/^duel[.-]/.test(rel))continue;
   await mkdir(path.dirname(dest),{recursive:true});
-  if(/\.(m?js|html|css)$/.test(rel))await writeFile(dest,rewrite(await readFile(src,'utf8')));else await copyFile(src,dest);
+  // Lobby links marked data-dev-only lead to pages that are not shipped (the duel): drop them from the release.
+  const strip=text=>rel==='index.html'?text.replace(/\s*<a [^>]*data-dev-only[^>]*>.*?<\/a>/g,''):text;
+  if(/\.(m?js|html|css)$/.test(rel))await writeFile(dest,rewrite(strip(await readFile(src,'utf8'))));else await copyFile(src,dest);
   files.push(target);
 }
 // Guard: nothing may still point at an .mjs file, and every relative import must resolve inside the package.
 for(const f of files.filter(f=>/\.(js|html)$/.test(f))){
   const text=await readFile(path.join(site,f),'utf8');
   if(/['"]\.{1,2}\/[^'"]+\.mjs['"]/.test(text))throw Error(`${f} still references .mjs`);
+  if(/data-dev-only|href=["']\.\/duel\.html/.test(text))throw Error(`${f} still links to the unshipped duel`);
   for(const m of text.matchAll(/(?:from\s*|import\s*\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g)){const target=path.join(path.dirname(path.join(site,f)),m[1]);await stat(target).catch(()=>{throw Error(`${f}: missing ${m[1]}`);});}
 }
 // Offline cache: sw.js lists every file of this release (version.json excluded: it is always fetched fresh).

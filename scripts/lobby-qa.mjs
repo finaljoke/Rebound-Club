@@ -9,7 +9,7 @@ try{
  const context=await browser.newContext();
  await context.addInitScript(()=>localStorage.setItem('rebound-club-v2',JSON.stringify({unlocked:2,scores:{0:2500},perfect:{},tutorialDone:true})));
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://localhost:4173/');await page.getByRole('button',{name:'开始游戏'}).waitFor();
+ await page.goto('http://localhost:4173/');await page.getByRole('button',{name:'单机对战'}).waitFor();
  await page.waitForFunction(()=>document.getElementById('court').dataset.renderer==='3d');
  for(const viewport of [{width:1756,height:860},{width:1440,height:1000},{width:1280,height:720},{width:768,height:1024},{width:390,height:844},{width:360,height:640},{width:320,height:568},{width:844,height:390}]){
   await page.setViewportSize(viewport);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -26,7 +26,7 @@ try{
   await page.screenshot({path:'artifacts/lobby/home-'+viewport.width+'.png',fullPage:true});
   await page.getByRole('button',{name:'选择关卡',exact:true}).click();assert.equal(await page.locator('#selection-dialog').isVisible(),true);await page.keyboard.press('Escape');
   assert.equal(await page.locator('[data-action="choose-gear"]').count(),0,'大厅不再有装备入口');
-  await page.getByRole('button',{name:'开始游戏'}).click();await page.waitForFunction(()=>document.body.dataset.screen==='match');
+  await page.getByRole('button',{name:'单机对战'}).click();await page.waitForFunction(()=>document.body.dataset.screen==='match');
   assert.equal(await page.locator('.lobby-menu').isVisible(),false);
   if(viewport.width===390)await page.screenshot({path:'artifacts/lobby/match-390.png'});
   await page.getByRole('button',{name:'暂停游戏'}).click();await page.getByRole('button',{name:'返回俱乐部'}).click();
@@ -42,10 +42,10 @@ try{
  unavailable.on('pageerror',e=>errors.push(e.message));
  await unavailable.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new Error('storage denied');}}));
  await unavailable.goto('http://localhost:4173/');
- await unavailable.getByRole('button',{name:'开始游戏'}).waitFor();
+ await unavailable.getByRole('button',{name:'单机对战'}).waitFor();
  assert.equal(await unavailable.locator('#save-note').isVisible(),true);
  assert.equal(await unavailable.locator('#best-record').isVisible(),false);
- await unavailable.getByRole('button',{name:'开始游戏'}).click();await unavailable.locator('#tutorial-bar').waitFor({state:'visible'});
+ await unavailable.getByRole('button',{name:'单机对战'}).click();await unavailable.locator('#tutorial-bar').waitFor({state:'visible'});
  await unavailable.getByRole('button',{name:'跳过教学'}).click();assert.equal(await unavailable.locator('.lobby-menu').isVisible(),false);
  assert.deepEqual(errors,[]);await writeFile('artifacts/lobby/qa.json',JSON.stringify({results,errors,flows:'selection / gear / start / pause / return / help / storage-denied / tutorial'},null,2));
  console.log(JSON.stringify({viewports:results.map(r=>({viewport:r.viewport,courtHeight:r.courtHeight,start:r.targets[0]})),errors,flows:'passed'},null,2));

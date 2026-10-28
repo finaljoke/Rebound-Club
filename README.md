@@ -69,7 +69,7 @@ node scripts/keeper-balance.mjs
 - `dist/`：可独立部署的全部静态资源，无外部 CDN、字体、素材依赖。
 - `dist/core.mjs`：单球模拟、挥击及关卡状态。
 - `dist/game.js`：Canvas 画面、DOM、音效和实际输入。
-- `dist/lobby.css`：只作用于准备状态的简洁游戏大厅；球场居中，关卡入口与开始游戏按钮位于底部，矮横屏并列摆放。
+- `dist/lobby.css`：只作用于准备状态的简洁游戏大厅；球场居中，关卡入口、「单机对战」按钮和「玩家联机对战」入口（只在本地，打包时去掉）位于底部，矮横屏并列摆放。
 - `dist/scene3d.mjs`：夜场场景、灯光、提示、特效与设备适配；`create3DRenderer` 先加载角色（`ready`），失败时页面退回 2D 球场；`dist/vendor/`：Three.js 固定版本（含 GLTFLoader、BufferGeometryUtils、SkeletonUtils）及 MIT 授权。
 - 渲染预算（手机）：静态场景在搭建时按材质合并、每名球员合并为一个蒙皮网格加描边（无贴图的哑光材质改用顶点颜色共用一个材质，`art.mjs` 的 `mergeRigidParts`），每帧绘制调用（含阴影）约 70–85；不保留画面缓冲；画布尺寸只在变化时读取；持续掉帧时自动逐级降低像素比与阴影贴图（`QUALITY_TIERS`）；渲染位置在两个 1/120 秒模拟步之间按速度外推。音效经一个总音量和压缩器输出，噪声缓冲只生成一次。`scripts/perf-qa.mjs` 检查这些约束。
 - `dist/art.mjs`：拳套、确定性草地与铺装纹理、立体球网与零件合并；全部本地生成。`vendor/RoundedBoxGeometry.js`来自同版本Three.js官方插件，沿用MIT许可。

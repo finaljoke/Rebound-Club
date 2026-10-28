@@ -15,7 +15,7 @@ try{
     await page.addInitScript(()=>localStorage.setItem('rebound-club-v2',JSON.stringify({unlocked:0,scores:{},perfect:{},tutorialDone:true})));
     const response=await page.goto('http://localhost:4173/');assert.equal(response.status(),200);
     await page.evaluate(()=>{window.__touchTrace=[];for(const name of ['pointerdown','pointerup','pointercancel','lostpointercapture'])document.addEventListener(name,e=>window.__touchTrace.push({type:e.type,id:e.pointerId,target:e.target.id}),true);});
-    await page.getByRole('button',{name:'开始游戏'}).click();
+    await page.getByRole('button',{name:'单机对战'}).click();
     await page.waitForFunction(()=>window.__controlsQA?.().phase==='playing');
     const state=()=>page.evaluate(()=>window.__controlsQA());
     const layout=await page.evaluate(()=>{

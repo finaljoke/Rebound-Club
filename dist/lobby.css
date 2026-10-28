@@ -22,6 +22,11 @@ body[data-screen=ready] .lobby-level>span{font-size:10px;color:#687b56;white-spa
 body[data-screen=ready] .lobby-option>svg{margin-left:auto;width:15px;height:15px;fill:none;stroke:#738461;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 body[data-screen=ready] .start-button{height:62px;margin:0;padding:0 22px;justify-content:center;gap:14px;border-radius:18px;font-size:19px;font-weight:800;letter-spacing:2px;box-shadow:0 5px 0 #bd4f30,0 10px 22px #8e6d3c1a}
 body[data-screen=ready] .start-button svg{width:22px;height:22px;fill:currentColor;stroke:none}
+body[data-screen=ready] .start-sub{font-size:12px;font-weight:600;letter-spacing:.5px;opacity:.85;white-space:nowrap}
+/* Entry to the duel page (duel.html); data-dev-only: build-release.mjs strips it, the duel is not shipped yet. */
+body[data-screen=ready] .lobby-duel{height:50px;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:10px;border:1px solid #ed6843;border-radius:16px;background:#f6f5e8a6;color:#c4512e;font-size:15px;font-weight:800;letter-spacing:1px;text-decoration:none;white-space:nowrap}
+body[data-screen=ready] .lobby-duel small{font-size:11px;font-weight:600;letter-spacing:.5px;opacity:.8}
+body[data-screen=ready] .lobby-duel:hover{background:#fffbee}
 body[data-screen=ready] .lobby-record{margin:17px 0 0;text-align:center;font-size:10px;color:#6d7e5b;letter-spacing:.5px}
 body[data-screen=ready] .lobby-record b{font-size:12px;color:#39583d;margin-left:5px;font-variant-numeric:tabular-nums}
 body[data-screen=ready] #save-note{font-size:11px;color:#805132;text-align:center;margin:12px 0 0}
@@ -39,6 +44,7 @@ body[data-screen=ready] #save-note{font-size:11px;color:#805132;text-align:cente
   body[data-screen=ready] .lobby-option>b{font-size:13px}
   body[data-screen=ready] .lobby-level>span{font-size:9px}
   body[data-screen=ready] .start-button{height:58px;font-size:18px}
+  body[data-screen=ready] .lobby-duel{height:46px;font-size:14px}
 }
 @media(max-width:359px){
   body[data-screen=ready] .site-header{padding:0 14px}
@@ -56,6 +62,7 @@ body[data-screen=ready] #save-note{font-size:11px;color:#805132;text-align:cente
   body[data-screen=ready] .lobby-option>b{font-size:12px}
   body[data-screen=ready] .lobby-level>span{font-size:9px}
   body[data-screen=ready] .start-button{height:56px}
+  body[data-screen=ready] .lobby-duel{height:40px;margin-top:8px;font-size:13px}
 }
 /* Night arena skin for the lobby: colours only (layout above unchanged). */
 body[data-screen=ready]{background:#0b1022}
@@ -70,3 +77,5 @@ body[data-screen=ready] .start-button{box-shadow:0 5px 0 #b8441c,0 10px 22px rgb
 body[data-screen=ready] .lobby-record{color:#9aa6c9}
 body[data-screen=ready] .lobby-record b{color:#ffd23a}
 body[data-screen=ready] #save-note{color:#ffb38a}
+body[data-screen=ready] .lobby-duel{border-color:#ff6a2b;background:rgba(20,27,56,.88);color:#ffb38a}
+body[data-screen=ready] .lobby-duel:hover{background:#1b2448}

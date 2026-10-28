@@ -10,7 +10,7 @@ try{
   await mkdir('artifacts',{recursive:true});
   const response=await page.goto('http://localhost:4173');
   if(response.status()!==200)throw Error('Preview HTTP is not 200');
-  await page.getByRole('button',{name:'开始游戏'}).waitFor();
+  await page.getByRole('button',{name:'单机对战'}).waitFor();
   const backend=await page.locator('#court').getAttribute('data-renderer');
   if(backend!==(process.argv.includes('--fallback')?'2d':'3d'))throw Error('Unexpected rendering backend: '+backend);
   results.push({backend});
@@ -25,7 +25,7 @@ try{
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'查看玩法说明'}).click();
   await page.getByRole('button',{name:'明白了'}).click();
-  await page.getByRole('button',{name:'开始游戏'}).click();
+  await page.getByRole('button',{name:'单机对战'}).click();
   await page.waitForTimeout(1100);
   if(process.argv.includes('--touch')){
     await page.evaluate(()=>{window.qaTouchEvents=[];for(const name of ['pointerdown','pointerup','pointercancel','lostpointercapture'])document.addEventListener(name,e=>window.qaTouchEvents.push({name,id:e.pointerId,target:e.target.id,x:e.clientX}));});
@@ -111,7 +111,7 @@ try{
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('button',{name:'选择关卡与装备'}).click();
     await page.getByRole('button',{name:/球拍/}).click();
-    await page.getByRole('button',{name:'开始游戏'}).click();
+    await page.getByRole('button',{name:'单机对战'}).click();
     await page.waitForFunction(()=>document.querySelector('#overlay-content h3')?.textContent.includes('差一点')&&!document.getElementById('overlay').hidden,{},{timeout:20000});
     results.push({uiLoss:'three misses',unlocked:await page.getByRole('button',{name:/第2关/}).isEnabled()});
     await page.setViewportSize({width:360,height:640});
