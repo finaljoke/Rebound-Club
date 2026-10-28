@@ -131,35 +131,43 @@ function phaseUI(){
   selections();
   if(previous!==screen){window.scrollTo(0,0);queueMicrotask(()=>{if(screen==='paused'||screen==='result')$('overlay-content').querySelector('.primary-button')?.focus({preventScroll:true});else if(screen==='match')canvas.focus({preventScroll:true});else $('start-match').focus({preventScroll:true});});}
 }
+// hud() runs every frame, so its writes go through put(), which skips a value the element already shows: a still HUD
+// then costs no style or layout work. key: 'text', 'html', a property ('hidden', 'disabled'), 'style.<name>' or an attribute.
+const shown=new WeakMap();
+function put(el,key,value){
+  let last=shown.get(el);if(!last)shown.set(el,last={});if(last[key]===value)return;last[key]=value;
+  if(key==='text')el.textContent=value;else if(key==='html')el.innerHTML=value;else if(key==='hidden'||key==='disabled')el[key]=value;
+  else if(key.startsWith('style.'))el.style[key.slice(6)]=value;else el.setAttribute(key,value);
+}
 function hud(){
-  $('progress').textContent=game.tutorial?`教学 ${game.tutorial.step+1} / 3`:`${game.goals} / ${game.level.goals}`;
-  $('progress-bar').style.width=`${game.goals/game.level.goals*100}%`;
-  $('hearts').innerHTML=[0,1,2].map(i=>`<span class="life ${i>=3-game.misses?'spent':''}">${icon('shield')}</span>`).join('');
-  $('hearts').setAttribute('aria-label',`剩余${3-game.misses}次机会`);
-  $('score').innerHTML=`${String(game.score).padStart(4,'0')} <small>分</small>`;
-  $('pause').disabled=!ACTIVE_PHASES.includes(game.phase);
-  $('attack').disabled=game.phase!=='playing';
+  put($('progress'),'text',game.tutorial?`教学 ${game.tutorial.step+1} / 3`:`${game.goals} / ${game.level.goals}`);
+  put($('progress-bar'),'style.width',`${game.goals/game.level.goals*100}%`);
+  put($('hearts'),'html',[0,1,2].map(i=>`<span class="life ${i>=3-game.misses?'spent':''}">${icon('shield')}</span>`).join(''));
+  put($('hearts'),'aria-label',`剩余${3-game.misses}次机会`);
+  put($('score'),'html',`${String(game.score).padStart(4,'0')} <small>分</small>`);
+  put($('pause'),'disabled',!ACTIVE_PHASES.includes(game.phase));
+  put($('attack'),'disabled',game.phase!=='playing');
   $('attack').classList.toggle('recovering',!!game.swing);
-  $('attack').querySelector('span').textContent=game.swing?'收招':'挥击';
+  put($('attack').querySelector('span'),'text',game.swing?'收招':'挥击');
   const aimNow=input.axis(),aimWord=aimNow<0?'往左 ←':aimNow>0?'往右 →':'直线 ↑',cue=game.phase==='playing'&&!game.swing?swingPreview(game,aimNow):{kind:'none'};
   $('attack').classList.toggle('ready-cue',['clean','perfect'].includes(cue.kind));
-  $('attack-hint').textContent=game.swing?'收招中':cue.kind==='perfect'?`重炮时机 · ${aimWord}`:cue.kind==='clean'?`现在挥击 · ${aimWord}`:'看准再出手';
+  put($('attack-hint'),'text',game.swing?'收招中':cue.kind==='perfect'?`重炮时机 · ${aimWord}`:cue.kind==='clean'?`现在挥击 · ${aimWord}`:'看准再出手');
   const status={ready:'热身准备',serving:'发球准备',playing:'对决进行中',miss:'稳住，再来',goal:'进球！',skill:'爆发蓄力',paused:'已暂停',won:'本关完成',lost:'挑战结束'};
-  $('court-status').textContent=game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase];
-  const teaching=!!game.tutorial&&[...ACTIVE_PHASES,'paused'].includes(game.phase);document.body.dataset.tutorial=teaching?'on':'';
-  $('tutorial-bar').hidden=!teaching;if(teaching){$('tutorial-step').textContent=`${game.tutorial.step+1}/3`;$('tutorial-tip').textContent=TUTORIAL_TIPS[game.tutorial.step];}
-  $('practice').hidden=!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching;$('practice').textContent=`练习 ×${game.practiceLeft}`;
+  put($('court-status'),'text',game.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(game.countdown*2))}`:game.phase==='playing'&&game.rally>1.001?`对决进行中 · 球速 ×${game.rally.toFixed(2)}`:status[game.phase]);
+  const teaching=!!game.tutorial&&[...ACTIVE_PHASES,'paused'].includes(game.phase);put(document.body,'data-tutorial',teaching?'on':'');
+  put($('tutorial-bar'),'hidden',!teaching);if(teaching){put($('tutorial-step'),'text',`${game.tutorial.step+1}/3`);put($('tutorial-tip'),'text',TUTORIAL_TIPS[game.tutorial.step]);}
+  put($('practice'),'hidden',!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching);put($('practice'),'text',`练习 ×${game.practiceLeft}`);
   // Energy bar and skill buttons: state in words, spin direction as an arrow, disabled-looking only via class.
-  $('energy-fill').style.width=`${game.energy}%`;$('energy-value').textContent=game.energy;$('energy').setAttribute('aria-valuenow',game.energy);
+  put($('energy-fill'),'style.width',`${game.energy}%`);put($('energy-value'),'text',String(game.energy));put($('energy'),'aria-valuenow',String(game.energy));
   for(const kind of ['spin','burst']){const st=skillStatus(game,kind),b=$(`skill-${kind}`),label=SKILL_STATE[st.ok?'ok':st.reason];
-    b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');$(`${kind}-state`).textContent=label;
-    b.setAttribute('aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
-  const pv=game.phase==='playing'&&game.ball.vz<0?spinPreview(game,aimNow):null;$('spin-dir').textContent=pv?(pv.dir==='left'?' ↺':' ↻'):'';
-  $('combo').style.opacity=game.combo>1?'1':'0';$('combo').querySelector('b').textContent=game.combo;
+    b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');put($(`${kind}-state`),'text',label);
+    put(b,'aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
+  const pv=game.phase==='playing'&&game.ball.vz<0?spinPreview(game,aimNow):null;put($('spin-dir'),'text',pv?(pv.dir==='left'?' ↺':' ↻'):'');
+  put($('combo'),'style.opacity',game.combo>1?'1':'0');put($('combo').querySelector('b'),'text',String(game.combo));
   for(const [id,direction] of [['move-left',-1],['move-right',1]]){
     const button=$(id),pressed=input.pressed(direction);
-    button.disabled=!ACTIVE_PHASES.includes(game.phase);
-    button.classList.toggle('pressed',pressed);button.setAttribute('aria-pressed',String(pressed));
+    put(button,'disabled',!ACTIVE_PHASES.includes(game.phase));
+    button.classList.toggle('pressed',pressed);put(button,'aria-pressed',String(pressed));
   }
 }
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}

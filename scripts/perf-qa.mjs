@@ -17,11 +17,18 @@ const R={lobby:await calls()};await p.screenshot({path:`${OUT}/lobby-390.png`});
 await p.evaluate(()=>document.getElementById('start-match').click());await p.waitForTimeout(1500);
 await frames(5);const r0=await p.evaluate(()=>__rects);await frames(60);R.rectsIn60Frames=await p.evaluate(r=>__rects-r,r0);
 R.play=await calls();await p.screenshot({path:`${OUT}/play-390.png`});
+// hud() runs every frame but only writes what changed: DOM mutations over n frames of the whole app.
+const writes=n=>p.evaluate(n=>new Promise(res=>{let m=0,i=0;const o=new MutationObserver(l=>m+=l.length);o.observe(document.querySelector('.app'),{subtree:true,childList:true,attributes:true,characterData:true});
+  const f=()=>++i<n?requestAnimationFrame(f):(m+=o.takeRecords().length,o.disconnect(),res(m));requestAnimationFrame(f);}),n);
+R.domWritesIn60Frames={play:await writes(60)};
 await p.setViewportSize({width:844,height:390});await p.waitForTimeout(400);await frames(5);R.landscape=await calls();
+await p.keyboard.press('Escape');await frames(5);R.domWritesIn60Frames.paused=await writes(60);
 console.log(JSON.stringify(R));
 for(const k of ['lobby','play','landscape'])assert.ok(R[k].calls<=110,`${k} 绘制调用 ${R[k].calls}`);
 assert.equal(R.play.attrs,false,'不保留画面缓冲');
 assert.equal(R.rectsIn60Frames,0,'尺寸不变时不读取画布尺寸');
+assert.equal(R.domWritesIn60Frames.paused,0,'暂停时界面不写 DOM');
+assert.ok(R.domWritesIn60Frames.play<60,`对局中 60 帧 DOM 写入 ${R.domWritesIn60Frames.play} 次（只写变化的值）`);
 // After a resize the backing store follows the new CSS size (at the active pixel ratio).
 const pr=R.landscape.canvas[0]/R.landscape.css[0];assert.ok(Math.abs(R.landscape.canvas[1]/R.landscape.css[1]-pr)<.02&&pr>=1,`横屏画布 ${R.landscape.canvas} / ${R.landscape.css}`);
 assert.deepEqual(errors,[]);console.log('PASS');await b.close();
