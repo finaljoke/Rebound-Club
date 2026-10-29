@@ -6,3 +6,4 @@ test('拒绝访问和损坏数据都能回到可玩默认状态',()=>{for(const 
 test('外来非法进度不会解锁越界关卡或污染最高分',()=>{const p=loadProgress(memory(JSON.stringify({unlocked:900,scores:{0:-20,1:'oops'},perfect:{0:'yes'}})));assert.equal(p.unlocked,5);assert.equal(p.scores[0],undefined);assert.equal(p.scores[1],undefined);assert.equal(p.perfect[0],undefined);});
 test('旧版存档被忽略，新版本从第一关开始',()=>{const old=JSON.stringify({unlocked:4,scores:{0:900}});const s={getItem(k){return k==='rebound-club-v1'?old:null;},setItem(){}};const p=loadProgress(s);assert.equal(p.unlocked,0);assert.equal(p.scores[0],undefined);});
 test('新版存档写入 v2 键',()=>{let key='';saveProgress({setItem(k){key=k;}},{unlocked:1});assert.equal(key,'rebound-club-v2');});
+test('静音设置随存档保存，缺省与非法值都当作开着音效',()=>{const s=memory();saveProgress(s,{unlocked:1,muted:true});assert.equal(loadProgress(s).muted,true);assert.equal(loadProgress(memory()).muted,false);assert.equal(loadProgress(memory(JSON.stringify({muted:'yes'}))).muted,false);});
