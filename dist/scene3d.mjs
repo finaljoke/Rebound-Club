@@ -784,7 +784,7 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
 // built from the same loaded characters on first use, with its own camera framed for the column's shape.
 // prepare([{near, far}, …]) sets each view's figures (characters.mjs roles): it loads a figure the first time one is
 // asked for and swaps only the figures that changed (the court stays). Until then every view has the club's striker and
-// keeper.
+// keeper. The latest call wins: one whose downloads finish after a later call's leaves the figures alone (returns false).
 // preload(roles) only fetches figures (say, the next level's keeper) so a later prepare needs no download.
 export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url),options={}){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
@@ -803,11 +803,17 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
   function build(cast){const w=buildWorld(assets,{...options,cast});casts.set(w,cast);shadowQuality(w);return w;}
   const ready=loadCharacterAssets(load).then(a=>{assets=a;for(const role of Object.keys(a))loading.set(ALL_CHARACTERS[role].file,Promise.resolve(a[role]));
     world=build(CLUB);worlds.push(world);applyQuality();});
-  // Roles sharing a file (the gold keeper wears the keeper's) share one download.
+  // Roles sharing a file (the gold keeper wears the keeper's) share one download. A failed one is forgotten, so the
+  // next call tries again.
   async function fetchRoles(roles){
     await ready;
-    for(const role of new Set(roles))if(!assets[role]){const file=ALL_CHARACTERS[role].file;if(!loading.has(file))loading.set(file,load(file));assets[role]=await loading.get(file);}
+    for(const role of new Set(roles))if(!assets[role]){
+      const file=ALL_CHARACTERS[role].file;
+      if(!loading.has(file)){const p=load(file);loading.set(file,p);p.catch(()=>{if(loading.get(file)===p)loading.delete(file);});}
+      assets[role]=await loading.get(file);
+    }
   }
+  let wanted=0;
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
@@ -827,11 +833,12 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
     get quality(){return governor.tier;},
     preload:fetchRoles,
     async prepare(list){
-      await fetchRoles(list.flatMap(c=>[c.near,c.far]));
+      const ticket=++wanted;await fetchRoles(list.flatMap(c=>[c.near,c.far]));
+      if(ticket!==wanted)return false;
       list.forEach((c,i)=>{const w=worlds[i];if(!w){worlds[i]=build({near:c.near,far:c.far});return;}
         const was=casts.get(w);for(const end of ['near','far'])if(was[end]!==c[end])w.setFigure(end,assets[c[end]],ALL_CHARACTERS[c[end]]);
         casts.set(w,{near:c.near,far:c.far});});
-      world=worlds[0];
+      world=worlds[0];return true;
     },
     render(state,axis,reduceMotion,shake=0){
       if(!world||!fit())return;

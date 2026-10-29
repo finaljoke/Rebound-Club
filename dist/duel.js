@@ -200,9 +200,11 @@ try{
 
 document.querySelector('.app').addEventListener('click',e=>{
   const el=e.target.closest('[data-action],[data-mode],[data-latency],[data-pick]');if(!el)return;
-  if(el.dataset.mode&&!match){mode=el.dataset.mode;setupUI();return;}
-  if(el.dataset.pick&&!match){picks[el.dataset.side]=el.dataset.pick;idle=createDuel({picks});setupUI();court?.prepare([castFor('a')]).catch(()=>{});return;}
-  if(el.dataset.latency!==undefined&&!match){latency=Number(el.dataset.latency);setupUI();return;}
+  // While a match's figures load, the setup is fixed: the match starts with what was chosen.
+  const setup=!match&&!loadingCast;
+  if(el.dataset.mode&&setup){mode=el.dataset.mode;setupUI();return;}
+  if(el.dataset.pick&&setup){picks[el.dataset.side]=el.dataset.pick;idle=createDuel({picks});setupUI();court?.prepare([castFor('a')]).catch(()=>{});return;}
+  if(el.dataset.latency!==undefined&&setup){latency=Number(el.dataset.latency);setupUI();return;}
   const action=el.dataset.action;
   if(action==='start'&&!match&&court){goFullscreen();startMatch();}
   if(action==='resume')resume();
