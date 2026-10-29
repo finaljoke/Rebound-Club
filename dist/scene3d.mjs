@@ -11,6 +11,7 @@ import {CHARACTERS} from './characters.mjs';
 // assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
 // duel: the two-player court (duel.html, duel-view.mjs). The far figure is the second player and strikes like the
 // striker instead of diving, and the near goal has the same mouth as the far one, since both ends defend it.
+export const DUEL_FAR_GLOVE='#20284a';
 const SINGLE_HINTS={hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock};
 export function buildWorld(assets,{duel=false}={}){
   // Night arena: a dark venue around a bright court, so the players and the ball carry the picture.
@@ -198,7 +199,10 @@ export function buildWorld(assets,{duel=false}={}){
   }
   // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
   // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
-  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
+  // In a duel the far figure strikes the ball too, and the keeper's near-white gloves hid it at contact (AC21 stand-in
+  // report): there it wears deep navy gloves, which part from the white ball and the turf.
+  const FAR_SPEC=duel?{...CHARACTERS.keeper,glove:{...CHARACTERS.keeper.glove,color:DUEL_FAR_GLOVE}}:CHARACTERS.keeper;
+  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,FAR_SPEC,'keeper');
   const hero=striker.root,keeper=goalie.root;
   scene.add(hero);hero.position.set(0,0,-1.6);
   // In a duel the second player stands where the striker does, seen from the other end.

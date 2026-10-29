@@ -36,11 +36,14 @@
     <div class="duel-group" role="radiogroup" aria-label="对手"><span class="duel-label">对手</span>
       <button type="button" class="duel-choice" data-mode="ai" role="radio" aria-checked="true">对战 AI</button>
       <button type="button" class="duel-choice" data-mode="local" role="radio" aria-checked="false" id="mode-local">本机双人</button></div>
-    <div class="duel-group" role="radiogroup" aria-label="网络模拟" id="latency-group"><span class="duel-label">网络模拟</span>
+    <!-- data-latency is the one-way delay the loopback adds to every message; the label is the round trip (ping) players know. -->
+    <div class="duel-group" role="radiogroup" aria-label="网络模拟（往返 ping）" id="latency-group"><span class="duel-label">网络模拟 · ping（毫秒）</span>
       <button type="button" class="duel-choice" data-latency="0" role="radio" aria-checked="true">0</button>
-      <button type="button" class="duel-choice" data-latency="80" role="radio" aria-checked="false">80</button>
-      <button type="button" class="duel-choice" data-latency="150" role="radio" aria-checked="false">150</button>
-      <button type="button" class="duel-choice" data-latency="250" role="radio" aria-checked="false">250 ms</button></div>
+      <button type="button" class="duel-choice" data-latency="20" role="radio" aria-checked="false">40</button>
+      <button type="button" class="duel-choice" data-latency="40" role="radio" aria-checked="false">80</button>
+      <button type="button" class="duel-choice" data-latency="80" role="radio" aria-checked="false">160</button>
+      <button type="button" class="duel-choice" data-latency="150" role="radio" aria-checked="false">300</button>
+      <button type="button" class="duel-choice" data-latency="250" role="radio" aria-checked="false">500</button></div>
     <p class="duel-keys" id="duel-keys"></p>
     <button class="primary-button start-button" id="start-match" data-action="start">开始对战 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7Z"/></svg></button>
     <a class="text-button duel-back" href="./index.html">返回单机</a>

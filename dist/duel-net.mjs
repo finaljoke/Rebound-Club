@@ -9,6 +9,7 @@
 // (`mi`); half the difference of the two smallest is the clock offset, assuming the fastest trip takes as long both ways.
 // With 30 position messages a second that settles within about a millisecond under symmetric jitter, where a single
 // round trip (ping/pong, kept for the round-trip time) is off by half the jitter.
+import {WEAPONS} from './core.mjs';
 import {createDuel,startDuel,stepDuel,duelAttack,duelSkill,applyMessage,pauseDuel,resumeDuel,other,localBall} from './duel-core.mjs';
 import {viewFor} from './duel-view.mjs';
 
@@ -30,13 +31,13 @@ export function createLoopback({delayMs=0,jitterMs=0,seed=1,now}){
   return pair;
 }
 
-const EASE=.15,BALL_EVENTS=['serve','hit','wide'];
+const EASE=.15,W=WEAPONS.glove,BALL_EVENTS=['serve','hit','wide'];
 // now(): this copy's clock in seconds. controller-free: the caller passes this player's input to step().
 export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
   const opp=other(side),s=createDuel({auth:{[side]:true,[opp]:false}}),inbox=[];
   // offset: the other clock minus ours. trips: our recent (arrival − sent); theirs: the other side's smallest, from `mi`.
   const clock={offset:0,rtt:null,trips:[],mine:Infinity,theirs:Infinity},ease={x:0,z:0,left:0},drawn={x:0,z:0};
-  let lastPos=-Infinity,lastPing=-Infinity;
+  let lastPos=-Infinity,lastPing=-Infinity,sentSwing=null;
   transport.onMessage((msg,at)=>inbox.push({msg,at:at??now()}));
   // stamp: the clock the message's state belongs to (now, unless it was decided before this step's tick ran).
   const send=(msg,stamp=now())=>{msg.t=stamp;if(Number.isFinite(clock.mine))msg.mi=clock.mine;transport.send(msg);};
@@ -59,6 +60,9 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
       return;
     }
     const before=localBall(s,side);applyMessage(s,msg,age);
+    // A strike whose punch this side has not drawn, or has drawn to its end already (a late message), shows its contact
+    // frame as the ball turns and recovers from there: the fist meets the ball on screen whatever the delay.
+    if(msg.type==='hit'&&msg.side===opp&&(!o.swing||o.swing.time>W.windup+W.active))o.swing={time:W.windup,hit:true,whiffed:false,armed:true};
     if(BALL_EVENTS.includes(msg.type)&&msg.type!=='serve'){const after=localBall(s,side),dx=before.x-after.x,dz=before.z-after.z;
       if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}}
   }
@@ -70,12 +74,19 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
     step(dt,input={}){
       const t=now();
       if(s.phase!=='paused')for(const m of inbox.splice(0))receive(m,t-dt);
+      // Position and swing go out posEvery, and at once when a swing starts, ahead of anything else this step sends: the
+      // channel is ordered, so the other side draws the punch before the strike it makes (without that about a third
+      // of returns turned before the far punch showed). A spin or a burst's launch starts its swing and strikes in one go.
+      const pos=(stamp=now())=>{lastPos=t;const p=s.players[side],sw=p.swing;sentSwing=sw;send({type:'pos',x:p.x,axis:p.held,swing:sw?{time:sw.time,hit:sw.hit,whiffed:sw.whiffed,armed:sw.armed}:null},stamp);};
+      const fresh=()=>{const sw=s.players[side].swing;return !!sw&&sw!==sentSwing;};
       // A spin leaves the glove at once, before this step's tick moves it: its message carries the step's start.
       if(input.skill)duelSkill(s,side,input.skill,input.axis||0);else if(input.swing)duelAttack(s,side);
+      if(fresh())pos(t-dt);
       for(const m of s.outbox.splice(0))send(m,t-dt);
       stepDuel(s,dt,{[side]:{axis:input.axis||0}});
+      if(fresh())pos();
       for(const m of s.outbox.splice(0))send(m);
-      if(t-lastPos>=posEvery){lastPos=t;const p=s.players[side],sw=p.swing;send({type:'pos',x:p.x,axis:p.held,swing:sw?{time:sw.time,hit:sw.hit,whiffed:sw.whiffed,armed:sw.armed}:null});}
+      if(t-lastPos>=posEvery)pos();
       if(t-lastPing>=pingEvery){lastPing=t;send({type:'ping'});}
       ease.left=Math.max(0,ease.left-dt);
     },

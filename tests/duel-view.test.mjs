@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.min.js';
-import {buildWorld} from '../dist/scene3d.mjs';
+import {buildWorld,DUEL_FAR_GLOVE} from '../dist/scene3d.mjs';
 import {loadCharacters} from './helpers/characters.mjs';
 import {WEAPONS,PLAYER_Z} from '../dist/core.mjs';
 import {createDuel,startDuel,stepDuel,duelAttack,duelSkill,mirrorBall,OPP_Z,DUEL,SIDES} from '../dist/duel-core.mjs';
@@ -73,4 +73,11 @@ test('对手放爆发：接球方画面里，蓄力光圈和冲击波在对手�
   at(B.strike+.05);assert.ok(fx.halo.scale.x<wide,'倒计时环在收拢');assert.ok(fx.shock.visible&&Math.abs(fx.shock.position.z+OPP_Z)<1e-6,'出手冲击波在对手那端');
   at(9);assert.equal(s.phase,'playing');w.update(viewFor(s,'a'),0,false,9);
   for(const k of ['aura','sparks','halo','foeBanner'])assert.equal(fx[k].visible,false,`${k} 球飞出后隐藏`);
+});
+
+// AC21 stand-in report: the far figure's near-white gloves hid the white ball at contact; in a duel they are deep navy.
+test('对战远端人物的手套是深藏青，和白球分得开；单机门将的手套不变', ()=>{
+  const color=w=>w.actors.goalie.gloves.map(g=>'#'+g.group.getObjectByName('glove-body').material.color.getHexString());
+  assert.deepEqual(color(buildWorld(assets,{duel:true})),[DUEL_FAR_GLOVE,DUEL_FAR_GLOVE]);
+  assert.deepEqual(color(buildWorld(assets)),['#f4f6ff','#f4f6ff']);
 });

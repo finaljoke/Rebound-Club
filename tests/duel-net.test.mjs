@@ -59,3 +59,13 @@ test('一条击球消息晚到 2 秒：接收方的球停在发送方的球门�
   assert.ok(!crossed,'球越过了发送方的球门线');assert.ok(released,'收到消息后没有继续');
   assert.equal(a.state.phase,'won');assert.deepEqual(a.state.score,b.state.score);
 });
+
+// AC21 stand-in report (2026-10-29): position and swing went out 30 times a second while a strike went at once, so about
+// a third of returns turned on the receiver's screen before the far punch was drawn. A swing's start now goes out ahead.
+test('对手的击球在本方生效时，本方画面里对手的拳已经在挥（0 / 150 / 250 毫秒）', ()=>{
+  for(const delayMs of [0,150,250]){let seen=0,late=0;const last={a:null,b:null};
+    match({seed:3,delayMs,jitterMs:delayMs*.2,cap:120*240,onStep:c=>{
+      for(const side of ['a','b']){const st=c[side].state,shot=st.shot;if(shot===last[side])continue;last[side]=shot;
+        if(!shot||shot.side===side)continue;seen++;if(!st.players[shot.side].swing)late++;}}});
+    assert.ok(seen>=40,`${delayMs} 毫秒：只比对了 ${seen} 拍`);assert.equal(late,0,`${delayMs} 毫秒：${late}/${seen} 拍球先掉头、拳还没画`);}
+});
