@@ -232,6 +232,8 @@ for(const [id,direction] of [['move-left',-1],['move-right',1]]){
   button.addEventListener('blur',()=>{input.up(`${id}:Space`);input.up(`${id}:Enter`);});
   button.addEventListener('contextmenu',e=>e.preventDefault());
 }
+// A game page has nothing to select or copy: a long press anywhere (iOS, WeChat) must not open the text menu.
+for(const type of ['contextmenu','selectstart'])document.addEventListener(type,e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
   if(document.querySelector('dialog[open]'))return;
   if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)&&ACTIVE_PHASES.includes(game.phase)){e.preventDefault();input.key(e.key,true);}
