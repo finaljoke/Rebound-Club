@@ -22,7 +22,7 @@ const W=WEAPONS.glove;
 // energy: share of the energy a strike earns; windup/active/recovery/whiff: swing timings in seconds.
 export const FIGHTERS={
   allround:{name:'全能',role:'没有短板，上手最快'},
-  power:{name:'重炮',role:'球速快；出拳时机要求更准，脚步沉',shot:1.08,power:1.45,reach:.93,run:.9},
+  power:{name:'重炮',role:'球速快；出拳时机要求更准，脚步沉',shot:1.06,power:1.45,reach:.93,run:.9},
   speed:{name:'疾风',role:'跑得快，出拳判定久，挥空收得快；球稍轻',run:1.25,active:.15,whiff:.3,shot:.99},
   wall:{name:'铁壁',role:'击球框深又宽，出拳时机最宽松；球轻，脚慢',reach:1.08,width:1,shot:.92,run:.92},
   trick:{name:'巧手',role:'能量攒得快、技能放得多，角度刁；普通球稍轻',energy:1.5,aim:.95,shot:.98}

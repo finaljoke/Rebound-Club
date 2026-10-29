@@ -32,14 +32,17 @@ const result={matches,seed,levels:{}};
 for(const [level,make] of Object.entries(LEVELS)){
   const share={},hits={},wins={},total={};
   for(const i of FIGHTER_IDS){share[i]={};hits[i]={};wins[i]={};total[i]={won:0,points:0};}
-  for(const [n,i] of FIGHTER_IDS.entries())for(const j of FIGHTER_IDS.slice(n)){
+  // Every pairing and side has its own seeds: seed, then the pairing, then the match (up to 5000 matches a side).
+  const N=FIGHTER_IDS.length;
+  for(const [n,i] of FIGHTER_IDS.entries())for(const [jn,j] of FIGHTER_IDS.entries()){if(jn<n)continue;
     let iPts=0,pts=0,h=0,iWins=0;
     for(let m=0;m<matches;m++)for(const flip of [false,true]){
-      const picks=flip?{a:j,b:i}:{a:i,b:j},me=flip?'b':'a',o=play(picks,make,seed*100000+n*1000+m*2+(flip?1:0));
+      const picks=flip?{a:j,b:i}:{a:i,b:j},me=flip?'b':'a',o=play(picks,make,(seed*N*N+n*N+jn)*10000+m*2+(flip?1:0));
       iPts+=o.points[me];pts+=o.goals;h+=o.hits;if(o.winner===me)iWins++;
     }
-    share[i][j]=r3(iPts/pts);share[j][i]=r3(1-iPts/pts);hits[i][j]=hits[j][i]=r3(h/pts);
-    wins[i][j]=r3(iWins/(2*matches));wins[j][i]=r3(1-iWins/(2*matches));
+    // A mirror pairing is one cell: the points the fighter on one side won (not its complement).
+    share[i][j]=r3(iPts/pts);hits[i][j]=hits[j][i]=r3(h/pts);wins[i][j]=r3(iWins/(2*matches));
+    if(i!==j){share[j][i]=r3(1-iPts/pts);wins[j][i]=r3(1-iWins/(2*matches));}
     if(i!==j){total[i].won+=iPts;total[i].points+=pts;total[j].won+=pts-iPts;total[j].points+=pts;}
   }
   result.levels[level]={share,matchWins:wins,hitsPerPoint:hits,overall:Object.fromEntries(FIGHTER_IDS.map(i=>[i,r3(total[i].won/total[i].points)]))};
