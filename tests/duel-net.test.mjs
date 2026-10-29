@@ -148,3 +148,15 @@ test('出球放慢：对手放爆发蓄力时，画出来的球停在它锁住�
   }});
   assert.ok(bursts>=3&&checked>=30,`只看到 ${bursts} 次爆发、${checked} 帧`);assert.ok(worst<=1e-9,`偏离锁球点 ${worst.toFixed(3)} 米`);
 });
+
+// Found by PR #4: with the catch-up sync the receiver's ball flew on past the lock point until the charge's message came,
+// so the charge was played round a ball about half a metre behind the far figure's lock (at 40 ms one way).
+test('追帧：对手放爆发蓄力时，画出来的球也停在它锁住球的那一点（40 / 150 毫秒）', ()=>{
+  for(const delayMs of [40,150]){let bursts=0,checked=0,worst=0,seen=null;
+    for(let m=0;m<8&&bursts<3;m++)match({delayMs,jitterMs:delayMs*.2,seed:600+m,cap:120*240,onStep:(c)=>{
+      const s=c.a.state,k=s.phase==='skill'&&s.skill?.side==='b'?s.skill:null;if(!k)return;
+      if(k!==seen){seen=k;bursts++;}
+      if(k.time>=.2+delayMs/1000){const v=c.a.view().ball;worst=Math.max(worst,Math.hypot(v.x+k.x,v.z-(COURT-k.z)));checked++;}
+    }});
+    assert.ok(bursts>=3&&checked>=30,`${delayMs} 毫秒：只看到 ${bursts} 次爆发、${checked} 帧`);assert.ok(worst<=1e-9,`${delayMs} 毫秒：偏离锁球点 ${worst.toFixed(3)} 米`);}
+});

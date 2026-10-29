@@ -84,6 +84,10 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25,syn
       return;
     }
     if(!full){
+      // The other player's burst charge: this copy's ball flew on until the message came, past the point it was locked at;
+      // it is drawn at that point for the charge (view), eased there from where it was drawn.
+      if(msg.type==='burstStart'&&msg.side===opp){const before=drawnAt();applyMessage(s,msg,age);ease.left=0;
+        const after=drawnAt(),dx=before.x-after.x,dz=before.z-after.z;if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}return;}
       const before=localBall(s,side,L0);applyMessage(s,msg,age);
       // A strike whose punch this side has not drawn, or has drawn to its end already (a late message), shows its contact
       // frame as the ball turns and recovers from there: the fist meets the ball on screen whatever the delay. (Full flight
@@ -102,15 +106,15 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25,syn
     const before=drawnAt();applyMessage(s,msg,flyOn);out.on=false;
     if(msg.type!=='serve'){ease.left=0;const after=drawnAt(),dx=before.x-after.x,dz=before.z-after.z;if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}}
   }
-  // The ball as drawn: the state's own, plus what is left of a late correction. Full flight: this player's outgoing ball
-  // where its slower drawing has got to, and during the other player's burst the point it locked the ball at (the
-  // charge the scene plays round it), which this copy's ball, flying on until the message came, may be past.
+  // The ball as drawn: the state's own, plus what is left of a late correction. During the other player's burst (either
+  // sync) the point it locked the ball at, where the scene plays the charge round it, which this copy's ball, flying on
+  // until the message came, may be past. Full flight: this player's outgoing ball where its slower drawing has got to.
   function view(){
     const k=ease.left/EASE;drawn.x=ease.x*k;drawn.z=ease.z*k;
-    if(!full)return viewFor(s,side,k>0?drawn:null);
-    const l=localBall(s,side,L1);
-    if(s.phase==='skill'&&s.skill?.side===opp){drawn.x+=-s.skill.x-l.x;drawn.z+=COURT-s.skill.z-l.z;}
-    else if(out.on){const p=outAt();drawn.x+=p.x-l.x;drawn.z+=p.z-l.z;}
+    const l=localBall(s,side,L1),locked=s.phase==='skill'&&s.skill?.side===opp;
+    if(locked){drawn.x+=-s.skill.x-l.x;drawn.z+=COURT-s.skill.z-l.z;}
+    if(!full)return viewFor(s,side,k>0||locked?drawn:null);
+    if(!locked&&out.on){const p=outAt();drawn.x+=p.x-l.x;drawn.z+=p.z-l.z;}
     return viewFor(s,side,drawn);
   }
   const drawnAt=()=>{const b=view().ball;return {x:b.x,z:b.z};};
