@@ -43,7 +43,14 @@ npm start
 
 ## 联机房间（P1，进行中，Issue #5）
 
-两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。现在有服务端和客户端连接，对战页还没接上。
+两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。
+
+- 对战页的「好友联机」：
+  - 一人「创建房间」，把房间码或邀请链接（`duel.html?room=<id>`）发给对方；对方输码或点链接进房。
+  - 房主选同步方式并开始，每局都由房主开始；访客点「再来一局」，会请房主开一局。
+  - 任何一方暂停，两边一起停；任何一方都能继续，继续前等 0.8 秒。窗口失焦不暂停，切到后台才暂停。
+  - 对方断开时，对局停下等它回来；刷新页面会凭这个标签页保存的令牌回到原来的位置。
+  - 页脚显示走的是直连还是中转，以及 ping。
 
 - 规则：`server/room.mjs`（纯 JS：房间码、进房、令牌、转发、限流、过期），本地替身和 Cloudflare Worker 共用。
 - 接口：WebSocket `/api/ws?create=1`（开房）、`?code=XXXXX`（凭码进房）、`?room=<id>[&token=<令牌>]`（邀请链接、断线回来）。
@@ -63,7 +70,7 @@ npm start
   - 只用 STUN，不接 TURN。房间地址：开发服务器（4173 端口）打开的页面连本机替身，其余连 `rebound-api.snowiscoming.com`，页面加 `?api=` 可以指定。
 - 检查：
   - `tests/online-*.test.mjs`、`tests/duel-link.test.mjs`；
-  - `node scripts/online-qa.mjs`（需要本地服务）：两个浏览器页面真实走 WebRTC，检查直连、掐断后退回中转、在连接上打对战；
+  - `node scripts/online-qa.mjs`（需要本地服务）：两个浏览器页面真实走 WebRTC，检查直连、掐断后退回中转、在连接上打对战，再在对战页上完整走一遍「好友联机」；
   - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝。
   - 对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
 
