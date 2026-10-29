@@ -530,7 +530,7 @@ export function buildWorld(assets,{duel=false}={}){
     // Striker: idle or a side-step by the held direction; the punch follows the rules' swing clock (or the burst's).
     hero.position.set(pose.px,0,-s.player.z);follow=pose.px*FOLLOW;
     hero.rotation.z=s.phase==='playing'?-axis*.075:0;
-    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=WEAPONS[s.weapon];
+    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=s.kit??WEAPONS[s.weapon],oKit=s.opponent?.kit??w;
     if(sw!==lastSwing){if(lastSwing&&!sw)swingEnd.at=s.elapsed;else if(sw)punchLeft=s.ball.x<s.player.x-.08;lastSwing=sw;}
     if(sw)swingEnd.time=sw.time;
     const left=!sk&&punchLeft,c=left?PUNCH.left:PUNCH.right;let sTime=0,sWeight=0;
@@ -552,8 +552,8 @@ export function buildWorld(assets,{duel=false}={}){
       if(osw!==os.last){if(os.last&&!osw)os.endAt=s.elapsed;else if(osw)os.left=s.ball.x>k.x+.08;os.last=osw;}
       if(osw)os.time=osw.time;
       const oc=os.left?OPP_PUNCH.left:OPP_PUNCH.right;let oTime=0,oWeight=0;
-      if(osw){oTime=punchTime(osw.time,w,oc.t);oWeight=Math.min(1,osw.time/.025);}
-      else if(s.elapsed-os.endAt<.12){const e=s.elapsed-os.endAt;oTime=punchTime(os.time+e,w,oc.t);oWeight=1-e/.12;}
+      if(osw){oTime=punchTime(osw.time,oKit,oc.t);oWeight=Math.min(1,osw.time/.025);}
+      else if(s.elapsed-os.endAt<.12){const e=s.elapsed-os.endAt;oTime=punchTime(os.time+e,oKit,oc.t);oWeight=1-e/.12;}
       const ow=kw*(1-oWeight);
       keeper.rotation.z=0;keeper.position.set(pose.kx,0,-OPP_Z);
       goalie.pose([[oMoving?(oStep>0?'strafeLeft':'strafeRight'):'idle',oMoving?animT*1.25:animT,1-oWeight-ow,true],[os.left?'punchLeft':'punchRight',oTime,oWeight],['cheer',now-react.at,ow]]);
@@ -603,7 +603,7 @@ export function buildWorld(assets,{duel=false}={}){
     if(fl){
       // Red/green only says whether the keeper covers that line right now; it is not a promise of a goal. In a duel it is
       // the second player's hitting box that covers it.
-      const cover=duel?WEAPONS[s.weapon].width:KEEPER_REACH;
+      const cover=duel?(s.opponent?.kit??WEAPONS[s.weapon]).width:KEEPER_REACH;
       route.forEach((d,i)=>{const on=i+1<fl.count&&fl.zs[i+1]>s.ball.z;d.visible=on;if(on)d.position.set(fl.xs[i+1],.052,-fl.zs[i+1]);});
       const gx=fl.goal??fl.xs[fl.count-1];routeMat.color.set(s.ball.kind==='spin'?'#9df0e2':'#fff6d8');
       target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':Math.abs(gx-s.keeper.x)<=cover?'#ff5a4a':'#5fe07a');target.visible=true;
