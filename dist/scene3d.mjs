@@ -198,9 +198,10 @@ export function buildWorld(assets,{duel=false,cast={near:'striker',far:'keeper'}
     spectators.update(now,goalCam.goalAt,reduceMotion);
   }
   // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
-  // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
-  const striker=createActor(assets[cast.near],ALL_CHARACTERS[cast.near],'striker'),goalie=createActor(assets[cast.far],ALL_CHARACTERS[cast.far],'keeper');
-  const hero=striker.root,keeper=goalie.root;
+  // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning. Either figure can be
+  // swapped in place (setFigure, below); everything here reads these four, and the measurements are redone on a swap.
+  let striker=createActor(assets[cast.near],ALL_CHARACTERS[cast.near],'striker'),goalie=createActor(assets[cast.far],ALL_CHARACTERS[cast.far],'keeper');
+  let hero=striker.root,keeper=goalie.root;
   scene.add(hero);hero.position.set(0,0,-1.6);
   // In a duel the second player stands where the striker does, seen from the other end.
   const OPP_Z=GOAL_Z-PLAYER_Z,FAR_Z=duel?OPP_Z:KEEPER_Z;
@@ -377,7 +378,9 @@ export function buildWorld(assets,{duel=false,cast={near:'striker',far:'keeper'}
   // Hip height and hip drops come from the model (the old 0.9 / 0.35 / 0.24 were for a 0.9 m hip). The old dive also slid
   // the hips 0.3 toward the ball; this placeholder's upper body is long enough that a full-length dive about its spot
   // already reaches as far as a beaten keeper may (keeperReach / beatenDive), so it does not slide.
-  const HIP=goalie.hipHeight,ARM_SPAN=(goalie.height-HIP)*.7,HIP_DROP=.35*HIP/.9,HIP_DOWN=.24*HIP/.9,HIP_SLIDE=0,diveOffset={x:0,y:0};
+  let HIP,ARM_SPAN,HIP_DROP,HIP_DOWN;const HIP_SLIDE=0,diveOffset={x:0,y:0};
+  function measureBody(){HIP=goalie.hipHeight;ARM_SPAN=(goalie.height-HIP)*.7;HIP_DROP=.35*HIP/.9;HIP_DOWN=.24*HIP/.9;}
+  measureBody();
   function poseKeeper(a,dir,land=0){
     const flat=land*Math.min(1,a*2);
     const t0=1.42*a**1.2,tilt=t0+(1.5-t0)*flat;
@@ -405,13 +408,15 @@ export function buildWorld(assets,{duel=false,cast={near:'striker',far:'keeper'}
     if(w>0){armTarget.set(tx,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
-  // out toward the ball side, measured once from the model. The club only: a duel's far figure may have no dive clips.
-  const keeperReach=duel?null:(()=>{const out=[],x0=keeper.position.x,y0=keeper.position.y;
+  // out toward the ball side, measured from the model. The club only: a duel's far figure may have no dive clips.
+  function measureSaves(){const out=[],x0=keeper.position.x,y0=keeper.position.y;
     for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;poseGoalie(i/10,1,0,1,x0+8,0,0,0,0,null,null);out.push(goalie.reach(x0));}
-    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;poseGoalie(0,1,0,0,0,0,0,0,0,null,null);return out;})();
+    poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;poseGoalie(0,1,0,0,0,0,0,0,0,null,null);return out;}
+  let keeperReach=duel?null:measureSaves();
   // The second player's punch contact frames, measured like the striker's (duel only; it leaves the figure at idle).
-  const OPP_PUNCH=duel?{left:goalie.measureReach('punchLeft'),right:goalie.measureReach('punchRight')}:null;
-  if(duel)goalie.pose([['idle',0,1]]);
+  const OPP_PUNCH=duel?{}:null;
+  function measureOpponent(){if(!duel)return;OPP_PUNCH.left=goalie.measureReach('punchLeft');OPP_PUNCH.right=goalie.measureReach('punchRight');goalie.pose([['idle',0,1]]);}
+  measureOpponent();
   const oppSwing={last:null,endAt:-9,time:0,left:false};
   // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius). A duel's far
   // figure never dives (no measured reach), so it stays at 0.
@@ -741,9 +746,25 @@ export function buildWorld(assets,{duel=false,cast={near:'striker',far:'keeper'}
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,oppPunch:OPP_PUNCH,duel,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  // Swaps one figure in place ('near' or 'far': a duel player's pick, a level's keeper); the court, crowd and lights
+  // stay. The new figure takes the old one's spot, the measurements are redone, and the old one's GPU copies go.
+  function setFigure(end,gltf,spec){
+    const near=end==='near',next=createActor(gltf,spec,near?'striker':'keeper'),old=near?hero:keeper;
+    next.root.position.copy(old.position);next.root.rotation.copy(old.rotation);scene.add(next.root);
+    if(near){striker=next;hero=next.root;gear.glove=next.gloves[1].group;gear.glove.add(handGlow);
+      PUNCH.left=next.measureReach('punchLeft');PUNCH.right=next.measureReach('punchRight');}
+    else{goalie=next;keeper=next.root;measureBody();if(!duel)keeperReach=measureSaves();measureOpponent();}
+    scene.remove(old);releaseObject(old);
+  }
+  return {scene,camera,sun,get hero(){return hero;},get keeper(){return keeper;},actors:{get striker(){return striker;},get goalie(){return goalie;}},punch:PUNCH,oppPunch:OPP_PUNCH,duel,setFigure,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
+// Frees an object tree's GPU copies: geometry, materials and every texture they hold, and each skinned figure's bone
+// texture. A texture shared with another tree is simply uploaded again the next time that tree is drawn.
+export function releaseObject(root){
+  root.traverse(o=>{o.geometry?.dispose();if(o.isSkinnedMesh)o.skeleton?.dispose();
+    for(const m of [o.material].flat())if(m){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose();}});
+}
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
 // session, so it cannot oscillate; single spikes and tab-switch gaps (>100 ms) are ignored.
 export const QUALITY_TIERS=[{pixelRatio:1.6,shadowMap:1024},{pixelRatio:1.25,shadowMap:1024},{pixelRatio:1,shadowMap:512}];
@@ -762,7 +783,8 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
 // renderViews draws several players' views side by side on the one canvas (split screen): each column is its own world,
 // built from the same loaded characters on first use, with its own camera framed for the column's shape.
 // prepare([{near, far}, …]) sets each view's figures (characters.mjs roles): it loads a figure the first time one is
-// asked for and rebuilds only the views whose figures changed. Until then every view has the club's striker and keeper.
+// asked for and swaps only the figures that changed (the court stays). Until then every view has the club's striker and
+// keeper.
 // preload(roles) only fetches figures (say, the next level's keeper) so a later prepare needs no download.
 export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url),options={}){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
@@ -779,9 +801,6 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
     worlds.forEach(shadowQuality);width=0;
   }
   function build(cast){const w=buildWorld(assets,{...options,cast});casts.set(w,cast);shadowQuality(w);return w;}
-  // A replaced world's GPU copies go (each figure's recoloured atlas is its own). A texture another world still uses
-  // is simply uploaded again the next time it is drawn.
-  function drop(w){w.scene.traverse(o=>{o.geometry?.dispose();for(const m of [o.material].flat()){m?.map?.dispose();m?.dispose?.();}});}
   const ready=loadCharacterAssets(load).then(a=>{assets=a;for(const role of Object.keys(a))loading.set(ALL_CHARACTERS[role].file,Promise.resolve(a[role]));
     world=build(CLUB);worlds.push(world);applyQuality();});
   // Roles sharing a file (the gold keeper wears the keeper's) share one download.
@@ -809,8 +828,9 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
     preload:fetchRoles,
     async prepare(list){
       await fetchRoles(list.flatMap(c=>[c.near,c.far]));
-      list.forEach((c,i)=>{const w=worlds[i],was=w&&casts.get(w);if(was&&was.near===c.near&&was.far===c.far)return;
-        const next=build({near:c.near,far:c.far});if(w)drop(w);worlds[i]=next;});
+      list.forEach((c,i)=>{const w=worlds[i];if(!w){worlds[i]=build({near:c.near,far:c.far});return;}
+        const was=casts.get(w);for(const end of ['near','far'])if(was[end]!==c[end])w.setFigure(end,assets[c[end]],ALL_CHARACTERS[c[end]]);
+        casts.set(w,{near:c.near,far:c.far});});
       world=worlds[0];
     },
     render(state,axis,reduceMotion,shake=0){
@@ -825,6 +845,6 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
       views.forEach((v,i)=>{renderer.setViewport(i*cw,0,cw,height);renderer.setScissor(i*cw,0,cw,height);draw(worlds[i],v.state,v.axis,reduceMotion,v.shake||0,cw/height);});
       renderer.setScissorTest(false);renderer.info.autoReset=true;
     },
-    dispose(){observer?.disconnect();for(const w of worlds)w.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    dispose(){observer?.disconnect();for(const w of worlds){releaseObject(w.scene);w.sun.shadow.map?.dispose();}renderer.dispose();}
   };
 }
