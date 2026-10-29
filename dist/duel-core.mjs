@@ -9,8 +9,9 @@
 import {WEAPONS,PACE,RUN,PLAYER_Z,PERFECT_BAND,RALLY_STEP,RALLY_CAP,POWER,SOFT,SPIN_SHARE,GOAL_Z,FAR_WALL,KEEPER_Z,SKILLS,LEVELS,advanceBall,aimAngle} from './core.mjs';
 
 export const COURT=GOAL_Z,OPP_Z=COURT-PLAYER_Z;
-// One fixed court: level 1's ball speed, goal width and colour; first to `goals` wins.
-export const DUEL={goals:5,speed:LEVELS[0].speed,goalHalf:LEVELS[0].goalHalf,color:LEVELS[0].color,serveDelay:.8,goalDelay:1.2};
+// One fixed court: level 1's goal width and colour, and 0.8 of its ball speed (play-tested too fast: there is no keeper
+// and wall between the two strikers, so returns come back to back); first to `goals` wins.
+export const DUEL={goals:5,speed:LEVELS[0].speed*.8,goalHalf:LEVELS[0].goalHalf,color:LEVELS[0].color,serveDelay:.8,goalDelay:1.2};
 export const SIDES=['a','b'],DUEL_ACTIVE=['playing','serving','goal','skill'];
 export const other=side=>side==='a'?'b':'a';
 const W=WEAPONS.glove,SWEET=PLAYER_Z+W.reach*.5,AIM={level:{goalHalf:DUEL.goalHalf}};

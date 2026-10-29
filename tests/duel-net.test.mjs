@@ -44,12 +44,16 @@ test('收到击球消息追帧后，接收方的球与发送方同一时刻的�
 });
 
 test('一条击球消息晚到 2 秒：接收方的球停在发送方的球门线上等待，收到后继续，比分不出错', ()=>{
-  let armed=false,heldAt=null,crossed=false,released=false;
+  let armed=false,heldAt=null,crossed=false,released=false,before=null,struck=false;
   const {clients:{a,b}}=match({seed:7,delayMs:60,jitterMs:10,cap:120*400,onStep:(c,loop)=>{
-    const s=c.a.state;
+    const s=c.a.state,sb=c.b.state;
     // After a few exchanges, hold back B's next strike.
-    if(!armed&&s.shots>=4&&s.ball.vz>0){armed=true;loop.delayNext(m=>m.type==='hit'&&m.side==='b',2000);}
-    if(armed&&!released){if(s.ball.z>COURT+1e-9)crossed=true;if(s.hold&&heldAt===null)heldAt=s.ball.z;if(heldAt!==null&&!s.hold)released=true;}
+    // A burst is left out: its launch ends a charge the receiver already freezes for ('skill'), not a line it holds at.
+    if(!armed&&s.shots>=4&&s.ball.vz>0){armed=true;before=sb.shot;loop.delayNext(m=>m.type==='hit'&&m.side==='b'&&m.event!=='burst',2000);}
+    // The watch starts once B has struck in its own copy: the bot misses now and then, and a ball it lets in (or a wide
+    // ball off its end wall) is not the late strike; the held-back message is B's next strike, whenever it comes.
+    if(armed&&!struck&&sb.shot!==before&&sb.shot?.side==='b'&&sb.shot.kind!=='burst')struck=true;
+    if(struck&&!released){if(s.ball.z>COURT+1e-9)crossed=true;if(s.hold&&heldAt===null)heldAt=s.ball.z;if(heldAt!==null&&!s.hold)released=true;}
   }});
   assert.ok(armed,'没有触发延迟');assert.ok(heldAt!==null,'接收方没有停下等待');assert.ok(Math.abs(heldAt-COURT)<1e-6,`停在 z=${heldAt}`);
   assert.ok(!crossed,'球越过了发送方的球门线');assert.ok(released,'收到消息后没有继续');

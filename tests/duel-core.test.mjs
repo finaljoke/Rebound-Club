@@ -9,7 +9,8 @@ function duelWith(side,ball,me=0,opp=0){
   const s=createDuel();s.phase='playing';const l={curve:null,kind:null,z0:ball.z,z1:PLAYER_Z,...ball};
   Object.assign(s.ball,side==='a'?l:mirrorBall(l));s.players[side].x=side==='a'?me:-me;s.players[side==='a'?'b':'a'].x=side==='a'?opp:-opp;return s;
 }
-function singleWith(ball,me=0,keeper=0){const g=createGame(0);g.phase='playing';Object.assign(g.ball,{z0:ball.z,z1:PLAYER_Z,...ball});g.player.x=me;g.keeper.x=g.keeper.target=keeper;g.practiceLeft=0;return g;}
+// The single-player level 1 position at the duel's ball speed (design Amendments A3): the same rules, the same pace.
+function singleWith(ball,me=0,keeper=0){const g=createGame(0);g.level={...g.level,speed:DUEL.speed};g.phase='playing';Object.assign(g.ball,{z0:ball.z,z1:PLAYER_Z,...ball});g.player.x=me;g.keeper.x=g.keeper.target=keeper;g.practiceLeft=0;return g;}
 // Steps until the first contact and returns the outgoing velocity in the striker's own view.
 function strikeSingle(g,axis,lead){for(let i=0;i<lead;i++)stepGame(g,1/120,axis);attack(g);for(let i=0;i<120&&!g.swing?.hit&&g.swing;i++)stepGame(g,1/120,axis);return g.swing?.hit?{vx:g.ball.vx,vz:g.ball.vz,kind:g.lastShot}:null;}
 function strikeDuel(s,side,axis,lead){const ins=()=>({[side]:{axis}});for(let i=0;i<lead;i++)stepDuel(s,1/120,ins());duelAttack(s,side);
@@ -26,7 +27,7 @@ test('对战视角：B 的本地视角来回转换不变', ()=>{
 
 test('对战击球与单机一致：同一处境下两边的出球种类、角度、速度都和单机相同', ()=>{
   const sweet=PLAYER_Z+WEAPONS.glove.reach*.5;let cases=0;
-  for(const lead of [0,6,10,14,20])for(const axis of [-1,0,1])for(const me of [-1.2,0,.8]){
+  for(const lead of [0,8,13,18,25])for(const axis of [-1,0,1])for(const me of [-1.2,0,.8]){
     const ball={x:me+.3,z:sweet+1.2,vx:-.4,vz:-DUEL.speed};
     const single=strikeSingle(singleWith(ball,me,1),axis,lead);
     for(const side of ['a','b']){
@@ -38,7 +39,7 @@ test('对战击球与单机一致：同一处境下两边的出球种类、角�
   }
   assert.ok(cases>=40,`实际比对 ${cases} 组`);
   // Soft, clean and perfect all occur among the cases above, so each kind is covered.
-  const kinds=new Set();for(const lead of [0,10,14,20]){const r=strikeSingle(singleWith({x:.3,z:sweet+1.2,vx:-.4,vz:-DUEL.speed},0,1),0,lead);if(r)kinds.add(r.kind==='straight'?'clean':r.kind);}
+  const kinds=new Set();for(const lead of [0,13,18,25]){const r=strikeSingle(singleWith({x:.3,z:sweet+1.2,vx:-.4,vz:-DUEL.speed},0,1),0,lead);if(r)kinds.add(r.kind==='straight'?'clean':r.kind);}
   assert.deepEqual([...kinds].sort(),['clean','perfect','soft']);
 });
 
