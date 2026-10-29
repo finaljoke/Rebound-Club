@@ -1,7 +1,9 @@
 // Duel sync between two copies of a match (P0: both in one page over a loopback; P1: the same clients over WebRTC or a
 // WebSocket relay). Each copy decides only for its own player (duel-core.mjs `auth`): whoever the ball is flying at
 // decides the strike, the goal or the bounce at its end, and sends the result; the other copy jumps its ball to that
-// state, flown on by the message's age so both show the ball at the same place, and eases the jump on screen.
+// state, flown on by the message's age so both show the ball at the same place, and eases the jump on screen. With
+// createClient's sync:'fullflight' a ball struck at this player is not flown on but flies its whole way here, and the
+// round trip is hidden on the ball this player strikes, drawn slower on its way out (see createClient).
 //
 // transport: {send(msg), onMessage(fn(msg, arrivedAt)), close()}. Messages are plain JSON and arrive in order (a WebRTC
 // reliable ordered channel or a WebSocket both give that). Clocks: every message carries its sender's clock `t`. Each
@@ -9,7 +11,7 @@
 // (`mi`); half the difference of the two smallest is the clock offset, assuming the fastest trip takes as long both ways.
 // With 30 position messages a second that settles within about a millisecond under symmetric jitter, where a single
 // round trip (ping/pong, kept for the round-trip time) is off by half the jitter.
-import {createDuel,startDuel,stepDuel,duelAttack,duelSkill,applyMessage,pauseDuel,resumeDuel,other,localBall} from './duel-core.mjs';
+import {COURT,createDuel,startDuel,stepDuel,duelAttack,duelSkill,applyMessage,pauseDuel,resumeDuel,other,localBall} from './duel-core.mjs';
 import {viewFor} from './duel-view.mjs';
 
 function rng(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
@@ -30,16 +32,37 @@ export function createLoopback({delayMs=0,jitterMs=0,seed=1,now}){
   return pair;
 }
 
-const EASE=.15,BALL_EVENTS=['serve','hit','wide'];
+const EASE=.15,BALL_EVENTS=['serve','hit','wide'],STRIKES=['hit','perfect','soft','spin','burst'];
 // now(): this copy's clock in seconds. controller-free: the caller passes this player's input to step().
-export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
-  const opp=other(side),s=createDuel({auth:{[side]:true,[opp]:false}}),inbox=[];
+// sync: 'catchup' flies a decision from the other side on by its age, so both screens show the ball at the same place;
+// the receiver then sees each return a one-way trip late and loses that much time to meet it. 'fullflight' (Issue #3)
+// flies a ball struck at this player its whole way here instead, so the receiver's time does not shrink with latency,
+// and hides the round trip on this player's own strike: drawn slower on its way out (the rules' ball is untouched), it
+// reaches the other player as that player's return arrives. hideCap: the most of the round trip hidden that way (s).
+// catchShare: of the round trip beyond hideCap, the share a receiver flies on; the outgoing ball waits out the rest.
+export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25,sync='catchup',hideCap=.12,catchShare=.5}){
+  const opp=other(side),s=createDuel({auth:{[side]:true,[opp]:false}}),inbox=[],full=sync==='fullflight';
   // offset: the other clock minus ours. trips: our recent (arrival − sent); theirs: the other side's smallest, from `mi`.
   const clock={offset:0,rtt:null,trips:[],mine:Infinity,theirs:Infinity},ease={x:0,z:0,left:0},drawn={x:0,z:0};
+  // This player's outgoing ball as drawn (fullflight): its path since the strike (match time e, this view's x/z), drawn
+  // at k of the match time since, k chosen so it reaches the other player's sweet spot a hidden round trip late.
+  const out={on:false,trail:[],i:0,t0:0,t:0,last:0,k:1},L0={},L1={};
+  const hidden=()=>Math.min(clock.rtt??0,hideCap),beyond=()=>Math.max(0,(clock.rtt??0)-hideCap);
+  function startOut(){
+    const l=localBall(s,side,L0),F=Math.max(.1,(l.z1-l.z)/Math.max(.1,l.vz));
+    Object.assign(out,{on:true,trail:[{e:s.elapsed,x:l.x,z:l.z}],i:0,t0:s.elapsed,t:0,last:s.elapsed,k:F/(F+hidden())});
+  }
+  function outAt(){
+    const tr=out.trail,t=out.t0+out.t;while(out.i<tr.length-2&&tr[out.i+1].e<=t)out.i++;
+    const a=tr[out.i],b=tr[Math.min(out.i+1,tr.length-1)],u=b.e>a.e?Math.min(1,Math.max(0,(t-a.e)/(b.e-a.e))):1;
+    return {x:a.x+(b.x-a.x)*u,z:a.z+(b.z-a.z)*u};
+  }
   let lastPos=-Infinity,lastPing=-Infinity;
   transport.onMessage((msg,at)=>inbox.push({msg,at:at??now()}));
   // stamp: the clock the message's state belongs to (now, unless it was decided before this step's tick ran).
   const send=(msg,stamp=now())=>{msg.t=stamp;if(Number.isFinite(clock.mine))msg.mi=clock.mine;transport.send(msg);};
+  // Full flight: a strike carries the striker's swing, for the other screen to draw the punch with it.
+  const withSwing=m=>{if(full&&m.type==='hit'){const sw=s.players[side].swing;m.swing=sw?{time:sw.time,hit:true,whiffed:false,armed:sw.armed}:null;}return m;};
   function trip(msg,arrived){
     clock.trips.push(arrived-msg.t);if(clock.trips.length>120)clock.trips.shift();clock.mine=Math.min(...clock.trips);
     if(Number.isFinite(msg.mi))clock.theirs=msg.mi;
@@ -53,15 +76,39 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
     const age=at-(msg.t-clock.offset),o=s.players[opp];
     if(msg.type==='pos'){
       o.x=msg.x;o.held=msg.axis;
-      // A new swing starts its own clock (so the punch restarts); an ongoing one runs on (duel-core driftSwing).
-      if(msg.swing&&(!o.swing||msg.swing.time<o.swing.time-.05))o.swing={...msg.swing,time:msg.swing.time+Math.max(0,age)};
+      // A new swing starts its own clock (so the punch restarts); an ongoing one runs on (duel-core driftSwing). Full
+      // flight draws the other player as its messages arrive, so the swing is not flown on either.
+      if(msg.swing&&(!o.swing||msg.swing.time<o.swing.time-.05))o.swing={...msg.swing,time:msg.swing.time+(full?0:Math.max(0,age))};
       else if(!msg.swing&&o.swing&&!o.swing.hit)o.swing=null;
       return;
     }
-    const before=localBall(s,side);applyMessage(s,msg,age);
-    if(BALL_EVENTS.includes(msg.type)&&msg.type!=='serve'){const after=localBall(s,side),dx=before.x-after.x,dz=before.z-after.z;
-      if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}}
+    if(!full){
+      const before=localBall(s,side,L0);applyMessage(s,msg,age);
+      if(BALL_EVENTS.includes(msg.type)&&msg.type!=='serve'){const after=localBall(s,side,L1),dx=before.x-after.x,dz=before.z-after.z;
+        if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}}
+      return;
+    }
+    // Full flight: a strike at this player, or a wide off its far wall, flies on only by its share of the round trip
+    // beyond hideCap; a serve and a burst's charge play from their start. The strike brings its swing, so the punch is
+    // drawn as the ball turns (position messages come 30 times a second, the strike at once). The ball eases from where
+    // it was drawn (the outgoing ball's slower drawing ends here) to where it is drawn now.
+    const flyOn=msg.type==='goal'?age:msg.type==='hit'||msg.type==='wide'?catchShare*beyond():0;
+    if(msg.type==='hit'&&msg.swing&&(!o.swing||!o.swing.hit))o.swing={...msg.swing};
+    const before=drawnAt();applyMessage(s,msg,flyOn);out.on=false;
+    if(msg.type!=='serve'){ease.left=0;const after=drawnAt(),dx=before.x-after.x,dz=before.z-after.z;if(Math.hypot(dx,dz)<4){ease.x=dx;ease.z=dz;ease.left=EASE;}}
   }
+  // The ball as drawn: the state's own, plus what is left of a late correction. Full flight: this player's outgoing ball
+  // where its slower drawing has got to, and during the other player's burst the point it locked the ball at (the
+  // charge the scene plays round it), which this copy's ball, flying on until the message came, may be past.
+  function view(){
+    const k=ease.left/EASE;drawn.x=ease.x*k;drawn.z=ease.z*k;
+    if(!full)return viewFor(s,side,k>0?drawn:null);
+    const l=localBall(s,side,L1);
+    if(s.phase==='skill'&&s.skill?.side===opp){drawn.x+=-s.skill.x-l.x;drawn.z+=COURT-s.skill.z-l.z;}
+    else if(out.on){const p=outAt();drawn.x+=p.x-l.x;drawn.z+=p.z-l.z;}
+    return viewFor(s,side,drawn);
+  }
+  const drawnAt=()=>{const b=view().ball;return {x:b.x,z:b.z};};
   return {
     state:s,side,clock,
     get synced(){return Number.isFinite(clock.theirs)&&Number.isFinite(clock.mine);},
@@ -72,15 +119,19 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25}){
       if(s.phase!=='paused')for(const m of inbox.splice(0))receive(m,t-dt);
       // A spin leaves the glove at once, before this step's tick moves it: its message carries the step's start.
       if(input.skill)duelSkill(s,side,input.skill,input.axis||0);else if(input.swing)duelAttack(s,side);
-      for(const m of s.outbox.splice(0))send(m,t-dt);
+      for(const m of s.outbox.splice(0))send(withSwing(m),t-dt);
       stepDuel(s,dt,{[side]:{axis:input.axis||0}});
-      for(const m of s.outbox.splice(0))send(m);
+      for(const m of s.outbox.splice(0))send(withSwing(m));
+      if(full){
+        for(const e of s.events)if(STRIKES.includes(e.type)&&e.side===side)startOut();
+        if(out.on){const l=localBall(s,side,L0);out.trail.push({e:s.elapsed,x:l.x,z:l.z});out.t+=(s.elapsed-out.last)*out.k;out.last=s.elapsed;
+          if(out.trail.length>1200)out.on=false;}
+      }
       if(t-lastPos>=posEvery){lastPos=t;const p=s.players[side],sw=p.swing;send({type:'pos',x:p.x,axis:p.held,swing:sw?{time:sw.time,hit:sw.hit,whiffed:sw.whiffed,armed:sw.armed}:null});}
       if(t-lastPing>=pingEvery){lastPing=t;send({type:'ping'});}
       ease.left=Math.max(0,ease.left-dt);
     },
     pause(){pauseDuel(s);},resume(){resumeDuel(s);},
-    // The ball as drawn: the state's own, plus what is left of a late correction.
-    view(){const k=ease.left/EASE;drawn.x=ease.x*k;drawn.z=ease.z*k;return viewFor(s,side,k>0?drawn:null);}
+    sync,get outgoing(){return full&&out.on;},view
   };
 }
