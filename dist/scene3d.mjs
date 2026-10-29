@@ -5,14 +5,15 @@ import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
 import {loadCharacterAssets,createActor,toonMaterial,outlineMaterial,addOutline} from './actor.mjs';
-import {CHARACTERS} from './characters.mjs';
+import {ALL_CHARACTERS} from './characters.mjs';
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
-// assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
+// assets: the loaded characters (glTFs by role, see loadCharacterAssets); each world builds its own copies.
 // duel: the two-player court (duel.html, duel-view.mjs). The far figure is the second player and strikes like the
 // striker instead of diving, and the near goal has the same mouth as the far one, since both ends defend it.
+// cast: the roles (characters.mjs ALL_CHARACTERS) of the near and far figures; the club's striker and keeper by default.
 const SINGLE_HINTS={hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock};
-export function buildWorld(assets,{duel=false}={}){
+export function buildWorld(assets,{duel=false,cast={near:'striker',far:'keeper'}}={}){
   // Night arena: a dark venue around a bright court, so the players and the ball carry the picture.
   const scene=new THREE.Scene();scene.background=new THREE.Color('#070b1d');scene.fog=new THREE.Fog('#0d1233',26,70);
   const camera=new THREE.PerspectiveCamera(34,.85,.1,100);
@@ -198,7 +199,7 @@ export function buildWorld(assets,{duel=false}={}){
   }
   // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
   // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
-  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
+  const striker=createActor(assets[cast.near],ALL_CHARACTERS[cast.near],'striker'),goalie=createActor(assets[cast.far],ALL_CHARACTERS[cast.far],'keeper');
   const hero=striker.root,keeper=goalie.root;
   scene.add(hero);hero.position.set(0,0,-1.6);
   // In a duel the second player stands where the striker does, seen from the other end.
@@ -404,16 +405,17 @@ export function buildWorld(assets,{duel=false}={}){
     if(w>0){armTarget.set(tx,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
-  // out toward the ball side, measured once from the model.
-  const keeperReach=(()=>{const out=[],x0=keeper.position.x,y0=keeper.position.y;
+  // out toward the ball side, measured once from the model. The club only: a duel's far figure may have no dive clips.
+  const keeperReach=duel?null:(()=>{const out=[],x0=keeper.position.x,y0=keeper.position.y;
     for(let i=0;i<=10;i++){const o=poseKeeper(i/10,1);keeper.position.x=x0+o.x;keeper.position.y=y0+o.y;poseGoalie(i/10,1,0,1,x0+8,0,0,0,0,null,null);out.push(goalie.reach(x0));}
     poseKeeper(0,1);keeper.position.x=x0;keeper.position.y=y0;poseGoalie(0,1,0,0,0,0,0,0,0,null,null);return out;})();
   // The second player's punch contact frames, measured like the striker's (duel only; it leaves the figure at idle).
   const OPP_PUNCH=duel?{left:goalie.measureReach('punchLeft'),right:goalie.measureReach('punchRight')}:null;
   if(duel)goalie.pose([['idle',0,1]]);
   const oppSwing={last:null,endAt:-9,time:0,left:false};
-  // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius).
-  function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
+  // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius). A duel's far
+  // figure never dives (no measured reach), so it stays at 0.
+  function beatenDive(gap){if(!keeperReach)return 0;const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
   // A save's stretch follows the ball's gap: a ball at the body is a step and a low block, one at the edge of the
   // 0.55 save reach a short dive; the arms go to the ball either way.
   function saveStretch(gap){return .12+.45*Math.max(0,Math.min(1,(gap-.1)/.45));}
@@ -759,6 +761,9 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
 // options: passed to buildWorld ({duel}).
 // renderViews draws several players' views side by side on the one canvas (split screen): each column is its own world,
 // built from the same loaded characters on first use, with its own camera framed for the column's shape.
+// prepare([{near, far}, …]) sets each view's figures (characters.mjs roles): it loads a figure the first time one is
+// asked for and rebuilds only the views whose figures changed. Until then every view has the club's striker and keeper.
+// preload(roles) only fetches figures (say, the next level's keeper) so a later prepare needs no download.
 export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url),options={}){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
   const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
@@ -766,13 +771,24 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
   const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true});
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-  const governor=createQualityGovernor(),worlds=[],aspects=new WeakMap();let world=null,assets=null,width=0,height=0,size=null,last=0;
+  const governor=createQualityGovernor(),worlds=[],aspects=new WeakMap(),casts=new WeakMap(),loading=new Map(),CLUB={near:'striker',far:'keeper'};
+  let world=null,assets=null,width=0,height=0,size=null,last=0;
   function shadowQuality(w){const q=QUALITY_TIERS[governor.tier],shadow=w.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}}
   function applyQuality(){
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,QUALITY_TIERS[governor.tier].pixelRatio));
     worlds.forEach(shadowQuality);width=0;
   }
-  const ready=loadCharacterAssets(load).then(a=>{assets=a;world=buildWorld(assets,options);worlds.push(world);applyQuality();});
+  function build(cast){const w=buildWorld(assets,{...options,cast});casts.set(w,cast);shadowQuality(w);return w;}
+  // A replaced world's GPU copies go (each figure's recoloured atlas is its own). A texture another world still uses
+  // is simply uploaded again the next time it is drawn.
+  function drop(w){w.scene.traverse(o=>{o.geometry?.dispose();for(const m of [o.material].flat()){m?.map?.dispose();m?.dispose?.();}});}
+  const ready=loadCharacterAssets(load).then(a=>{assets=a;for(const role of Object.keys(a))loading.set(ALL_CHARACTERS[role].file,Promise.resolve(a[role]));
+    world=build(CLUB);worlds.push(world);applyQuality();});
+  // Roles sharing a file (the gold keeper wears the keeper's) share one download.
+  async function fetchRoles(roles){
+    await ready;
+    for(const role of new Set(roles))if(!assets[role]){const file=ALL_CHARACTERS[role].file;if(!loading.has(file))loading.set(file,load(file));assets[role]=await loading.get(file);}
+  }
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
@@ -790,6 +806,13 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
   return {
     ready,
     get quality(){return governor.tier;},
+    preload:fetchRoles,
+    async prepare(list){
+      await fetchRoles(list.flatMap(c=>[c.near,c.far]));
+      list.forEach((c,i)=>{const w=worlds[i],was=w&&casts.get(w);if(was&&was.near===c.near&&was.far===c.far)return;
+        const next=build({near:c.near,far:c.far});if(w)drop(w);worlds[i]=next;});
+      world=worlds[0];
+    },
     render(state,axis,reduceMotion,shake=0){
       if(!world||!fit())return;
       renderer.setScissorTest(false);renderer.setViewport(0,0,width,height);draw(world,state,axis,reduceMotion,shake,width/height);
@@ -797,7 +820,7 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
     // views: [{state, axis, shake}], left to right. renderer.info then counts the whole frame.
     renderViews(views,reduceMotion){
       if(!world||!fit())return;
-      while(worlds.length<views.length){const w=buildWorld(assets,options);shadowQuality(w);worlds.push(w);}
+      while(worlds.length<views.length)worlds.push(build(CLUB));
       const cw=width/views.length;renderer.info.autoReset=false;renderer.info.reset();renderer.setScissorTest(true);
       views.forEach((v,i)=>{renderer.setViewport(i*cw,0,cw,height);renderer.setScissor(i*cw,0,cw,height);draw(worlds[i],v.state,v.axis,reduceMotion,v.shake||0,cw/height);});
       renderer.setScissorTest(false);renderer.info.autoReset=true;

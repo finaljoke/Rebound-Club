@@ -32,3 +32,23 @@ export const CHARACTERS={
       punchRight:'Unarmed_Melee_Attack_Punch_A',punchLeft:'Unarmed_Melee_Attack_Punch_B'}
   }
 };
+// More figures from the same KayKit pack and rig, loaded only when a part needs one (the duel's fighters, duel.html).
+// They may play either end, so they carry the striker's and the keeper's clips, at the keeper's height (see above).
+const EXTRA_CLIPS={idle:'Unarmed_Idle',strafeLeft:'Running_Strafe_Left',strafeRight:'Running_Strafe_Right',
+  diveLeft:'Dodge_Left',diveRight:'Dodge_Right',cheer:'Cheer',hurt:'Hit_B',
+  punchRight:'Unarmed_Melee_Attack_Punch_A',punchLeft:'Unarmed_Melee_Attack_Punch_B'};
+export const EXTRA_CHARACTERS={
+  // Shares the Rogue's atlas: its greens would sink into the turf, so they become teal.
+  hooded:{file:'models/hooded.glb',source:'Rogue_Hooded.glb',height:1.85,number:'07',bones:KAYKIT_BONES,
+    glove:{color:'#1ec8b4',cuff:'#fff3e0',size:.19},rim:'#7fe9ff',
+    recolor:(h,s,l)=>h>110&&h<210&&s>.2?[186,.8,Math.min(.6,l*1.05+.05)]:null,clips:EXTRA_CLIPS},
+  // Silver armour with red trim reads on the green court as it is (the helmet is a prop and is dropped).
+  knight:{file:'models/knight.glb',source:'Knight.glb',height:1.85,number:'04',bones:KAYKIT_BONES,
+    glove:{color:'#2f6bff',cuff:'#f4f6ff',size:.19},rim:'#ffd9a8',clips:EXTRA_CLIPS},
+  // Purple robes as they are (the hat is a prop and is dropped).
+  mage:{file:'models/mage.glb',source:'Mage.glb',height:1.85,number:'10',bones:KAYKIT_BONES,
+    glove:{color:'#ff4f9a',cuff:'#fff3e0',size:.19},rim:'#c9a8ff',clips:EXTRA_CLIPS}
+};
+export const ALL_CHARACTERS={...CHARACTERS,...EXTRA_CHARACTERS};
+// Which figure plays each duel fighter (duel-core FIGHTERS).
+export const FIGHTER_LOOKS={allround:'striker',power:'keeper',speed:'hooded',wall:'knight',trick:'mage'};

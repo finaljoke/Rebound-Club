@@ -45,3 +45,11 @@ body[data-split][data-screen] .hud{left:50%;transform:translateX(-50%)}
 body[data-split][data-screen] .court-badge{left:50%;right:auto;top:calc(var(--top) + 50px);transform:translateX(-50%)}
 body[data-split][data-screen] .result-pop{left:50%;top:calc(var(--top) + 90px);transform:translateX(-50%)}
 body[data-split][data-screen] .result-pop.show{animation-name:verdict}
+/* Fighter picks (one row per player) and the picked fighter's strengths and weaknesses. */
+.fighter-group .duel-choice{height:38px;padding:0 6px;font-size:13px}
+.fighter-role{margin:-4px 0 0;font-size:12px;line-height:1.5;color:var(--muted);min-height:18px}
+.fighter-role b{color:var(--ink)}
+@media(max-height:570px) and (min-width:701px){
+  body[data-screen=ready] .fighter-group .duel-choice{height:32px;font-size:12px}
+  body[data-screen=ready] .fighter-role{font-size:11px}
+}

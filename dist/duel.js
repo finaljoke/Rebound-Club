@@ -1,7 +1,8 @@
 // Duel page (P0, on one device). Against the duel bot: two copies of the match joined by a loopback that can simulate
 // network latency (duel-net.mjs), the bot playing the far copy from its own view, this page showing the near one. Two
 // players on one keyboard: one copy decided for both. The court is the club's 3D scene in duel mode (duel-view.mjs).
-import {DUEL,DUEL_ACTIVE,createDuel,startDuel,stepDuel,duelAttack,duelSkill,duelSkillStatus,duelSwingPreview,pauseDuel,resumeDuel} from './duel-core.mjs';
+import {DUEL,DUEL_ACTIVE,FIGHTERS,FIGHTER_IDS,createDuel,startDuel,stepDuel,duelAttack,duelSkill,duelSkillStatus,duelSwingPreview,pauseDuel,resumeDuel,other} from './duel-core.mjs';
+import {FIGHTER_LOOKS} from './characters.mjs';
 import {viewFor} from './duel-view.mjs';
 import {createLoopback,createClient} from './duel-net.mjs';
 import {createBot} from './duel-bot.mjs';
@@ -21,8 +22,11 @@ function goFullscreen(){const d=document.documentElement;if(coarse&&document.ful
 // Player A: on-screen buttons and A/D (plus the arrows against the bot). Player B on the same keyboard: the arrows. Two
 // players on one keyboard play split screen, each in its own half from behind its own glove, so B's ← is B's own left.
 const input=createInput(),keysB=new Set();
-let mode='ai',latency=0,soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null,opener='a';
-const idle=createDuel();
+let mode='ai',latency=0,soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null,opener='a',loadingCast=false;
+// Each player's fighter (duel-core FIGHTERS); the lobby court shows the picked figures (characters.mjs FIGHTER_LOOKS).
+const picks={a:'allround',b:'allround'};
+let idle=createDuel({picks});
+const castFor=side=>({near:FIGHTER_LOOKS[picks[side]],far:FIGHTER_LOOKS[picks[other(side)]]});
 const names=()=>mode==='ai'?{a:'我',b:'对手'}:{a:'1P',b:'2P'};
 const axisB=()=>(keysB.has('ArrowRight')?1:0)-(keysB.has('ArrowLeft')?1:0);
 const stateOf=()=>match?match.state:idle;
@@ -32,11 +36,11 @@ function newMatch(){
   input.reset();keysB.clear();
   if(mode==='ai'){
     const now=()=>performance.now()/1000,seed=(Math.random()*2**31)>>>0,loop=createLoopback({delayMs:latency,jitterMs:latency*.2,seed,now});
-    const a=createClient({side:'a',transport:loop[0],now}),b=createClient({side:'b',transport:loop[1],now});
+    const a=createClient({side:'a',transport:loop[0],now,picks}),b=createClient({side:'b',transport:loop[1],now,picks});
     match={mode,loop,a,b,bot:createBot({seed:seed+1}),state:a.state,pending:{a:{swing:false,skill:null}}};a.start();b.start();
   }else{
     // Who takes the first serve alternates from one match to the next.
-    const s=createDuel();s.serveTo=opener;opener=opener==='a'?'b':'a';
+    const s=createDuel({picks});s.serveTo=opener;opener=opener==='a'?'b':'a';
     match={mode,state:s,pending:{a:{swing:false,skill:null},b:{swing:false,skill:null}}};startDuel(s);
   }
   sound('start');
@@ -106,7 +110,7 @@ function phaseUI(){
   const s=stateOf(),phase=s.phase;if(phase===uiPhase)return;uiPhase=phase;
   const previous=document.body.dataset.screen,screen=screenFor(phase);document.body.dataset.screen=screen;
   const split=match?.mode==='local';document.body.toggleAttribute('data-split',split);$('split-hud').hidden=!split;
-  $('start-match').disabled=phase!=='ready'||!court;
+  $('start-match').disabled=phase!=='ready'||!court||loadingCast;
   if(phase==='paused')overlay(`<div class='overlay-symbol'>${icon('shield')}</div><span class='eyebrow'>暂停</span><h3>喘口气，再上。</h3><p>比分和球都会保留。</p><button class='primary-button' data-action='resume'>继续对战 ${icon('arrow')}</button><div class='pause-actions'><button class='secondary-button' data-action='retry'>重新开始</button><button class='secondary-button' data-action='setup'>返回设置</button></div>`);
   else if(phase==='won'){
     const n=names(),win=s.winner,title=mode==='ai'?(win==='a'?'你赢了':'对手赢了'):`${n[win]}获胜`;
@@ -115,7 +119,23 @@ function phaseUI(){
   }else $('overlay').hidden=true;
   if(previous!==screen)queueMicrotask(()=>{if(screen==='paused'||screen==='result')$('overlay-content').querySelector('.primary-button')?.focus({preventScroll:true});else if(screen==='match')$('court').focus({preventScroll:true});});
 }
+// Loads the figures the match needs (one view against the bot, two side by side), then starts it.
+async function startMatch(){
+  if(loadingCast)return;loadingCast=true;$('start-match').disabled=true;say('正在载入角色……');
+  try{await court.prepare(mode==='local'?[castFor('a'),castFor('b')]:[castFor('a')]);say('');newMatch();}
+  catch{say('角色模型载入失败，请检查网络后重试。');}
+  finally{loadingCast=false;uiPhase='';phaseUI();}
+}
+const fighterLine=id=>`<b>${FIGHTERS[id].name}</b>：${FIGHTERS[id].role}`;
 function setupUI(){
+  const who=mode==='ai'?{a:'我的角色',b:'对手角色'}:{a:'1P 角色',b:'2P 角色'};
+  for(const side of ['a','b']){
+    const group=$(`pick-${side}`);
+    if(!group.querySelector('[data-pick]'))for(const id of FIGHTER_IDS)group.insertAdjacentHTML('beforeend',`<button type="button" class="duel-choice" data-pick="${id}" data-side="${side}" role="radio" aria-checked="false">${FIGHTERS[id].name}</button>`);
+    for(const b of group.querySelectorAll('[data-pick]'))b.setAttribute('aria-checked',String(b.dataset.pick===picks[side]));
+    $(`pick-${side}-label`).textContent=who[side];$(`role-${side}`).innerHTML=fighterLine(picks[side]);
+    $(`side-${side}`).querySelector('.split-tag').textContent=`${side==='a'?'1P':'2P'} · ${FIGHTERS[picks[side]].name}`;
+  }
   for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-checked',String(b.dataset.mode===mode));
   for(const b of document.querySelectorAll('[data-latency]'))b.setAttribute('aria-checked',String(Number(b.dataset.latency)===latency));
   $('mode-local').hidden=coarse;$('latency-group').hidden=mode!=='ai';
@@ -175,15 +195,16 @@ function unsupported(){court=null;$('start-match').disabled=true;say('对战需�
   overlay(`<div class='duel-unsupported'><h3>对战需要 3D 画面</h3><p>当前设备或浏览器不支持 WebGL2，暂时无法进行对战。</p><a class='primary-button' href='./index.html'>返回单机</a></div>`);booted();}
 try{
   const r=create3DRenderer($('court'),undefined,{duel:true});$('court').dataset.renderer='3d';
-  r.ready.then(()=>{court=r;uiPhase='';booted();},()=>{r.dispose();unsupported();});
+  r.ready.then(()=>{court=r;uiPhase='';booted();court.prepare([castFor('a')]).catch(()=>{});},()=>{r.dispose();unsupported();});
 }catch{unsupported();}
 
 document.querySelector('.app').addEventListener('click',e=>{
-  const el=e.target.closest('[data-action],[data-mode],[data-latency]');if(!el)return;
+  const el=e.target.closest('[data-action],[data-mode],[data-latency],[data-pick]');if(!el)return;
   if(el.dataset.mode&&!match){mode=el.dataset.mode;setupUI();return;}
+  if(el.dataset.pick&&!match){picks[el.dataset.side]=el.dataset.pick;idle=createDuel({picks});setupUI();court?.prepare([castFor('a')]).catch(()=>{});return;}
   if(el.dataset.latency!==undefined&&!match){latency=Number(el.dataset.latency);setupUI();return;}
   const action=el.dataset.action;
-  if(action==='start'&&!match&&court){goFullscreen();newMatch();}
+  if(action==='start'&&!match&&court){goFullscreen();startMatch();}
   if(action==='resume')resume();
   if(action==='retry'){newMatch();}
   if(action==='setup'){match=null;input.reset();keysB.clear();}

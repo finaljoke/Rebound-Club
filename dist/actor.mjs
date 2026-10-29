@@ -5,12 +5,13 @@ import * as THREE from './vendor/three.module.min.js';
 import {mergeGeometries} from './vendor/BufferGeometryUtils.js';
 import {clone as cloneRig} from './vendor/SkeletonUtils.js';
 import {buildGlove,mergeRigidParts} from './art.mjs';
-import {CHARACTERS} from './characters.mjs';
+import {CHARACTERS,ALL_CHARACTERS} from './characters.mjs';
 
-// Both characters as {scene, animations}; `load(url)` is GLTFLoader.loadAsync in the page and a file parser in tests.
-export async function loadCharacterAssets(load){
-  const out={};
-  for(const [role,c] of Object.entries(CHARACTERS))out[role]=await load(c.file);
+// Characters by role as {scene, animations} (the club's two unless `roles` names others, characters.mjs); `load(url)`
+// is GLTFLoader.loadAsync in the page and a file parser in tests. Roles sharing a file share one load.
+export async function loadCharacterAssets(load,roles=Object.keys(CHARACTERS)){
+  const out={},files=new Map();
+  for(const role of roles){const file=ALL_CHARACTERS[role].file;if(!files.has(file))files.set(file,load(file));out[role]=await files.get(file);}
   return out;
 }
 

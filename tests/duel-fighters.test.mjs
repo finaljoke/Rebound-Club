@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {PLAYER_Z,WEAPONS,POWER,AIM_SHARE} from '../dist/core.mjs';
 import {createDuel,stepDuel,duelAttack,duelHitZone,mirrorBall,localBall,fighterKit,FIGHTERS,FIGHTER_IDS,DUEL} from '../dist/duel-core.mjs';
 import {createLoopback,createClient} from '../dist/duel-net.mjs';
+import {FIGHTER_LOOKS,ALL_CHARACTERS} from '../dist/characters.mjs';
 
 const near=(a,b,eps=1e-9)=>Math.abs(a-b)<eps;
 // A duel in play with the given picks and the ball placed in `side`'s own view.
@@ -20,9 +21,10 @@ test('全能就是单机的拳套：数值相同，未知的角色也按全能�
   }
 });
 
-test('每个角色都有名字和定位，而且一项强点配一项弱点（全能除外）', ()=>{
+test('每个角色都有名字、定位、对应的模型，而且一项强点配一项弱点（全能除外）', ()=>{
+  assert.deepEqual(Object.keys(FIGHTER_LOOKS).sort(),[...FIGHTER_IDS].sort());
   for(const id of FIGHTER_IDS){
-    const f=FIGHTERS[id];assert.ok(f.name&&f.role,id);
+    const f=FIGHTERS[id];assert.ok(f.name&&f.role,id);assert.ok(ALL_CHARACTERS[FIGHTER_LOOKS[id]],`${id} 的模型`);
     if(id!=='allround')assert.ok(f.role.includes('；'),`${id} 的定位要写出强点和弱点`);
   }
 });
