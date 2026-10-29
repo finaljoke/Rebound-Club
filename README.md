@@ -69,8 +69,9 @@ npm start
 - 本地：`npm start` 的 4173 端口就带 `/api/ws`（`scripts/dev-rooms.mjs`、`dev-ws.mjs`）。零依赖；放行任何来源，方便局域网里的设备连进来。
 - Cloudflare：
   - `server/worker.mjs`：一个 Worker 加两个 Durable Object，每个房间一个，房间码登记处一个。
-  - 配置在 `server/wrangler.jsonc`，允许的来源写在 `ALLOWED_ORIGINS`。
+  - 配置在 `server/wrangler.jsonc`，允许的来源写在 `ALLOWED_ORIGINS`：正式站和预览站。
   - wrangler 只装在 `server/` 里：`cd server && npx wrangler dev`，在 8787 端口跑真实运行时。
+    - 开发服务器打开的页面加 `?api=ws://127.0.0.1:8787/api/ws` 连它时，要临时在 `ALLOWED_ORIGINS` 里加上 `http://localhost:4173`。`wrangler dev` 不让 `--var` 和 `.dev.vars` 改这个值。
   - 房间关闭时，日志里有一行 `room-closed`，记下它收了多少条消息，用来核对计费。
 - 客户端连接：`dist/duel-link.mjs` 的 `createLink`，就是 `createClient` 要的传输接口（`send`、`onMessage`、`close`），另带页面用的控制消息、房间信息和事件。
   - 先走房间中转；WebRTC 直连一打开就换过去。直连 2.5 秒没动静，就退回中转并重新找路线；稳定 5 秒后再换回直连。
@@ -88,7 +89,7 @@ npm start
   - `tests/online-*.test.mjs`、`tests/duel-link.test.mjs`；
   - `node scripts/online-qa.mjs`（需要本地服务）：两个浏览器页面真实走 WebRTC，检查直连、掐断后退回中转、在连接上打对战，再在对战页上用三个页面完整走一遍擂台房（开局、暂停、观战、换人、断线）；
   - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝，再跑一遍擂台房的开局、观战流和换人。
-  - 对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
+  - 默认以正式站的来源连，`--origin=` 可以换；对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
 
 ## 验证
 
