@@ -10,9 +10,10 @@
 // beating after that before play goes back to it; keep: the room closes after 10 minutes without a message (its
 // heartbeat does not count), so one goes every minute; ping/pingLost: the room heartbeat, and how long without its
 // answer the socket counts as gone; retry: seconds between tries to get the room back; batch: bytes of frames sent as
-// one relay message when many go at once (the room takes 8 KB a message, and 120 at once).
+// one relay message when many go at once (the room takes 8 KB a message, and 120 at once); redial/redials: how long the
+// host waits for a direct channel before both start a fresh connection, and how many times.
 export const LINK={ice:[{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'}],heartbeat:.5,silence:2.5,settle:5,
-  keep:60,ping:15,pingLost:40,retry:[1,2,4,8,15],batch:6000};
+  keep:60,ping:15,pingLost:40,retry:[1,2,4,8,15],batch:6000,redial:10,redials:5};
 // Refusals and closings that end a link for good (server/room.mjs CLOSE); any other drop is tried again.
 const FINAL=['not-found','full','expired','origin','rate','busy','token','too-big','too-fast','bad-message','replaced'];
 
@@ -58,7 +59,7 @@ export function createStream({sendOn,deliver}){
 export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.WebSocket,RTC=globalThis.RTCPeerConnection,now=()=>performance.now()/1000,cfg=LINK}={}){
   const on={message:null,control:null,event:null},emit=e=>on.event?.(e);
   let ws=null,info=null,peer=false,closed=false,mode='relay',tries=0,lastPong=now(),pc=null,dc=null,polite=false,makingOffer=false,ignoreOffer=false;
-  let lastDirect=-Infinity,beatSince=null,fellAt=-Infinity;
+  let lastDirect=-Infinity,beatSince=null,fellAt=-Infinity,dialedAt=0,redials=0;
   const stream=createStream({sendOn,deliver:(kind,msg)=>kind==='g'?on.message?.(msg,now()):on.control?.(msg)});
   let settle,fail;const ready=new Promise((res,rej)=>{settle=res;fail=rej;});ready.catch(()=>{});
 
@@ -99,24 +100,33 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
   function setPeer(present){
     if(present===peer)return;peer=present;emit({type:'peer',present});
     // The room drops what it cannot hand over, so on the other player's return the unconfirmed frames go again.
-    if(present){if(mode==='relay')stream.resend();startPeer();}else{dropPeer();setMode('relay');}
+    if(present){redials=0;if(mode==='relay')stream.resend();startPeer();}else{dropPeer();setMode('relay');}
   }
   const signal=data=>{if(ws?.readyState===1)ws.send(JSON.stringify({type:'signal',data}));};
 
-  // WebRTC, by MDN's perfect negotiation: both sides run it, the guest gives way when offers cross.
+  // WebRTC, by MDN's perfect negotiation (the guest gives way when offers cross). Only the host opens the data channel,
+  // so a connection starts with one offer: two crossing at the start left Chrome, now and then, with a polite side that
+  // gathered no address after giving way.
   function startPeer(){
     if(!RTC||pc||!peer||closed)return;
-    const conn=pc=new RTC({iceServers:cfg.ice});makingOffer=false;ignoreOffer=false;
-    dc=conn.createDataChannel('match',{negotiated:true,id:0,ordered:true});
-    dc.onmessage=e=>{if(conn!==pc)return;const t=now();if(t-lastDirect>cfg.silence)beatSince=t;lastDirect=t;
-      let f;try{f=JSON.parse(e.data);}catch{return;}stream.receive(f);
-      if(mode==='relay'&&(fellAt<0||t-fellAt>=cfg.settle)&&t-beatSince>=(fellAt<0?0:cfg.settle))setMode('direct');};
-    dc.onopen=()=>{if(conn===pc)dc.send(JSON.stringify(stream.heardFrame()));};
+    const conn=pc=new RTC({iceServers:cfg.ice});makingOffer=false;ignoreOffer=false;dialedAt=now();
+    const wire=channel=>{
+      dc=channel;
+      channel.onmessage=e=>{if(conn!==pc)return;const t=now();if(t-lastDirect>cfg.silence)beatSince=t;lastDirect=t;
+        let f;try{f=JSON.parse(e.data);}catch{return;}stream.receive(f);
+        if(mode==='relay'&&(fellAt<0||t-fellAt>=cfg.settle)&&t-beatSince>=(fellAt<0?0:cfg.settle))setMode('direct');};
+      channel.onopen=()=>{if(conn===pc)channel.send(JSON.stringify(stream.heardFrame()));};
+    };
+    if(polite)conn.ondatachannel=e=>{if(conn===pc&&e.channel.label==='match')wire(e.channel);};
+    else wire(conn.createDataChannel('match',{ordered:true}));
     conn.onicecandidate=({candidate})=>{if(candidate&&conn===pc)signal({candidate});};
     conn.onnegotiationneeded=async()=>{try{makingOffer=true;await conn.setLocalDescription();if(conn===pc)signal({description:conn.localDescription});}catch{}finally{makingOffer=false;}};
     conn.onconnectionstatechange=()=>{if(conn===pc&&conn.connectionState==='failed')conn.restartIce?.();};
   }
-  async function onSignal({description,candidate}={}){
+  // A fresh start, both sides at once: the host asks for it when no direct channel opened in time.
+  function redial(){dropPeer();startPeer();}
+  async function onSignal({description,candidate,redial:again}={}){
+    if(again){redial();return;}
     if(!pc)startPeer();const conn=pc;if(!conn)return;
     try{
       if(description){
@@ -135,7 +145,9 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
   function every(fn,s){const id=setInterval(fn,s*1000);timers.push(id);}
   every(()=>{if(dc?.readyState==='open')dc.send(JSON.stringify(stream.heardFrame()));
     // The direct channel went quiet: play goes to the relay at once, and the connection tries a fresh route.
-    if(mode==='direct'&&now()-lastDirect>cfg.silence){fellAt=now();setMode('relay');pc?.restartIce?.();}},cfg.heartbeat);
+    if(mode==='direct'&&now()-lastDirect>cfg.silence){fellAt=now();setMode('relay');pc?.restartIce?.();}
+    // No direct channel yet (or none again): the host starts both sides afresh, a few times.
+    if(!polite&&RTC&&peer&&mode==='relay'&&dc?.readyState!=='open'&&now()-dialedAt>cfg.redial&&redials<cfg.redials){redials++;signal({redial:true});redial();}},cfg.heartbeat);
   every(()=>{if(ws?.readyState!==1)return;ws.send('ping');if(now()-lastPong>cfg.pingLost)ws.close(4900,'lost');},cfg.ping);
   every(()=>{if(ws?.readyState===1)ws.send(JSON.stringify({type:'keep'}));},cfg.keep);
   function stop(){for(const id of timers){clearTimeout(id);clearInterval(id);}dropPeer();}
