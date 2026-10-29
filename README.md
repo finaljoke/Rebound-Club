@@ -43,7 +43,7 @@ npm start
 
 ## 联机房间（P1，进行中，Issue #5）
 
-两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。现在只有服务端，对战页还没接上。
+两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。现在有服务端和客户端连接，对战页还没接上。
 
 - 规则：`server/room.mjs`（纯 JS：房间码、进房、令牌、转发、限流、过期），本地替身和 Cloudflare Worker 共用。
 - 接口：WebSocket `/api/ws?create=1`（开房）、`?code=XXXXX`（凭码进房）、`?room=<id>[&token=<令牌>]`（邀请链接、断线回来）。
@@ -56,8 +56,14 @@ npm start
   - 配置在 `server/wrangler.jsonc`，允许的来源写在 `ALLOWED_ORIGINS`。
   - wrangler 只装在 `server/` 里：`cd server && npx wrangler dev`，在 8787 端口跑真实运行时。
   - 房间关闭时，日志里有一行 `room-closed`，记下它收了多少条消息，用来核对计费。
+- 客户端连接：`dist/duel-link.mjs` 的 `createLink`，就是 `createClient` 要的传输接口（`send`、`onMessage`、`close`），另带页面用的控制消息、房间信息和事件。
+  - 先走房间中转；WebRTC 直连一打开就换过去。直连 2.5 秒没动静，就退回中转并重新找路线；稳定 5 秒后再换回直连。
+  - 每帧带序号和「已收到到第几帧」，换通道时重发对方没确认的，所以不丢、不重、不乱序。
+  - 房间的 WebSocket 断了，会凭令牌自动重连。
+  - 只用 STUN，不接 TURN。房间地址：开发服务器（4173 端口）打开的页面连本机替身，其余连 `rebound-api.snowiscoming.com`，页面加 `?api=` 可以指定。
 - 检查：
-  - `tests/online-*.test.mjs`；
+  - `tests/online-*.test.mjs`、`tests/duel-link.test.mjs`；
+  - `node scripts/online-qa.mjs`（需要本地服务）：两个浏览器页面真实走 WebRTC，检查直连、掐断后退回中转、在连接上打对战；
   - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝。
   - 对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
 
