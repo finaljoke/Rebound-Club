@@ -757,6 +757,8 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
 // Returns at once; `ready` settles when the characters are loaded and the world is built (nothing is drawn before).
 // A failed load rejects `ready`, and the caller falls back to the 2D court.
 // options: passed to buildWorld ({duel}).
+// renderViews draws several players' views side by side on the one canvas (split screen): each column is its own world,
+// built from the same loaded characters on first use, with its own camera framed for the column's shape.
 export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url),options={}){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
   const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
@@ -764,25 +766,42 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
   const renderer=new THREE.WebGLRenderer({canvas,context,antialias:true});
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
-  const governor=createQualityGovernor();let world=null,width=0,height=0,size=null,last=0;
+  const governor=createQualityGovernor(),worlds=[],aspects=new WeakMap();let world=null,assets=null,width=0,height=0,size=null,last=0;
+  function shadowQuality(w){const q=QUALITY_TIERS[governor.tier],shadow=w.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}}
   function applyQuality(){
-    const q=QUALITY_TIERS[governor.tier];renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,q.pixelRatio));
-    const shadow=world.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}
-    width=0;
+    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,QUALITY_TIERS[governor.tier].pixelRatio));
+    worlds.forEach(shadowQuality);width=0;
   }
-  const ready=loadCharacterAssets(load).then(assets=>{world=buildWorld(assets,options);applyQuality();});
+  const ready=loadCharacterAssets(load).then(a=>{assets=a;world=buildWorld(assets,options);worlds.push(world);applyQuality();});
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
+  // Sizes the canvas (when it changed) and steps the quality governor; false while there is nothing to draw into.
+  function fit(){
+    if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return false;
+    const now=performance.now();if(last&&governor.sample(now-last))applyQuality();last=now;
+    if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);}
+    return true;
+  }
+  function draw(w,state,axis,reduceMotion,shake,aspect){
+    if(aspects.get(w)!==aspect){aspects.set(w,aspect);w.resize(aspect);}
+    w.update(state,axis,reduceMotion,last/1000);w.shake(reduceMotion?0:shake);renderer.render(w.scene,w.camera);
+  }
   return {
     ready,
     get quality(){return governor.tier;},
     render(state,axis,reduceMotion,shake=0){
-      if(!world)return;if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
-      const now=performance.now();if(last&&governor.sample(now-last))applyQuality();last=now;
-      if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);world.resize(width/height);}
-      world.update(state,axis,reduceMotion,now/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
+      if(!world||!fit())return;
+      renderer.setScissorTest(false);renderer.setViewport(0,0,width,height);draw(world,state,axis,reduceMotion,shake,width/height);
     },
-    dispose(){observer?.disconnect();world?.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    // views: [{state, axis, shake}], left to right. renderer.info then counts the whole frame.
+    renderViews(views,reduceMotion){
+      if(!world||!fit())return;
+      while(worlds.length<views.length){const w=buildWorld(assets,options);shadowQuality(w);worlds.push(w);}
+      const cw=width/views.length;renderer.info.autoReset=false;renderer.info.reset();renderer.setScissorTest(true);
+      views.forEach((v,i)=>{renderer.setViewport(i*cw,0,cw,height);renderer.setScissor(i*cw,0,cw,height);draw(worlds[i],v.state,v.axis,reduceMotion,v.shake||0,cw/height);});
+      renderer.setScissorTest(false);renderer.info.autoReset=true;
+    },
+    dispose(){observer?.disconnect();for(const w of worlds)w.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
   };
 }

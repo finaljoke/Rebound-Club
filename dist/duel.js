@@ -18,13 +18,13 @@ new MutationObserver(()=>{const box=$('feedback').parentElement;box.classList.ad
   .observe($('feedback'),{childList:true,characterData:true,subtree:true});
 function goFullscreen(){const d=document.documentElement;if(coarse&&document.fullscreenEnabled&&!document.fullscreenElement&&d.requestFullscreen)d.requestFullscreen({navigationUI:'hide'}).catch(()=>{});}
 
-// Player A: on-screen buttons and A/D (plus the arrows against the bot). Player B on the same keyboard: the arrows, in
-// screen directions; B faces the other way, so its own left is the screen's right.
+// Player A: on-screen buttons and A/D (plus the arrows against the bot). Player B on the same keyboard: the arrows. Two
+// players on one keyboard play split screen, each in its own half from behind its own glove, so B's ← is B's own left.
 const input=createInput(),keysB=new Set();
-let mode='ai',latency=0,soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null;
+let mode='ai',latency=0,soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null,opener='a';
 const idle=createDuel();
-const names=()=>mode==='ai'?{a:'我',b:'对手'}:{a:'近端',b:'远端'};
-const axisB=()=>(keysB.has('ArrowLeft')?1:0)-(keysB.has('ArrowRight')?1:0);
+const names=()=>mode==='ai'?{a:'我',b:'对手'}:{a:'1P',b:'2P'};
+const axisB=()=>(keysB.has('ArrowRight')?1:0)-(keysB.has('ArrowLeft')?1:0);
 const stateOf=()=>match?match.state:idle;
 const viewOf=()=>match?.mode==='ai'?match.a.view():viewFor(stateOf(),'a');
 
@@ -34,7 +34,11 @@ function newMatch(){
     const now=()=>performance.now()/1000,seed=(Math.random()*2**31)>>>0,loop=createLoopback({delayMs:latency,jitterMs:latency*.2,seed,now});
     const a=createClient({side:'a',transport:loop[0],now}),b=createClient({side:'b',transport:loop[1],now});
     match={mode,loop,a,b,bot:createBot({seed:seed+1}),state:a.state,pending:{a:{swing:false,skill:null}}};a.start();b.start();
-  }else{const s=createDuel();match={mode,state:s,pending:{a:{swing:false,skill:null},b:{swing:false,skill:null}}};startDuel(s);}
+  }else{
+    // Who takes the first serve alternates from one match to the next.
+    const s=createDuel();s.serveTo=opener;opener=opener==='a'?'b':'a';
+    match={mode,state:s,pending:{a:{swing:false,skill:null},b:{swing:false,skill:null}}};startDuel(s);
+  }
   sound('start');
 }
 // A press is queued for the next step, so it goes through the same path (and network stamp) as everything else.
@@ -42,7 +46,7 @@ function press(side,kind){
   if(!match||(mode==='ai'&&side!=='a'))return;const s=match.state;
   if(kind==='swing'){if(s.phase==='playing')match.pending[side].swing=true;return;}
   if(!DUEL_ACTIVE.includes(s.phase))return;
-  const st=duelSkillStatus(s,side,kind);if(!st.ok){sound('deny');if(side==='a'||mode==='local')pop(SKILL_STATE[st.reason]||'现在不行',true);return;}
+  const st=duelSkillStatus(s,side,kind);if(!st.ok){sound('deny');popFor(side,SKILL_STATE[st.reason]||'现在不行',true);return;}
   match.pending[side].skill=kind;
 }
 function stepMatch(dt){
@@ -61,6 +65,11 @@ function suspend(){if(!match||!DUEL_ACTIVE.includes(match.state.phase))return;if
 function resume(){if(!match)return;if(match.mode==='ai'){match.a.resume();match.b.resume();}else resumeDuel(match.state);}
 
 function pop(text,miss=false){const el=$('hit-pop');el.textContent=text;el.className=`hit-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');}
+// A player's own caption: in its half of a split screen, else the page's (the bot's captions are not shown).
+function popFor(side,text,miss=false){
+  if(mode!=='local'){if(side==='a')pop(text,miss);return;}
+  const el=$(`pop-${side}`);el.textContent=text;el.className=`split-pop${miss?' miss':''}`;void el.offsetWidth;el.classList.add('show');
+}
 function verdict(text,kind){const el=$('result-pop');el.textContent=text;el.className=`result-pop ${kind}`;void el.offsetWidth;el.classList.add('show');}
 const say=text=>{$('feedback').textContent=text;};
 const AIM={left:'往左 ←',right:'往右 →',straight:'直线 ↑'};
@@ -71,10 +80,10 @@ function events(){
     if(['hit','perfect','soft','spin','burst'].includes(e.type)){
       const f=hitFeel('glove',e.type);sound(f.sound,mine?f.intensity:f.intensity*.7);if(e.type==='perfect'||e.type==='burst')sound('impact');
       if(shown){buzz(e.type);const shot=s.players[e.side].lastShot;
-        pop((both?`${who} · `:'')+(e.type==='perfect'?'重炮！':e.type==='soft'?'软球':e.type==='spin'?'旋转':e.type==='burst'?'爆发！':AIM[shot]||'好球！'),e.type==='soft');}
+        popFor(e.side,e.type==='perfect'?'重炮！':e.type==='soft'?'软球':e.type==='spin'?'旋转':e.type==='burst'?'爆发！':AIM[shot]||'好球！',e.type==='soft');}
       if(e.type==='perfect'||e.type==='burst')shake=Math.max(shake,.06);
     }
-    if(e.type==='whiff'&&shown){sound('whiff');pop((both?`${who} · `:'')+whiffHint(s.players[e.side].whiff),true);}
+    if(e.type==='whiff'&&shown){sound('whiff');popFor(e.side,whiffHint(s.players[e.side].whiff),true);}
     if(e.type==='wall')sound('wall');
     if(e.type==='wide'){sound('wide');verdict(`${n[e.side]}打偏了 · 球弹回来`,'info');}
     if(e.type==='burstStart'){sound('charge');say(`${who}蓄力爆发……`);}
@@ -96,6 +105,7 @@ function screenFor(phase){return phase==='ready'?'ready':phase==='paused'?'pause
 function phaseUI(){
   const s=stateOf(),phase=s.phase;if(phase===uiPhase)return;uiPhase=phase;
   const previous=document.body.dataset.screen,screen=screenFor(phase);document.body.dataset.screen=screen;
+  const split=match?.mode==='local';document.body.toggleAttribute('data-split',split);$('split-hud').hidden=!split;
   $('start-match').disabled=phase!=='ready'||!court;
   if(phase==='paused')overlay(`<div class='overlay-symbol'>${icon('shield')}</div><span class='eyebrow'>暂停</span><h3>喘口气，再上。</h3><p>比分和球都会保留。</p><button class='primary-button' data-action='resume'>继续对战 ${icon('arrow')}</button><div class='pause-actions'><button class='secondary-button' data-action='retry'>重新开始</button><button class='secondary-button' data-action='setup'>返回设置</button></div>`);
   else if(phase==='won'){
@@ -111,7 +121,7 @@ function setupUI(){
   $('mode-local').hidden=coarse;$('latency-group').hidden=mode!=='ai';
   $('duel-keys').innerHTML=coarse?'按住左右箭头移动，点挥击回球；能量够时可放旋转、爆发。':mode==='ai'
     ?'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b><br>网络模拟：两边隔着设定的延迟同步，用来感受联机手感。'
-    :'<b>近端</b> A / D 移动 · 空格挥击 · Q 旋转 · E 爆发<br><b>远端</b> ← / → 移动 · ↑ 挥击 · , 旋转 · . 爆发<br>两人都按屏幕方向移动和瞄准。';
+    :'<b>1P 左半屏</b> A / D 移动 · 空格挥击 · Q 旋转 · E 爆发<br><b>2P 右半屏</b> ← / → 移动 · ↑ 挥击 · , 旋转 · . 爆发<br>分屏：各看自己那半边，按自己的左右移动和瞄准。';
   $('spin-key').textContent=mode==='local'?'50 · Q':'50 · J';$('burst-key').textContent=mode==='local'?'100 · E':'100 · K';
 }
 function hud(){
@@ -131,13 +141,32 @@ function hud(){
     b.setAttribute('aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
   const v=viewOf(),pv=playing&&v.ball.vz<0&&duelSkillStatus(s,'a','spin').reason!=='energy'?v.hints.spinPreview(v,axis):null;$('spin-dir').textContent=pv?(pv.dir==='left'?' ↺':' ↻'):'';
   for(const [id,direction] of [['move-left',-1],['move-right',1]]){const b=$(id),on=input.pressed(direction);b.disabled=!active;b.classList.toggle('pressed',on);b.setAttribute('aria-pressed',String(on));}
+  if(match?.mode==='local')splitHud(s,{a:axis,b:axisB()});
+}
+// Split-screen panels, one per player, from the same rules as the single player's buttons. Written only on change.
+const shown=new Map();
+function put(id,key,value){const k=`${id}.${key}`;if(shown.get(k)===value)return;shown.set(k,value);const el=$(id);if(key==='text')el.textContent=value;else if(key==='class')el.className=value;else el.style[key]=value;}
+const SKILL_KEYS={a:{spin:'Q',burst:'E'},b:{spin:',',burst:'.'}};
+function splitHud(s,axes){
+  const playing=s.phase==='playing';
+  for(const side of ['a','b']){
+    const p=s.players[side],axis=axes[side],word=axis<0?'往左 ←':axis>0?'往右 →':'直线 ↑',cue=playing&&!p.swing?duelSwingPreview(s,side,axis):{kind:'none'};
+    put(`cue-${side}`,'text',p.swing?'收招中':cue.kind==='perfect'?`重炮时机 · ${word}`:cue.kind==='clean'?`现在挥击 · ${word}`:'看准再出手');
+    put(`cue-${side}`,'class',`split-cue${['clean','perfect'].includes(cue.kind)?' ready':''}`);
+    put(`energy-${side}`,'width',`${p.energy}%`);
+    for(const kind of ['spin','burst']){const st=duelSkillStatus(s,side,kind);
+      put(`${kind}-${side}`,'text',`${kind==='spin'?'旋转':'爆发'} ${SKILL_KEYS[side][kind]} · ${SKILL_STATE[st.ok?'ok':st.reason]}`);put(`${kind}-${side}`,'class',st.ok?'ready':'');}
+  }
 }
 function frame(time){
   const dt=lastTime?Math.min((time-lastTime)/1000,.05):0;lastTime=time;
   if(match&&dt>0)stepMatch(dt);
   events();
   shake*=Math.exp(-dt*9);if(shake<.005||reduceMotion)shake=0;
-  phaseUI();hud();court?.render(viewOf(),input.axis(),reduceMotion,shake);requestAnimationFrame(frame);
+  phaseUI();hud();
+  if(match?.mode==='local'){const s=match.state;court?.renderViews([{state:viewFor(s,'a'),axis:input.axis(),shake},{state:viewFor(s,'b'),axis:axisB(),shake}],reduceMotion);}
+  else court?.render(viewOf(),input.axis(),reduceMotion,shake);
+  requestAnimationFrame(frame);
 }
 
 // The court. A duel needs the 3D scene; without WebGL2 (or if the characters fail to load) the page says so.
