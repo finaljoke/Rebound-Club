@@ -58,7 +58,15 @@ try{
     assert.equal((await state()).axis,1);assert.equal((await state()).swing,false);await page.keyboard.up('Space');assert.equal((await state()).axis,0);
     await page.locator('#court').focus();await page.keyboard.down('ArrowRight');await page.waitForTimeout(30);assert.equal((await state()).axis,1);await page.keyboard.up('ArrowRight');
     await touch('touchStart',[left]);await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal((await state()).phase,'paused');assert.equal((await state()).axis,0);await touch('touchEnd',[]);
-    results.push({viewport,buttons:layout.buttons.map(({id,width,height})=>({id,width,height})),checks:'hold/release, dual touch swing/skill, opposites, outside release, cancel, pause, blur, keyboard'});
+    // A long press anywhere (court, HUD text, beside the buttons) opens no text-selection menu (iOS / WeChat).
+    // Chrome drops the iOS-only -webkit-touch-callout when parsing, so it is read from the stylesheet source. The
+    // targets are collected after that await: the HUD re-renders meanwhile, and a detached node's events reach nothing.
+    const press=await page.evaluate(async()=>{const css=await (await fetch(document.querySelector('link[href*="styles.css"]').href)).text();
+      const style=getComputedStyle(document.body),targets=[document.getElementById('court'),document.body,...document.querySelectorAll('.hud *,.game-footer *')];
+      return {select:style.userSelect||style.webkitUserSelect,callout:/body\{[^}]*-webkit-touch-callout:none/.test(css)?'none':'missing',
+        open:targets.filter(t=>['contextmenu','selectstart'].some(type=>t.dispatchEvent(new Event(type,{bubbles:true,cancelable:true})))).map(t=>t.id||t.className||t.tagName)};});
+    assert.deepEqual(press,{select:'none',callout:'none',open:[]},JSON.stringify(press));
+    results.push({viewport,buttons:layout.buttons.map(({id,width,height})=>({id,width,height})),checks:'hold/release, dual touch swing/skill, opposites, outside release, cancel, pause, blur, keyboard, long press'});
     await context.close();
   }
   assert.deepEqual(errors,[]);await writeFile('artifacts/controls/qa.json',JSON.stringify({results,errors},null,2));
