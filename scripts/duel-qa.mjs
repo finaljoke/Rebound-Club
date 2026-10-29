@@ -41,6 +41,13 @@ for(const viewport of [{width:390,height:844},{width:844,height:390}]){
   await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});await p.screenshot({path:`${OUT}/match-${tag}.png`});
   // Peak over a stretch of play, for the report (perf-qa does not measure it).
   let peak=0;for(let i=0;i<20;i++){peak=Math.max(peak,await calls(p));await p.waitForTimeout(50);}draws.peakInPlay=peak;
+  // A long press anywhere (court, HUD, the move and skill buttons) opens no text-selection menu (iOS / WeChat), as in
+  // control-qa for the club. Chrome drops the iOS-only -webkit-touch-callout, so it is read from the stylesheet source.
+  const press=await p.evaluate(async()=>{const css=await (await fetch(document.querySelector('link[href*="styles.css"]').href)).text();
+    const style=getComputedStyle(document.body),targets=[document.getElementById('court'),document.body,...document.querySelectorAll('.hud *,.controls *')];
+    return {select:style.userSelect||style.webkitUserSelect,callout:/body\{[^}]*-webkit-touch-callout:none/.test(css)?'none':'missing',
+      open:targets.filter(t=>['contextmenu','selectstart'].some(type=>t.dispatchEvent(new Event(type,{bubbles:true,cancelable:true})))).map(t=>t.id||t.tagName)};});
+  assert.deepEqual(press,{select:'none',callout:'none',open:[]},`${tag} 长按 ${JSON.stringify(press)}`);
   assert.ok(await playPoint(p),`${tag} 比分应变化`);await p.waitForTimeout(250);await p.screenshot({path:`${OUT}/point-${tag}.png`});
   await p.setViewportSize(viewport.width>viewport.height?{width:390,height:844}:{width:844,height:390});await p.waitForTimeout(400);draws.otherOrientation=await calls(p);
   for(const k of ['lobby','match','otherOrientation'])assert.ok(draws[k]<=110,`${tag} ${k} 绘制调用 ${draws[k]}`);

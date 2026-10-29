@@ -183,6 +183,8 @@ for(const [id,direction] of [['move-left',-1],['move-right',1]]){
   for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,e=>input.up(e.pointerId));
   button.addEventListener('contextmenu',e=>e.preventDefault());
 }
+// As in the club (game.js): a long press anywhere (iOS, WeChat) must not open the text menu.
+for(const type of ['contextmenu','selectstart'])document.addEventListener(type,e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
   const active=!!match&&DUEL_ACTIVE.includes(match.state.phase);if(!active)return;
   if(e.code==='Escape'){suspend();return;}
