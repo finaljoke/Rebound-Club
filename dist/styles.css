@@ -74,6 +74,17 @@ body[data-tutorial=on] .court-badge{display:none}
 .skill-button.burst.ready{background:#ffe6d8;border-color:var(--orange);box-shadow:0 3px 0 #bf4f2f}
 .skill-button.ready .skill-state{color:#1f5a46;font-weight:800}
 .skill-button.low{opacity:.72}
+/* A full bar (energy 100, game.js / duel.js .charged): the burst button stays lit, breathing a glow, with a small flame
+   flickering on its top edge, and the bar burns, until the burst is spent; reduced motion keeps them lit and still. */
+.skill-button.burst{position:relative}
+.skill-button.burst.charged{background:linear-gradient(180deg,#ffb35e,#ee6943);border-color:#ffd27a;color:#fff7e6;animation:burstGlow 1.1s ease-in-out infinite}
+.skill-button.burst.charged .skill-state{color:#fff7e6;font-weight:800}
+.skill-button.burst.charged::before{content:'';position:absolute;left:50%;top:-12px;width:16px;height:20px;margin-left:-8px;border-radius:50% 50% 45% 45%/62% 62% 38% 38%;background:radial-gradient(ellipse at 50% 72%,#fff6c2 0 20%,#ffb02e 44%,#ff5a1f 70%,#ff5a1f00 73%);filter:drop-shadow(0 0 5px #ff8a3d);transform-origin:50% 90%;animation:burstFlame .42s ease-in-out infinite alternate;pointer-events:none}
+.energy.charged{box-shadow:0 0 9px 2px #ff8a3d99}
+.energy.charged i{background:linear-gradient(90deg,#ff5a1f,#ffd27a,#ff8a3d,#ff5a1f);background-size:200% 100%;animation:energyFire .9s linear infinite}
+@keyframes burstGlow{0%,100%{box-shadow:0 3px 0 #bf4f2f,0 0 8px 1px #ff8a3d80}50%{box-shadow:0 3px 0 #bf4f2f,0 0 20px 5px #ffb02ecc}}
+@keyframes burstFlame{0%{transform:scale(.88,.96) rotate(-5deg);opacity:.85}100%{transform:scale(1.08,1.16) rotate(5deg);opacity:1}}
+@keyframes energyFire{to{background-position:-200% 0}}
 .skill-button:active{transform:translateY(2px)}
 body[data-tutorial=on] .skill-dock{visibility:hidden}
 @media(max-width:380px){.skill-dock{width:96px}.skill-button{min-width:44px}.attack-button{width:64px;height:64px}}

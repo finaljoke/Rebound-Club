@@ -1,6 +1,7 @@
 // Duel page (P0, on one device). Against the duel bot: two copies of the match joined by a loopback that can simulate
 // network latency (duel-net.mjs), the bot playing the far copy from its own view, this page showing the near one. Two
 // players on one keyboard: one copy decided for both. The court is the club's 3D scene in duel mode (duel-view.mjs).
+import {SKILLS} from './core.mjs';
 import {DUEL,DUEL_ACTIVE,createDuel,startDuel,stepDuel,duelAttack,duelSkill,duelSkillStatus,duelSwingPreview,pauseDuel,resumeDuel} from './duel-core.mjs';
 import {viewFor} from './duel-view.mjs';
 import {createLoopback,createClient} from './duel-net.mjs';
@@ -126,6 +127,8 @@ function hud(){
   const status={ready:'热身准备',serving:'发球准备',playing:'对决进行中',goal:goalWord,skill:'爆发蓄力',paused:'已暂停',won:'对战结束'};
   $('court-status').textContent=s.phase==='serving'?`发球倒数 ${Math.max(1,Math.ceil(s.countdown*2))}`:playing&&s.rally>1.001?`对决进行中 · 球速 ×${s.rally.toFixed(2)}`:status[s.phase]||'';
   $('energy-fill').style.width=`${me.energy}%`;$('energy-value').textContent=me.energy;$('energy').setAttribute('aria-valuenow',me.energy);
+  // A full bar keeps the burst button lit with its flame (styles.css .charged) until it is spent, as in the club.
+  const charged=me.energy>=SKILLS.burst.cost;$('skill-burst').classList.toggle('charged',charged);$('energy').classList.toggle('charged',charged);
   for(const kind of ['spin','burst']){const st=duelSkillStatus(s,'a',kind),b=$(`skill-${kind}`),label=SKILL_STATE[st.ok?'ok':st.reason];
     b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');$(`${kind}-state`).textContent=label;
     b.setAttribute('aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
