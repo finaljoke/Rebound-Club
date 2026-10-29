@@ -1,0 +1,18 @@
+// The online rooms' Worker (server/worker.mjs, Issue #5), on its own subdomain of the site's domain, apart from the static
+// site (which needs no change). `npx wrangler deploy` here creates the subdomain's DNS record and certificate; locally,
+// `npx wrangler dev` runs it on port 8787.
+{
+  "name": "rebound-api",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [
+      {"name": "ROOMS", "class_name": "Room"},
+      {"name": "HUB", "class_name": "RoomHub"}
+    ]
+  },
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["Room", "RoomHub"]}],
+  "routes": [{"pattern": "rebound-api.snowiscoming.com", "custom_domain": true}],
+  // Pages allowed to connect, comma-separated: the site, and the dev server for local play.
+  "vars": {"ALLOWED_ORIGINS": "https://reboundclub.snowiscoming.com,http://localhost:4173"}
+}

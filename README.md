@@ -41,6 +41,26 @@ npm start
 - 文件：`dist/duel-core.mjs`（规则，参数在 `DUEL`）、`duel-bot.mjs`（只通过输入行动的 AI）、`duel-view.mjs`（翻成「我在近端」的单机形状交给 `scene3d`）、`duel-net.mjs`（消息、追帧、回环、`createClient`）、`duel.html/js/css`；`scene3d.mjs` 的 `buildWorld(assets,{duel:true})` 让远端角色出拳、近端球门与远端同宽；音效在 `sfx.mjs`，单机与对战共用。
 - 检查：`tests/duel-*.test.mjs`，`node scripts/duel-qa.mjs`（需要本地服务），`node scripts/duel-balance.mjs [局数] [种子]`（两个 AI 整局对打的观察数据，同参数输出逐字相同）。
 
+## 联机房间（P1，进行中，Issue #5）
+
+两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。现在只有服务端，对战页还没接上。
+
+- 规则：`server/room.mjs`（纯 JS：房间码、进房、令牌、转发、限流、过期），本地替身和 Cloudflare Worker 共用。
+- 接口：WebSocket `/api/ws?create=1`（开房）、`?code=XXXXX`（凭码进房）、`?room=<id>[&token=<令牌>]`（邀请链接、断线回来）。
+  - 服务端发 `joined`、`peer`、`signal`、`relay`、`error`；客户端发 `signal`、`relay`、`bye`，以及心跳 `ping`（回 `pong`）。
+  - 房间 10 分钟收不到消息就关闭（心跳不算），所以在房间里的客户端每分钟要发一条消息。
+  - 被拒或被断开时，关闭码和原因见 `CLOSE`。
+- 本地：`npm start` 的 4173 端口就带 `/api/ws`（`scripts/dev-rooms.mjs`、`dev-ws.mjs`）。零依赖；放行任何来源，方便局域网里的设备连进来。
+- Cloudflare：
+  - `server/worker.mjs`：一个 Worker 加两个 Durable Object，每个房间一个，房间码登记处一个。
+  - 配置在 `server/wrangler.jsonc`，允许的来源写在 `ALLOWED_ORIGINS`。
+  - wrangler 只装在 `server/` 里：`cd server && npx wrangler dev`，在 8787 端口跑真实运行时。
+  - 房间关闭时，日志里有一行 `room-closed`，记下它收了多少条消息，用来核对计费。
+- 检查：
+  - `tests/online-*.test.mjs`；
+  - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝。
+  - 对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
+
 ## 验证
 
 ```powershell
