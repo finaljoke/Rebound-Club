@@ -5,3 +5,4 @@ artifacts/
 vendor-download/
 .superpowers/
 /release/
+.wrangler/
