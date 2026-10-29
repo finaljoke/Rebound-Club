@@ -62,9 +62,12 @@ for(const [name,viewport,mobile] of [['390x844',{width:390,height:844},true],['3
   R.twoFingerSpin={energy:[before.energy,mid.energy],lastShot:mid.lastShot,curving:mid.curve,kind:mid.kind,keptMoving:later.px>mid.px+.2};
   // Repeated burst presses: one charge, one launch.
   R.fullEnergy=await earnFull(p);await waitReady(p,'burst');const b0=await st(p);
+  // A full bar lights the burst button and the bar (.charged) and spending the burst puts them out.
+  const lit=()=>p.evaluate(()=>['skill-burst','energy'].map(id=>document.getElementById(id).classList.contains('charged')));const litFull=await lit();
   for(let i=0;i<3;i++)await p.keyboard.press('KeyK');await p.waitForTimeout(240);await p.screenshot({path:`${OUT}/burst-closeup-390.png`});
   const during=await st(p);await click(p,'#pause');const pa=await st(p);await p.waitForTimeout(600);const pb=await st(p);
   await click(p,'[data-action=resume]');await waitPhase(p,'playing');await p.waitForTimeout(70);await p.screenshot({path:`${OUT}/burst-launch-390.png`});const after=await st(p);
+  R.charged={full:litFull,spent:await lit()};if(String(R.charged.full)!=='true,true'||String(R.charged.spent)!=='false,false')throw Error('满气提示 '+JSON.stringify(R.charged));
   R.burst={energy:[b0.energy,during.energy,after.energy],skillDuring:during.phase,seqDelta:after.seq-b0.seq,hitsDelta:after.hits-b0.hits,pausedFrozen:pa.skill?.time===pb.skill?.time&&pa.bx===pb.bx,lastShot:after.lastShot,ballSpeed:Math.hypot(after.vx,after.vz).toFixed(2),kind:after.kind};
   // Retry in the middle of a burst: clean new match, no stale launch.
   await earnFull(p);await waitReady(p,'burst');await p.keyboard.press('KeyK');await p.waitForTimeout(150);await click(p,'#pause');await click(p,'[data-action=retry]');
