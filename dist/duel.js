@@ -1,6 +1,8 @@
 // Duel page (P0, on one device). Against the duel bot: two copies of the match joined by a loopback that can simulate
-// network latency (duel-net.mjs), the bot playing the far copy from its own view, this page showing the near one. Two
-// players on one keyboard: one copy decided for both. The court is the club's 3D scene in duel mode (duel-view.mjs).
+// network latency (duel-net.mjs), the bot playing the far copy from its own view, this page showing the near one. The
+// copies sync the way chosen (duel-net.mjs `sync`); a blind run picks one at random and names it only on the result
+// screen, so the two can be compared without knowing which is which. Two players on one keyboard: one copy decided for
+// both. The court is the club's 3D scene in duel mode (duel-view.mjs).
 import {SKILLS} from './core.mjs';
 import {DUEL,DUEL_ACTIVE,createDuel,startDuel,stepDuel,duelAttack,duelSkill,duelSkillStatus,duelSwingPreview,pauseDuel,resumeDuel} from './duel-core.mjs';
 import {viewFor} from './duel-view.mjs';
@@ -22,9 +24,11 @@ function goFullscreen(){const d=document.documentElement;if(coarse&&document.ful
 // Player A: on-screen buttons and A/D (plus the arrows against the bot). Player B on the same keyboard: the arrows, in
 // screen directions; B faces the other way, so its own left is the screen's right.
 const input=createInput(),keysB=new Set();
-let mode='ai',latency=0,soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null;
+// latency: each message's one-way delay (ms); the buttons show the round trip, as a game's ping does.
+let mode='ai',latency=0,sync='catchup',soundOn=true,match=null,uiPhase='',lastTime=0,shake=0,court=null;
 const idle=createDuel();
 const names=()=>mode==='ai'?{a:'我',b:'对手'}:{a:'近端',b:'远端'};
+const SYNC_NAMES={catchup:'追帧',fullflight:'出球放慢'};
 const axisB=()=>(keysB.has('ArrowLeft')?1:0)-(keysB.has('ArrowRight')?1:0);
 const stateOf=()=>match?match.state:idle;
 const viewOf=()=>match?.mode==='ai'?match.a.view():viewFor(stateOf(),'a');
@@ -33,8 +37,9 @@ function newMatch(){
   input.reset();keysB.clear();
   if(mode==='ai'){
     const now=()=>performance.now()/1000,seed=(Math.random()*2**31)>>>0,loop=createLoopback({delayMs:latency,jitterMs:latency*.2,seed,now});
-    const a=createClient({side:'a',transport:loop[0],now}),b=createClient({side:'b',transport:loop[1],now});
-    match={mode,loop,a,b,bot:createBot({seed:seed+1}),state:a.state,pending:{a:{swing:false,skill:null}}};a.start();b.start();
+    const used=sync==='blind'?(Math.random()<.5?'catchup':'fullflight'):sync;
+    const a=createClient({side:'a',transport:loop[0],now,sync:used}),b=createClient({side:'b',transport:loop[1],now,sync:used});
+    match={mode,sync:used,blind:sync==='blind',loop,a,b,bot:createBot({seed:seed+1}),state:a.state,pending:{a:{swing:false,skill:null}}};a.start();b.start();
   }else{const s=createDuel();match={mode,state:s,pending:{a:{swing:false,skill:null},b:{swing:false,skill:null}}};startDuel(s);}
   sound('start');
 }
@@ -101,7 +106,7 @@ function phaseUI(){
   if(phase==='paused')overlay(`<div class='overlay-symbol'>${icon('shield')}</div><span class='eyebrow'>暂停</span><h3>喘口气，再上。</h3><p>比分和球都会保留。</p><button class='primary-button' data-action='resume'>继续对战 ${icon('arrow')}</button><div class='pause-actions'><button class='secondary-button' data-action='retry'>重新开始</button><button class='secondary-button' data-action='setup'>返回设置</button></div>`);
   else if(phase==='won'){
     const n=names(),win=s.winner,title=mode==='ai'?(win==='a'?'你赢了':'对手赢了'):`${n[win]}获胜`;
-    overlay(`<div class='overlay-symbol ${mode==='ai'&&win!=='a'?'loss':''}'>${icon(mode==='ai'&&win!=='a'?'retry':'trophy')}</div><span class='eyebrow'>双人对战 · 先进 ${DUEL.goals} 球</span><h3>${title}</h3><div class='result-score'>${s.score.a}<small> : ${s.score.b}</small></div><div class='result-subtitle'>${n.a} ${s.score.a} : ${s.score.b} ${n.b}</div><button class='primary-button' data-action='retry'>再来一局 ${icon('retry')}</button><div class='result-links'><button class='secondary-button' data-action='setup'>返回设置</button><a class='secondary-button' href='./index.html'>返回单机</a></div>`);
+    overlay(`<div class='overlay-symbol ${mode==='ai'&&win!=='a'?'loss':''}'>${icon(mode==='ai'&&win!=='a'?'retry':'trophy')}</div><span class='eyebrow'>双人对战 · 先进 ${DUEL.goals} 球</span><h3>${title}</h3><div class='result-score'>${s.score.a}<small> : ${s.score.b}</small></div><div class='result-subtitle'>${n.a} ${s.score.a} : ${s.score.b} ${n.b}</div>${mode==='ai'?`<div class='result-subtitle' id='result-sync'>${match.blind?'盲测揭晓：这局用的是':'同步方式：'}「${SYNC_NAMES[match.sync]}」 · 往返 ${latency*2} 毫秒</div>`:''}<button class='primary-button' data-action='retry'>再来一局 ${icon('retry')}</button><div class='result-links'><button class='secondary-button' data-action='setup'>返回设置</button><a class='secondary-button' href='./index.html'>返回单机</a></div>`);
     input.reset();keysB.clear();
   }else $('overlay').hidden=true;
   if(previous!==screen)queueMicrotask(()=>{if(screen==='paused'||screen==='result')$('overlay-content').querySelector('.primary-button')?.focus({preventScroll:true});else if(screen==='match')$('court').focus({preventScroll:true});});
@@ -109,9 +114,10 @@ function phaseUI(){
 function setupUI(){
   for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-checked',String(b.dataset.mode===mode));
   for(const b of document.querySelectorAll('[data-latency]'))b.setAttribute('aria-checked',String(Number(b.dataset.latency)===latency));
-  $('mode-local').hidden=coarse;$('latency-group').hidden=mode!=='ai';
+  for(const b of document.querySelectorAll('[data-sync]'))b.setAttribute('aria-checked',String(b.dataset.sync===sync));
+  $('mode-local').hidden=coarse;$('latency-group').hidden=$('sync-group').hidden=mode!=='ai';
   $('duel-keys').innerHTML=coarse?'按住左右箭头移动，点挥击回球；能量够时可放旋转、爆发。':mode==='ai'
-    ?'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b><br>网络模拟：两边隔着设定的延迟同步，用来感受联机手感。'
+    ?'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b><br>网络模拟：两边隔着设定的往返延迟同步，用来感受联机手感。同步方式：「追帧」是现在的做法；「出球放慢」让飞向你的球完整飞完，延迟藏在你打出去的球上；「盲测」每局随机选一种，结束时揭晓。'
     :'<b>近端</b> A / D 移动 · 空格挥击 · Q 旋转 · E 爆发<br><b>远端</b> ← / → 移动 · ↑ 挥击 · , 旋转 · . 爆发<br>两人都按屏幕方向移动和瞄准。';
   $('spin-key').textContent=mode==='local'?'50 · Q':'50 · J';$('burst-key').textContent=mode==='local'?'100 · E':'100 · K';
 }
@@ -153,9 +159,10 @@ try{
 }catch{unsupported();}
 
 document.querySelector('.app').addEventListener('click',e=>{
-  const el=e.target.closest('[data-action],[data-mode],[data-latency]');if(!el)return;
+  const el=e.target.closest('[data-action],[data-mode],[data-latency],[data-sync]');if(!el)return;
   if(el.dataset.mode&&!match){mode=el.dataset.mode;setupUI();return;}
   if(el.dataset.latency!==undefined&&!match){latency=Number(el.dataset.latency);setupUI();return;}
+  if(el.dataset.sync&&!match){sync=el.dataset.sync;setupUI();return;}
   const action=el.dataset.action;
   if(action==='start'&&!match&&court){goFullscreen();newMatch();}
   if(action==='resume')resume();
