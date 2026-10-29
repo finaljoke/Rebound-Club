@@ -269,8 +269,12 @@ export function buildWorld(assets,{duel=false}={}){
   const banner=screenLayer(screenTexture((g,w,h)=>{g.fillStyle='#ee6943';g.beginPath();g.moveTo(w*.06,h*.12);g.lineTo(w,h*.12);g.lineTo(w*.94,h*.88);g.lineTo(0,h*.88);g.fill();
     g.fillStyle='#bf4f2f';g.fillRect(0,h*.82,w,h*.06);g.fillStyle='#fff3d7';g.font=`900 ${h*.52}px "PingFang SC","Microsoft YaHei",Arial`;g.textBaseline='middle';g.fillText('爆发',w*.14,h*.5);
     g.font=`800 ${h*.2}px Arial`;g.fillStyle='#ffe2b8';g.fillText('B U R S T',w*.47,h*.5);g.fillStyle='#fff3d7';for(let i=0;i<3;i++){const x=w*(.8+i*.045);g.beginPath();g.moveTo(x,h*.3);g.lineTo(x+h*.12,h*.5);g.lineTo(x,h*.7);g.lineTo(x+h*.05,h*.5);g.fill();}},1024,256),'#ffffff',22);
-  const flash=screenLayer(null,'#fff6dc',23);hud.add(vignette,lines,banner,flash);
-  const burstFx={aura,sparks,hand:handGlow,halo,shock,vignette,lines,banner,flash};let kick=0,lastReduce=false;
+  // The other player's burst (duel) cuts in from the other side, in a deeper red, so it never reads as one's own.
+  const foeBanner=screenLayer(screenTexture((g,w,h)=>{g.fillStyle='#c2342a';g.beginPath();g.moveTo(0,h*.12);g.lineTo(w*.94,h*.12);g.lineTo(w,h*.88);g.lineTo(w*.06,h*.88);g.fill();
+    g.fillStyle='#8e2219';g.fillRect(0,h*.82,w,h*.06);g.fillStyle='#fff3d7';g.font=`900 ${h*.46}px "PingFang SC","Microsoft YaHei",Arial`;g.textBaseline='middle';g.fillText('对手爆发',w*.1,h*.5);
+    g.font=`800 ${h*.17}px Arial`;g.fillStyle='#ffd0b8';g.fillText('I N C O M I N G',w*.6,h*.5);},1024,256),'#ffffff',22);
+  const flash=screenLayer(null,'#fff6dc',23);hud.add(vignette,lines,banner,foeBanner,flash);
+  const burstFx={aura,sparks,hand:handGlow,halo,shock,vignette,lines,banner,foeBanner,flash};let kick=0,lastReduce=false;
   const tint={whiff:['#f4f6df',.55,.1,.28],none:['#f4f6df',.5,.08,.25],soft:['#f3df8a',.85,.14,.28],clean:['#ffffff',1,.3,.45],perfect:['#ffffff',1,.22,.92]};
   const ballMarker=mesh(new THREE.RingGeometry(.25,.28,32),new THREE.MeshBasicMaterial({color:'#f6d97b',transparent:true,opacity:.6,depthWrite:false}),scene,0,.04,-4,false);ballMarker.rotation.x=-Math.PI/2;
   // A ground shadow under the airborne ball makes its depth and landing point readable.
@@ -411,7 +415,7 @@ export function buildWorld(assets,{duel=false}={}){
   // The second player's punch contact frames, measured like the striker's (duel only; it leaves the figure at idle).
   const OPP_PUNCH=duel?{left:goalie.measureReach('punchLeft'),right:goalie.measureReach('punchRight')}:null;
   if(duel)goalie.pose([['idle',0,1]]);
-  const oppSwing={last:null,endAt:-9,time:0,left:false};
+  const oppSwing={last:null,endAt:-9,time:0,left:false,fk:null};
   // A beaten keeper's fingertips just miss: the stretch stops 0.2 short of the ball's centre (about its radius).
   function beatenDive(gap){const room=Math.max(keeperReach[0],gap-.2);let d=0;while(d<10&&keeperReach[d+1]<=room)d++;return d/10;}
   // A save's stretch follows the ball's gap: a ball at the body is a step and a low block, one at the edge of the
@@ -515,6 +519,12 @@ export function buildWorld(assets,{duel=false}={}){
     const B=SKILLS.burst,D=B.duration,sk=s.skill?.kind==='burst'?s.skill:null,kt=sk?Math.min(D,sk.time):0,kp=kt/D,sm=smooth;
     trackGoal(s,now,reduceMotion,pose,sm);
     const wind=sk?(kt<B.strike?sm((kt-B.freeze)/(B.strike-B.freeze)):Math.max(0,1-sm((kt-B.strike)/.05))):0,blow=sk?(kt<B.strike?0:kt<B.release?sm((kt-B.strike)/(B.release-B.strike)):1-sm((kt-B.release)/(D-B.release))):0;
+    // The other player's burst (duel, duel-view opponent.burst): the same charge on the same clock, played round the far
+    // figure as seen from here (aura, sparks, ring, shockwave), with a ring on the locked ball closing in on the launch
+    // and its own cut-in banner. The camera stays on the normal frame, so the receiver can get set for the ball.
+    const fk=duel&&s.opponent?.burst?.kind==='burst'?s.opponent.burst:null,ft=fk?Math.min(D,fk.time):0;
+    const ck=sk||fk,ct=sk?kt:ft,cx=sk?s.player.x:pose.kx,cz=sk?-s.player.z:-OPP_Z;
+    const foeDim=fk?(ft<B.freeze?ft/B.freeze:ft<B.release?1:Math.max(0,1-(ft-B.release)/(D-B.release))):0;
     lastReduce=reduceMotion;
     // Character clocks: in play the match clock (it stops for pauses and hit-stops, so a pose is a function of the
     // state); in the lobby and on the result screen the scene clock, so the players keep breathing.
@@ -554,9 +564,15 @@ export function buildWorld(assets,{duel=false}={}){
       const oc=os.left?OPP_PUNCH.left:OPP_PUNCH.right;let oTime=0,oWeight=0;
       if(osw){oTime=punchTime(osw.time,w,oc.t);oWeight=Math.min(1,osw.time/.025);}
       else if(s.elapsed-os.endAt<.12){const e=s.elapsed-os.endAt;oTime=punchTime(os.time+e,w,oc.t);oWeight=1-e/.12;}
+      // Its burst: the punch cocked back through the charge, thrown to the contact frame at the strike and held there
+      // until the ball leaves; the launch then hands over to its swing clock, which starts at contact.
+      const foeWind=fk?sm((ft-B.freeze)/(B.strike-B.freeze))*(ft<B.strike?1:0):0;
+      if(fk){if(os.fk!==fk){os.fk=fk;os.left=s.ball.x>k.x+.08;}const fc=os.left?OPP_PUNCH.left:OPP_PUNCH.right;
+        oTime=ft<B.strike?fc.t*.35*foeWind:fc.t*(.35+.65*sm((ft-B.strike)/.08));oWeight=sm(ft/B.freeze);}
       const ow=kw*(1-oWeight);
       keeper.rotation.z=0;keeper.position.set(pose.kx,0,-OPP_Z);
       goalie.pose([[oMoving?(oStep>0?'strafeLeft':'strafeRight'):'idle',oMoving?animT*1.25:animT,1-oWeight-ow,true],[os.left?'punchLeft':'punchRight',oTime,oWeight],['cheer',now-react.at,ow]]);
+      if(foeWind)goalie.twist('chest',-foeWind*.4);
       if(ow<.5){goalie.look('chest',lookAt3,.2*(1-oWeight));goalie.look('head',lookAt3,.45);}
     }else{
     const dv=trackDive(s,now,pose,sm);
@@ -620,24 +636,29 @@ export function buildWorld(assets,{duel=false}={}){
     cine.theta=sk&&kt<B.push?(1-sm((kt-B.freeze)/(B.push-B.freeze)))*.9:0;cine.r=1-.04*sm((kt-B.push)/(B.strike-B.push));
     if(sk){focus.set((s.player.x+sk.x)/2,1.02,-(s.player.z+sk.z)/2);cine.side=s.player.x>0?-1:1;}
     hemisphere.intensity=HEMI*(1-.42*cine.dim);sun.intensity=SUN*(1-.3*cine.dim);
-    keyLight.intensity=cine.dim*5;keyLight.position.set(s.player.x+cine.side*.8,2.3,-s.player.z+.9);
-    chargeRing.visible=!!sk;if(sk){chargeRing.position.set(s.player.x,.055,-s.player.z);chargeRing.scale.setScalar(.7+.7*kp);chargeRing.material.opacity=.85*(1-kp*.5);}
+    keyLight.intensity=sk?cine.dim*5:foeDim*4;keyLight.position.set(cx+(sk?cine.side:cx>0?-1:1)*.8,2.3,cz+.9);
+    chargeRing.visible=!!ck;if(ck){const cp=ct/D;chargeRing.position.set(cx,.055,cz);chargeRing.scale.setScalar(.7+.7*cp);chargeRing.material.opacity=.85*(1-cp*.5);}
     // Aura: hoops rise and fade on a loop, sparks stream upward; static when motion is reduced.
-    const auraOn=!!sk&&kt>=B.freeze&&kt<B.release+.05,auraW=sk?sm((kt-B.freeze)/.1)*(1-sm((kt-B.release)/.05)):0;
+    const auraOn=!!ck&&ct>=B.freeze&&ct<B.release+.05,auraW=ck?sm((ct-B.freeze)/.1)*(1-sm((ct-B.release)/.05)):0;
     aura.visible=sparks.visible=auraOn;handGlow.visible=!!sk&&kt>=B.freeze&&kt<B.release+.1;
-    if(auraOn){aura.position.set(s.player.x,0,-s.player.z);
-      hoops.forEach((m,i)=>{const ph=reduceMotion?i/3:(kt*1.4+i/3)%1;m.position.y=.12+ph*2.1;m.scale.setScalar(1+.25*ph);m.material.opacity=(1-ph)*.85*auraW;});
-      sparkMat.opacity=.9*auraW;sparkList.forEach(m=>{const u=m.userData,ph=reduceMotion?u.o:(kt*1.8+u.o)%1;m.position.set(s.player.x+Math.cos(u.a)*u.r,ph*2.3,-s.player.z+Math.sin(u.a)*u.r);m.quaternion.copy(camera.quaternion);m.scale.set(1-ph*.5,(1-ph*.5)*1.8,1);});}
+    if(auraOn){aura.position.set(cx,0,cz);
+      hoops.forEach((m,i)=>{const ph=reduceMotion?i/3:(ct*1.4+i/3)%1;m.position.y=.12+ph*2.1;m.scale.setScalar(1+.25*ph);m.material.opacity=(1-ph)*.85*auraW;});
+      sparkMat.opacity=.9*auraW;sparkList.forEach(m=>{const u=m.userData,ph=reduceMotion?u.o:(ct*1.8+u.o)%1;m.position.set(cx+Math.cos(u.a)*u.r,ph*2.3,cz+Math.sin(u.a)*u.r);m.quaternion.copy(camera.quaternion);m.scale.set(1-ph*.5,(1-ph*.5)*1.8,1);});}
     if(handGlow.visible){handGlow.material.opacity=Math.min(.85,.6*wind+.9*blow);handGlow.scale.setScalar(1+(reduceMotion?0:.22*Math.sin(kt*28))*wind+.5*blow);}
     // The locked ball charges from the hold onward and trembles after the strike, still at its frozen spot.
-    halo.visible=!!sk&&kt>=B.push;if(halo.visible){halo.position.copy(ball.position);halo.quaternion.copy(camera.quaternion);halo.material.opacity=.4+.5*sm((kt-B.push)/.2);halo.scale.setScalar(1+(reduceMotion?0:.12*Math.sin(kt*22))+.5*blow);
-      if(!reduceMotion&&kt>=B.strike)ball.position.x+=Math.sin(kt*95)*.025;}
-    shock.visible=!!sk&&kt>=B.strike&&kt<B.strike+.3;if(shock.visible){const u=(kt-B.strike)/.3;shock.position.set(s.player.x,.06,-s.player.z);shock.scale.setScalar(reduceMotion?2:1+4.5*u);shock.material.opacity=(1-u)*.9;}
+    // On the other player's ball the ring starts wide and closes in to the ball's size as the launch comes.
+    halo.visible=sk?kt>=B.push:!!fk&&ft>=B.freeze;if(halo.visible){halo.position.copy(ball.position);halo.quaternion.copy(camera.quaternion);
+      if(sk){halo.material.opacity=.4+.5*sm((kt-B.push)/.2);halo.scale.setScalar(1+(reduceMotion?0:.12*Math.sin(kt*22))+.5*blow);}
+      else{const left=1-sm((ft-B.freeze)/(D-B.freeze));halo.material.opacity=.55+.4*(1-left);halo.scale.setScalar(1+1.8*left+(reduceMotion?0:.08*Math.sin(ft*22)));}
+      if(!reduceMotion&&ct>=B.strike)ball.position.x+=Math.sin(ct*95)*.025;}
+    shock.visible=!!ck&&ct>=B.strike&&ct<B.strike+.3;if(shock.visible){const u=(ct-B.strike)/.3;shock.position.set(cx,.06,cz);shock.scale.setScalar(reduceMotion?2:1+4.5*u);shock.material.opacity=(1-u)*.9;}
     // Screen layers: vignette for the whole lock, speed lines while pushing/holding, the cut-in banner, a short flash.
-    vignette.visible=!!sk;vignette.material.opacity=.95*cine.dim;
+    vignette.visible=!!ck;vignette.material.opacity=sk?.95*cine.dim:.45*foeDim;
     lines.visible=!!sk&&!reduceMotion&&kt>=B.freeze&&kt<B.release;if(lines.visible){lines.material.opacity=.4*sm((kt-B.freeze)/.15)*(1-sm((kt-B.strike)/.1));lines.rotation.z=kt*.5;}
     banner.visible=!!sk&&kt>=.02&&kt<D-.1;if(banner.visible){const inn=sm((kt-.02)/.12),out=sm((kt-B.release+.05)/.15),span=hudSize.w*1.25;
       banner.position.x=reduceMotion?0:(1-inn)*-span+out*span;banner.material.opacity=reduceMotion?Math.min(inn,1-out):1;}
+    foeBanner.visible=!!fk&&ft>=.02&&ft<D-.1;if(foeBanner.visible){const inn=sm((ft-.02)/.12),out=sm((ft-B.release+.05)/.15),span=hudSize.w*1.25;
+      foeBanner.position.x=reduceMotion?0:(1-inn)*span-out*span;foeBanner.material.opacity=reduceMotion?Math.min(inn,1-out):1;}
     const opening=kt<.07,striking=kt>=B.strike&&kt<B.strike+.12;
     flash.visible=!!sk&&!reduceMotion&&(opening||striking);if(flash.visible)flash.material.opacity=opening?.4*(1-kt/.07):.5*(1-(kt-B.strike)/.12);
     // A short forward kick of the camera on contact (bigger for a perfect strike, biggest when the burst leaves); a render
@@ -722,6 +743,10 @@ export function buildWorld(assets,{duel=false}={}){
     placeSign(aspect);
     for(const m of [vignette,lines,flash])m.scale.set(hudSize.w*1.02,hudSize.h*1.02,1);lines.scale.setScalar(Math.max(hudSize.w,hudSize.h)*1.25);
     banner.scale.set(hudSize.w*.82,hudSize.w*.82/4,1);banner.position.y=hudSize.h*.36;
+    // The foe's banner must leave the far figure in sight: as the own one in portrait (the far end sits mid-screen), smaller
+    // and low over the near end in landscape, where the far end is right under the top banner's place.
+    if(hudSize.w>hudSize.h){foeBanner.scale.set(hudSize.w*.36,hudSize.w*.09,1);foeBanner.position.y=-hudSize.h*.3;}
+    else{foeBanner.scale.copy(banner.scale);foeBanner.position.y=banner.position.y;}
   }
   // Camera shake is a pure render offset around the framed position.
   let baseFov=39;

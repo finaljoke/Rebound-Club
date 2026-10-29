@@ -57,3 +57,20 @@ test('对战绘制数：准备状态与发球后，可见物体 ≤100、投影�
   for(const s of [createDuel(),inPlay()])for(const side of SIDES){w.update(viewFor(s,side),0,false,1);const c=draws(w);
     assert.ok(c.main<=100,`${side} 可见物体 ${c.main}`);assert.ok(c.casters<=50,`${side} 投影物体 ${c.casters}`);}
 });
+
+// The receiver of a burst used to see only a frozen opponent for the charge, as if the link had stalled: now the charge
+// plays at the far end on the same clock, and the camera stays on the normal frame.
+test('对手放爆发：接球方画面里，蓄力光圈和冲击波在对手脚下，球上有收拢的倒计时环、横幅切入，镜头不推近', ()=>{
+  const w=buildWorld(assets,{duel:true});w.resize(.46);const s=inPlay(),B={freeze:.12,strike:.75};
+  const sweet=PLAYER_Z+WEAPONS.glove.reach*.5;Object.assign(s.ball,mirrorBall({x:.3,z:sweet,vx:0,vz:-DUEL.speed,curve:null,kind:null,z0:sweet,z1:PLAYER_Z}));
+  s.players.b.energy=100;s.players.b.x=-.3;assert.ok(duelSkill(s,'b','burst',0).ok);
+  const fx=w.burstFx,at=t=>{while(s.skill&&s.skill.time<t)stepDuel(s,1/120);w.update(viewFor(s,'a'),0,false,t);};
+  const frame0=w.camera.position.clone();
+  at(.3);const v=viewFor(s,'a');
+  assert.ok(fx.aura.visible&&fx.sparks.visible,'对手身上有光圈和火花');assert.ok(Math.abs(fx.aura.position.x-v.keeper.x)<1e-6&&Math.abs(fx.aura.position.z+OPP_Z)<1e-6,'光圈在对手脚下');
+  assert.ok(fx.foeBanner.visible&&!fx.banner.visible,'切入的是对手横幅');assert.ok(fx.halo.visible,'球上有倒计时环');const wide=fx.halo.scale.x;
+  assert.ok(w.camera.position.distanceTo(frame0)<.05,'镜头保持正常构图');
+  at(B.strike+.05);assert.ok(fx.halo.scale.x<wide,'倒计时环在收拢');assert.ok(fx.shock.visible&&Math.abs(fx.shock.position.z+OPP_Z)<1e-6,'出手冲击波在对手那端');
+  at(9);assert.equal(s.phase,'playing');w.update(viewFor(s,'a'),0,false,9);
+  for(const k of ['aura','sparks','halo','foeBanner'])assert.equal(fx[k].visible,false,`${k} 球飞出后隐藏`);
+});
