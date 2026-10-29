@@ -3,7 +3,8 @@
 // 1. Portrait 390×844 and landscape 844×390, against the bot: lobby, match and first-point screenshots in
 //    artifacts/duel/, the point played with key presses only; draw calls at the moments perf-qa measures (lobby, 1.5 s
 //    into the match, the other orientation) stay within 110.
-// 2. Simulated latency 250 ms one way (labelled ping 500): a point is still scored, with no errors.
+// 2. Simulated latency 250 ms each way (the button reads the round trip, 500): a point is still scored, with no errors.
+//    The same at a 160 ms round trip with the full-flight sync, and a blind run names its sync on the result screen.
 // 3. Two players on one keyboard: the match starts and both players' keys are taken.
 import {createRequire} from 'node:module';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
 const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
@@ -51,8 +52,25 @@ for(const viewport of [{width:390,height:844},{width:844,height:390}]){
   assert.ok(await playPoint(p),'250 毫秒下比分应变化');
   const st=await p.evaluate(()=>{const m=__qa.match();return {a:m.a.state.score,b:m.b.state.score,rtt:m.a.clock.rtt};});
   await p.screenshot({path:`${OUT}/latency250-390x844.png`});results.latency250=st;await p.context().close();}
+{const p=await open({width:390,height:844});
+  await p.getByRole('radio',{name:'160',exact:true}).click();await p.getByRole('radio',{name:'出球放慢'}).click();
+  await p.getByRole('button',{name:'开始对战'}).click();await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});
+  assert.deepEqual(await p.evaluate(()=>[__qa.match().a.sync,__qa.match().b.sync]),['fullflight','fullflight']);
+  assert.ok(await playPoint(p),'出球放慢、往返 160 毫秒下比分应变化');
+  const st=await p.evaluate(()=>{const m=__qa.match();return {a:m.a.state.score,b:m.b.state.score,rtt:m.a.clock.rtt};});
+  await p.screenshot({path:`${OUT}/fullflight160-390x844.png`});results.fullflight160=st;
+  await p.getByRole('button',{name:'暂停'}).click();await p.getByRole('button',{name:'返回设置'}).click();
+  await p.getByRole('radio',{name:'盲测'}).click();await p.getByRole('button',{name:'开始对战'}).click();
+  await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});
+  const blind=await p.evaluate(()=>{const m=__qa.match();return {sync:m.sync,blind:m.blind,a:m.a.sync,b:m.b.sync};});
+  assert.ok(blind.blind&&['catchup','fullflight'].includes(blind.sync)&&blind.a===blind.sync&&blind.b===blind.sync,JSON.stringify(blind));
+  // The result screen, reached by ending the shown copy: it names the sync the match used.
+  await p.evaluate(()=>{const s=__qa.match().state;s.phase='won';s.winner='a';});
+  await p.waitForSelector('#result-sync');const reveal=await p.locator('#result-sync').textContent();
+  assert.ok(reveal.includes('盲测揭晓')&&reveal.includes(blind.sync==='fullflight'?'出球放慢':'追帧')&&reveal.includes('往返 160 毫秒'),reveal);
+  results.blind={...blind,reveal};await p.context().close();}
 {const p=await open({width:1280,height:800});
-  await p.getByRole('radio',{name:'本机双人'}).click();assert.equal(await p.locator('#latency-group').isHidden(),true,'本机双人不显示网络模拟');
+  await p.getByRole('radio',{name:'本机双人'}).click();assert.equal(await p.locator('#latency-group').isHidden(),true,'本机双人不显示网络模拟');assert.equal(await p.locator('#sync-group').isHidden(),true,'本机双人不显示同步方式');
   await p.getByRole('button',{name:'开始对战'}).click();await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});
   const x0=await p.evaluate(()=>__qa.match().state.players.b.x);
   await p.keyboard.down('ArrowLeft');await p.waitForTimeout(250);await p.keyboard.up('ArrowLeft');
