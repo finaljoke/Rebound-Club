@@ -1,5 +1,5 @@
 // Smoke check of a running rooms server: the Worker under `wrangler dev` or deployed, or the dev server's stand-in.
-// node server/smoke.mjs [ws://localhost:8787/api/ws] [--origin=http://localhost:4173] [--any-origin]
+// node server/smoke.mjs [ws://localhost:8787/api/ws] [--origin=https://reboundclub.snowiscoming.com] [--any-origin]
 // Opens a room, joins it by its code, trades signalling both ways and relays 100 messages in order, answers the
 // heartbeat, turns a third player away, takes a place back by its token, and refuses a stranger's Origin and a message
 // that is too large, each with its reason. Then an arena room (v=2): three in by one code, a match called once both are
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import {CLOSE,ROOM} from './room.mjs';
 
 const args=process.argv.slice(2),flag=name=>args.find(a=>a.startsWith(`--${name}`));
-const base=args.find(a=>!a.startsWith('--'))||'ws://localhost:8787/api/ws',origin=flag('origin=')?.split('=')[1]||'http://localhost:4173';
+const base=args.find(a=>!a.startsWith('--'))||'ws://localhost:8787/api/ws',origin=flag('origin=')?.split('=')[1]||'https://reboundclub.snowiscoming.com';
 function client(query,from=origin){
   const ws=new WebSocket(`${base}?${query}`,{headers:{Origin:from}}),got=[],waiters=[];
   const closed=new Promise(r=>ws.addEventListener('close',e=>r({code:e.code,reason:e.reason})));
