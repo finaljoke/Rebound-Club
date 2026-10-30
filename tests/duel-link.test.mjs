@@ -120,3 +120,55 @@ test('中转上跑真实的对战同步：两个 AI 隔着连接打，第一个�
     host.close();guest.close();
   }finally{await s.close();}
 });
+
+// --- Arena rooms (v:2) -------------------------------------------------------------------------------------------------
+const latest=(seen,type)=>seen.events.filter(e=>e.type===type).at(-1);
+
+test('擂台房：三人凭一个码进房；场上两人知道对手和站哪边，凭这一对互发；两人准备后开局，观战流带着时钟差转给第三人', async()=>{
+  const s=await serve();
+  try{
+    const A=createLink({server:s.url,join:{create:true,v:2,name:'阿甲'},RTC:null}),as=watch(A),ia=await A.ready;
+    assert.deepEqual([ia.v,ia.member,ia.name,ia.role],[2,'p1','阿甲','host']);
+    const B=createLink({server:s.url,join:{code:ia.code,name:'阿乙'},RTC:null}),bs=watch(B);await B.ready;
+    const C=createLink({server:s.url,join:{code:ia.code},RTC:null}),cs=watch(C);assert.equal((await C.ready).name,'玩家 1');
+    await until(()=>A.peer&&B.peer&&A.watched&&B.watched,4000,'两人配对，并知道有人在看');
+    assert.deepEqual([A.side,A.opponent,B.side,B.opponent],['a','p2','b','p1']);assert.equal(A.pair,B.pair);assert.equal(C.pair,null);
+    assert.deepEqual(latest(as,'pair'),{type:'pair',pair:A.pair,side:'a',opponent:'p2'});
+    for(let i=0;i<20;i++)A.send({i});await until(()=>bs.msgs.length===20,4000,'对手收到');
+    assert.deepEqual(bs.msgs.map(m=>m.i),[...Array(20).keys()]);assert.equal(cs.msgs.length,0,'场外的人收不到对局消息');
+    await until(()=>latest(cs,'room')?.members.length===3);assert.deepEqual(latest(cs,'room').members.map(m=>m.role),['player','player','queue']);
+    assert.ok(A.command({type:'ready',n:1}));assert.ok(B.command({type:'ready',n:1}));
+    await until(()=>latest(as,'start')&&latest(bs,'start'),4000,'开局');
+    assert.deepEqual(latest(as,'start'),{type:'start',n:1,sync:'catchup',blind:false,a:'p1',b:'p2'});
+    A.feedStart(1,()=>null);B.feedStart(1,()=>-2.5);
+    A.feedPush({type:'pos',t:1,x:0});A.feedPush({type:'ping',t:1});A.feedPush({type:'hit',t:1.1,side:'a'});B.feedPush({type:'pos',t:2,x:1});
+    await until(()=>cs.events.filter(e=>e.type==='feed').length>=2,4000,'观战流到第三人');
+    assert.deepEqual(cs.events.find(e=>e.type==='feed'&&e.side==='a'),{type:'feed',n:1,side:'a',msgs:[{type:'pos',t:1,x:0},{type:'hit',t:1.1,side:'a'}]},'ping 不进观战流；甲方还没对时，不带时钟差');
+    assert.deepEqual(cs.events.find(e=>e.type==='feed'&&e.side==='b'),{type:'feed',n:1,side:'b',o:-2.5,msgs:[{type:'pos',t:2,x:1}]});
+    assert.ok(!bs.events.some(e=>e.type==='feed'),'不转给对手');
+    for(const x of [A,B,C])x.close();
+  }finally{await s.close();}
+});
+
+test('擂台房：分出胜负换人后，新的一对重新开始，上一对的消息不串过来；两人房里没人看时，观战流只发进球', async()=>{
+  const s=await serve();
+  try{
+    const A=createLink({server:s.url,join:{create:true,v:2},RTC:null}),as=watch(A),{code}=await A.ready;
+    const B=createLink({server:s.url,join:{code},RTC:null}),bs=watch(B);await B.ready;
+    await until(()=>A.peer&&B.peer,4000,'两人配对');assert.equal(A.watched,false);
+    A.command({type:'ready',n:1});B.command({type:'ready',n:1});await until(()=>latest(as,'start')&&latest(bs,'start'));
+    A.feedStart(1,()=>0);A.feedPush({type:'pos',t:1,x:0});A.feedPush({type:'goal',t:1.2,side:'b',score:{a:0,b:1},winner:null});
+    await until(()=>latest(bs,'room')?.match.score.b===1,4000,'房间用进球记了分');
+    const C=createLink({server:s.url,join:{code},RTC:null}),cs=watch(C);await C.ready;await until(()=>A.watched&&B.watched,4000,'有人看了');
+    for(let i=0;i<5;i++)B.send({old:i});await until(()=>as.msgs.length===5,4000,'上一对之间的消息');
+    // B wins: A (the loser) goes to the back of the queue, C comes on against B, who is 甲 now.
+    B.feedStart(1,()=>0);B.feedPush({type:'goal',t:2,side:'b',score:{a:0,b:5},winner:'b'});
+    await until(()=>latest(cs,'result')&&C.peer&&B.peer&&B.side==='a',4000,'换人');
+    assert.deepEqual(latest(cs,'result'),{type:'result',n:1,winner:'p2',loser:'p1',score:{a:0,b:5},how:'score'});
+    assert.deepEqual([B.side,B.opponent,C.side,C.opponent,A.pair],['a','p3','b','p2',null]);
+    for(let i=0;i<5;i++)B.send({fresh:i});await until(()=>cs.msgs.length===5,4000,'新的一对之间');
+    assert.deepEqual(cs.msgs.map(m=>m.fresh),[0,1,2,3,4],'新的一对从头开始，上一对的一条也没有');
+    await new Promise(r=>setTimeout(r,200));assert.ok(!as.msgs.some(m=>'fresh' in m),'下场的人收不到');
+    for(const x of [A,B,C])x.close();
+  }finally{await s.close();}
+});
