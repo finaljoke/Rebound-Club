@@ -13,7 +13,7 @@
 //    the next serve, without the controls, and can turn the view round. Nobody swings, so the match runs to 5: the
 //    watcher's replay ends on the players' score, the footer tells direct and ping, the loser goes to the back of the
 //    queue and the one queued comes on; when the winner's page goes away mid-match, the other player sees why. The
-//    loser, now watching, loses the room's socket: its line says it is reconnecting, then clears once it is back.
+//    loser, now watching, loses the room's socket: the panel's notice says it is reconnecting, and goes once it is back.
 // 6. In a fresh room of two, one player's page is loaded again mid-match: it gives the match up at once, the other's
 //    result screen says why, and the one who left is called back for the next match. Then the winner back on the room's
 //    panel before the loser's last goal has reached the room (both feeds held 3 s) is still the winner. No page errors
@@ -110,11 +110,15 @@ for(const p of [H,G])await p.waitForFunction(()=>__qa.match().state.phase!=='pau
 const held=(Date.now()-t0)/1000;assert.ok(held>=.7,`继续前先等 ${held} 秒`);
 // A third, by the invite link: queued, and watching the match a second behind, from the next serve on.
 const W=await page({width:390,height:844});await W.goto(H.url());await W.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
-await said(W,/排队中，第 1 位 · 场上：房主 对 访客/);
+await said(W,/候场第 1 位 · 场上：房主 对 访客/);
 await W.waitForFunction(()=>__qa.match()?.mode==='watch'&&__qa.match().watcher.live,null,{timeout:30000});
 assert.equal(await W.locator('#watch-bar').isVisible(),true);assert.equal(await W.locator('#attack').isVisible(),false,'观战时没有挥击按钮');
 await W.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:15000});await W.screenshot({path:'artifacts/duel/online-watch-390x844.png'});
+// Watching says so under the score, names the far and the near player, and tells a queued watcher its place.
+const watchLines=()=>W.evaluate(()=>['court-status','plate-far','plate-near'].map(id=>document.getElementById(id).textContent).concat(document.getElementById('watch-queue').hidden?'':document.getElementById('watch-queue').textContent));
+assert.deepEqual(await watchLines(),['观战中 · 比场上晚 1 秒','访客远','房主近','你候场第 1 位 · 这局打完就上']);
 await W.getByRole('button',{name:'换个方向看'}).click();assert.equal(await W.evaluate(()=>__qa.match().view),'b');
+await W.waitForFunction(()=>document.getElementById('plate-near').textContent==='访客近',null,{timeout:2000});assert.equal(await W.locator('#plate-far').textContent(),'房主远');
 assert.match(await W.locator('#score').textContent(),/观战中/);
 // Nobody swings, so every serve scores: the match runs to 5, and the watcher's replay ends on the same score.
 for(const p of [H,G])await p.waitForFunction(()=>__qa.match()?.state.phase==='won',null,{timeout:120000});
@@ -125,7 +129,11 @@ const footer=await G.locator('#score').textContent();assert.match(footer,/直连
 // The loser to the back of the queue, the one queued on against the winner.
 const won=scores[0].a>scores[0].b?{p:H,name:'房主'}:{p:G,name:'访客'},lost=won.p===H?{p:G,name:'访客'}:{p:H,name:'房主'};
 await W.waitForFunction(()=>/准备下一局/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
-await lost.p.waitForFunction(()=>/你排在第 1 位/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
+// Called up with someone queued: the result screen counts down the room's seconds to say ready.
+await W.waitForFunction(()=>/^\d+$/.test(document.getElementById('result-left')?.textContent??''),null,{timeout:3000});
+const countdown=await W.evaluate(()=>{const r=__qa.room(),m=r.snap.match;return {shown:Number(document.getElementById('result-left').textContent),room:m.readyIn-(performance.now()/1000-r.snapAt),note:document.getElementById('result-left-note').textContent};});
+assert.ok(Math.abs(countdown.shown-countdown.room)<=1&&/秒内不点，会排到队尾/.test(countdown.note),JSON.stringify(countdown));
+await lost.p.waitForFunction(()=>/你在候场第 1 位/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
 await W.screenshot({path:'artifacts/duel/online-watch-result-390x844.png'});
 await W.getByRole('button',{name:'准备下一局'}).click();await won.p.getByRole('button',{name:'准备下一局'}).click();
 for(const p of [W,won.p])await p.waitForFunction(()=>__qa.match()?.mode==='online'&&__qa.match().state.phase!=='ready',null,{timeout:15000});
@@ -136,8 +144,9 @@ await won.p.context().close();
 await W.waitForFunction(()=>/对方断开了/.test(document.getElementById('overlay-content').textContent),null,{timeout:15000});
 await W.screenshot({path:'artifacts/duel/online-gone-390x844.png'});
 // The loser, watching match 2, loses the room's socket: the room's line says so, and stops saying so once it is back.
-await lost.p.evaluate(()=>__qa.room().link.debug.dropSocket());await said(lost.p,/正在重连/,3000);
-const dropAt=Date.now();await lost.p.waitForFunction(()=>__qa.room().snap&&!/重连/.test(document.getElementById('online-status').textContent),null,{timeout:5000});
+await lost.p.evaluate(()=>__qa.room().link.debug.dropSocket());
+await lost.p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/正在重连/.test(n.textContent);},null,{timeout:3000});
+const dropAt=Date.now();await lost.p.waitForFunction(()=>__qa.room().snap&&document.getElementById('online-notice').hidden,null,{timeout:5000});
 const back=(Date.now()-dropAt)/1000;
 results.page={code:roomCode,held,scores,footer,back};
 // 6. A reload mid-match, then a winner back on the panel early.

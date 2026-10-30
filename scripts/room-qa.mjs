@@ -3,8 +3,11 @@
 // the panel can be looked at with 1, 2, 4 and 8 in the room, and with this player on the court, in the stands and
 // queued. At every size (lobby-qa's list, plus 1280×800): no sideways scroll; the room code and the main button (or
 // what it waits for) are on screen with nothing over them; the panel's top is on screen; a portrait court keeps at
-// least 160px (120px before a room). Before a room the lobby's create and join controls are checked the same way, and leaving takes a second
-// tap. Screenshots in artifacts/room/.
+// least 160px (120px before a room). Before a room the lobby's create and join controls are checked the same way, and
+// a wrong code says so under its box; leaving takes a second tap. Then, in a fresh room with two queued: the seconds
+// left to say ready show on the main button; not saying ready sends this player to the queue, and the panel's notice
+// tells it so; called back on, it is told again; the room's socket lost, the notice says it is reconnecting and goes
+// once it is back. Screenshots in artifacts/room/.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -42,11 +45,18 @@ const status=p=>p.locator('#online-status').textContent();
 try{
   const ctx=await browser.newContext({viewport:{width:390,height:844}}),p=await ctx.newPage();
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  // Nothing in dist/ exposes state: the test browser appends a read-only hook to duel.js (as online-qa does).
+  await p.route('**/duel.js',async r=>{const x=await r.fetch();await r.fulfill({response:x,body:(await x.text())+'\nwindow.__qa={room:()=>room};'});});
   await p.goto('http://localhost:4173/duel.html');await p.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
   await p.getByRole('radio',{name:'好友联机'}).click();
   // Before a room: the two ways in, and the code typed into one box drawn as five.
   assert.equal(await p.locator('#start-match').isHidden(),true,'进房前没有不能点的大按钮');
-  await p.fill('#join-code','ab-c');assert.deepEqual(await p.locator('#code-boxes span').allTextContents(),['A','B','C','','']);await p.fill('#join-code','');
+  await p.fill('#join-code','ab-c');assert.deepEqual(await p.locator('#code-boxes span').allTextContents(),['A','B','C','','']);
+  // A code that opens nothing: said under the box, and gone once the code is typed again.
+  await p.fill('#join-code','zzzzz');await p.getByRole('button',{name:'加入',exact:true}).click();
+  await p.waitForFunction(()=>!document.getElementById('join-error').hidden,null,{timeout:10000});assert.match(await p.locator('#join-error').textContent(),/^没找到房间 ZZZZZ。/);
+  await p.screenshot({path:'artifacts/room/0-bad-code-390x844.png'});
+  await p.fill('#join-code','');assert.equal(await p.locator('#join-error').isHidden(),true);
   await fits(p,'0-lobby',['.online-host','#code-boxes','.online-join'],120);
   await p.fill('#online-name','阿杰');await p.getByRole('button',{name:'创建房间',exact:true}).click();
   await p.waitForFunction(()=>/^[2-9A-Z]{5}$/.test(document.getElementById('room-code').textContent),null,{timeout:10000});
@@ -89,7 +99,29 @@ try{
   // Leaving takes a second tap.
   await p.locator('.room-leave').click();assert.equal(await p.locator('.room-leave').textContent(),'再点一次离开');assert.equal(await p.locator('#online-room').isVisible(),true);
   await p.locator('.room-leave').click();await p.waitForFunction(()=>!document.getElementById('online-lobby').hidden,null,{timeout:5000});
-  assert.equal(await status(p),'');assert.equal(b1.readyState,1);
+  assert.equal(await status(p),'');assert.equal(b1.readyState,1);assert.match(await p.locator('#online-notice').textContent(),/已离开房间/);
+  // A fresh room: this player on the court with one other, two queued, so the room's clock runs.
+  await p.getByRole('button',{name:'创建房间',exact:true}).click();
+  await p.waitForFunction(()=>/^[2-9A-Z]{5}$/.test(document.getElementById('room-code').textContent),null,{timeout:10000});
+  const code2=await p.locator('#room-code').textContent(),room2=[await bot(code2,'甲')];
+  assert.equal(await p.locator('.room-leave').textContent(),'离开','新房间的离开按钮不带上一次的确认');
+  await p.waitForFunction(()=>document.getElementById('start-match').dataset.go==='ready',null,{timeout:10000});
+  for(const n of ['乙','丙'])room2.push(await bot(code2,n));
+  await p.waitForFunction(()=>/^\d+$/.test(document.getElementById('start-left').textContent)&&!document.getElementById('start-left').hidden,null,{timeout:5000});
+  assert.match(await status(p),/秒内不点会排到队尾/);await p.screenshot({path:'artifacts/room/9-clock-390x844.png'});
+  // Not ready in time: off to the queue, and told why.
+  await p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/没点准备，排到了候场第 1 位/.test(n.textContent);},null,{timeout:25000});
+  assert.equal(await p.locator('#room-wait-text').textContent(),'候场第 1 位');await p.screenshot({path:'artifacts/room/9-timed-out-390x844.png'});
+  // The one now on the court as 守擂 steps off (members are numbered by room, so it is looked up in this one): this player
+  // is called on, and told who it faces.
+  const onCourt=await p.evaluate(()=>__qa.room().snap.court.a);room2.find(b=>b.id===onCourt).send(JSON.stringify({type:'watch'}));
+  await p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/^轮到你上场！对手是/.test(n.textContent);},null,{timeout:5000});
+  await p.screenshot({path:'artifacts/room/9-called-390x844.png'});
+  // The room's socket lost: the notice says so, and goes once the room is back.
+  await p.evaluate(()=>__qa.room().link.debug.dropSocket());
+  await p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/正在重连/.test(n.textContent);},null,{timeout:3000});
+  await p.screenshot({path:'artifacts/room/9-reconnecting-390x844.png'});
+  await p.waitForFunction(()=>__qa.room().snap&&document.getElementById('online-notice').hidden,null,{timeout:6000});
   assert.deepEqual(errors,[]);
   await writeFile('artifacts/room/qa.json',JSON.stringify({results,errors},null,2));
   console.log(JSON.stringify({sizes:SIZES.length,checks:results.length,courts:results.filter(r=>r.viewport.height>r.viewport.width).map(r=>`${r.label} ${r.viewport.width}x${r.viewport.height}:${r.court}`)},null,1));console.log('PASS');
