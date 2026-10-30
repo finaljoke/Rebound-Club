@@ -5,7 +5,18 @@ import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
 import {loadCharacterAssets,createActor,toonMaterial,outlineMaterial,addOutline} from './actor.mjs';
-import {CHARACTERS} from './characters.mjs';
+import {CHARACTERS,DEFAULT_PLAYER,playerSpec} from './characters.mjs';
+
+// The ball's wave print, one texture for every world the page builds (a figure change rebuilds the world). The ball's
+// two materials share a shader program, and a disposed print from the old world got uploaded again by the new one, so
+// the print is shared and never disposed with a world (userData.shared).
+let BALL_WAVES;
+function ballWavesTexture(){
+  if(typeof document==='undefined')return null;if(BALL_WAVES)return BALL_WAVES;
+  const c=document.createElement('canvas');c.width=256;c.height=128;const g=c.getContext('2d');g.fillStyle='#fff7e8';g.fillRect(0,0,256,128);g.lineWidth=14;
+  for(const [col,off] of [['#ff6a2b',0],['#1d2a5c',64],['#ff6a2b',128],['#1d2a5c',192]]){g.strokeStyle=col;g.beginPath();for(let x=0;x<=256;x+=4){const y=64+Math.sin((x+off)/256*Math.PI*2)*38;x?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();}
+  BALL_WAVES=new THREE.CanvasTexture(c);BALL_WAVES.colorSpace=THREE.SRGBColorSpace;BALL_WAVES.userData.shared=true;return BALL_WAVES;
+}
 
 // Rendering uses (x,height,-physicsDepth); the game simulation remains unchanged.
 // assets: the loaded characters ({striker, keeper} glTFs, see loadCharacterAssets); each world builds its own copies.
@@ -177,7 +188,7 @@ export function buildWorld(assets){
   }
   // Players: skinned characters (actor.mjs, characters.mjs) on the roots the scene always used: the striker's root
   // faces -z, the keeper's is turned to face it; root tilt and position keep their old meaning.
-  const striker=createActor(assets.striker,CHARACTERS.striker,'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
+  const striker=createActor(assets.striker,playerSpec(assets.player),'striker'),goalie=createActor(assets.keeper,CHARACTERS.keeper,'keeper');
   const hero=striker.root,keeper=goalie.root;
   scene.add(hero);hero.position.set(0,0,-1.6);
   scene.add(keeper);keeper.rotation.y=Math.PI;keeper.position.set(0,0,-KEEPER_Z);
@@ -193,9 +204,7 @@ export function buildWorld(assets){
   // A power shot swells and burns orange-red for its whole flight, trail included.
   // Toon-shaded and inked like the players: a cream ball with club-orange and navy waves, so its spin reads. Without a DOM
   // (node tests) it is plain amber. A power shot burns orange through the same waves.
-  const ballWaves=(()=>{if(typeof document==='undefined')return null;const c=document.createElement('canvas');c.width=256;c.height=128;const g=c.getContext('2d');g.fillStyle='#fff7e8';g.fillRect(0,0,256,128);g.lineWidth=14;
-    for(const [col,off] of [['#ff6a2b',0],['#1d2a5c',64],['#ff6a2b',128],['#1d2a5c',192]]){g.strokeStyle=col;g.beginPath();for(let x=0;x<=256;x+=4){const y=64+Math.sin((x+off)/256*Math.PI*2)*38;x?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();}
-    const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const ballWaves=ballWavesTexture();
   const ballMat=toonMaterial(ballWaves?{map:ballWaves}:{color:'#ffbd35'},'#fff1c0',.35),powerMat=toonMaterial({color:'#ff7a3a',map:ballWaves,emissive:'#ff3d10',emissiveIntensity:.45},'#ffd7a0',.35);
   const ballBody=mesh(new THREE.SphereGeometry(.26,24,18),ballMat,ball),ballInk=addOutline(ballBody,outlineMaterial(.02));
   // The body and its ink take a stretch matrix (along the flight, about the centre) while the group keeps the spin.
@@ -708,8 +717,9 @@ export function createQualityGovernor({slowMs=22,holdMs=2000}={}){
   }};
 }
 // Returns at once; `ready` settles when the characters are loaded and the world is built (nothing is drawn before).
-// A failed load rejects `ready`, and the caller falls back to the 2D court.
-export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url)){
+// A failed load rejects `ready`, and the caller falls back to the 2D court. `player` picks the striker's figure (a
+// figure that fails to load falls back to the default one); `player` on the renderer says which one is shown.
+export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url),{player=DEFAULT_PLAYER}={}){
   // No preserveDrawingBuffer: tiled mobile GPUs would otherwise copy the whole frame every time.
   const context=canvas.getContext('webgl2',{antialias:true,alpha:false});
   if(!context)throw new Error('WebGL2 is unavailable');
@@ -722,12 +732,34 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
     const shadow=world.sun.shadow;if(shadow.mapSize.x!==q.shadowMap){shadow.mapSize.set(q.shadowMap,q.shadowMap);shadow.map?.dispose();shadow.map=null;}
     width=0;
   }
-  const ready=loadCharacterAssets(load).then(assets=>{world=buildWorld(assets);applyQuality();});
+  // Each model file is fetched and parsed once; a figure change rebuilds the world around the cached rigs.
+  const files=new Map(),cached=url=>{if(!files.has(url))files.set(url,load(url).catch(e=>{files.delete(url);throw e;}));return files.get(url);};
+  let assets=null,worlds=0;
+  // Everything a world put on the GPU: geometry, materials and their maps (except shared ones), skeletons (their bone textures) and the
+  // lights' shadow maps.
+  const disposeWorld=w=>w?.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){if(!m.map?.userData.shared)m.map?.dispose();m.dispose();}}
+    if(o.isSkinnedMesh)o.skeleton.dispose();if(o.isLight&&o.shadow?.map){o.shadow.map.dispose();o.shadow.map=null;}});
+  const ready=loadCharacterAssets(cached,{player}).then(a=>{assets=a;world=buildWorld(assets);worlds++;applyQuality();});
+  // Shows another figure (the lobby's pick). Resolves to the figure actually shown: a file that fails keeps the
+  // current one. Changes arriving while one is loading are applied in order; the last one wins.
+  let queue=Promise.resolve();
+  function setPlayer(id){
+    queue=queue.then(()=>ready).then(async()=>{
+      const spec=playerSpec(id);if(spec.id===assets.player)return assets.player;
+      let striker;try{striker=await cached(spec.file);}catch{return assets.player;}
+      const next={...assets,striker,player:spec.id},old=world;
+      world=buildWorld(next);worlds++;assets=next;disposeWorld(old);applyQuality();return assets.player;
+    });
+    return queue;
+  }
   // The canvas size is read only when it changes (ResizeObserver), not every frame, so rendering never forces layout.
   const measure=()=>{const r=canvas.getBoundingClientRect();size=[r.width,r.height];};
   const observer=typeof ResizeObserver==='function'?new ResizeObserver(measure):null;observer?.observe(canvas);
   return {
-    ready,
+    ready,setPlayer,
+    get player(){return assets?.player??null;},
+    get info(){return renderer.info;},
+    get worlds(){return worlds;},
     get quality(){return governor.tier;},
     render(state,axis,reduceMotion,shake=0){
       if(!world)return;if(!observer||!size)measure();const [w,h]=size;if(!w||!h)return;
@@ -735,6 +767,6 @@ export function create3DRenderer(canvas,load=url=>new GLTFLoader().loadAsync(url
       if(w!==width||h!==height){width=w;height=h;renderer.setSize(width,height,false);world.resize(width/height);}
       world.update(state,axis,reduceMotion,now/1000);world.shake(reduceMotion?0:shake);renderer.render(world.scene,world.camera);
     },
-    dispose(){observer?.disconnect();world?.scene.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});renderer.dispose();}
+    dispose(){observer?.disconnect();disposeWorld(world);renderer.dispose();}
   };
 }

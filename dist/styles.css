@@ -236,3 +236,11 @@ body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .game-foo
 /* Fix (pre-existing): in the immersive match the tip bar got a top on top of its bottom and stretched over the court. */
 body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .tutorial-bar{bottom:auto}
 .tutorial-bar{background:rgba(14,20,46,.9);border-color:var(--glass-line);box-shadow:0 6px 18px rgba(0,0,0,.4)}.tutorial-step{color:#06231f}.tutorial-skip{color:var(--muted)}
+/* Figure picker (selection dialog): portrait cards, the pick in the club orange. */
+.player-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.player-card{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:6px 6px 9px;border:1px solid #2c3a72;border-radius:13px;background:#1a2347;color:#cfd6ef;font-size:13px}
+.player-card img{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:9px;background:#141b38}
+.player-card b{white-space:nowrap}
+.player-card.selected{background:var(--orange);border-color:var(--orange);color:#fff7ea}
+.player-card.selected img{background:#c9532c}
+.player-options[hidden],.level-options[hidden]{display:none}
