@@ -11,6 +11,15 @@
 .duel-keys{margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
 .duel-keys b{color:var(--ink);font-weight:700}
 .duel-back{justify-self:center;font-size:12px}
+.online-lobby,.online-room{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%}
+.online-lobby[hidden],.online-room[hidden]{display:none}
+.online-code{flex:1 1 0;min-width:0;height:44px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(10,14,32,.9);color:var(--ink);font:700 18px/1 ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase}
+.online-code::placeholder{letter-spacing:0;color:var(--muted);font-weight:500}
+.room-code{flex:0 0 100%;display:flex;align-items:baseline;gap:12px}
+.room-code small{font-size:11px;color:var(--muted)}
+.room-code b{font:800 30px/1 ui-monospace,Consolas,monospace;letter-spacing:.18em;color:#fff}
+.online-status{flex:0 0 100%;margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+.online-status:empty{display:none}
 #hearts{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap}
 .duel-unsupported{max-width:320px;margin:0 auto;text-align:center;line-height:1.7}
 @media(max-height:570px) and (min-width:701px){
