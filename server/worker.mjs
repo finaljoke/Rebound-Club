@@ -1,10 +1,11 @@
 // The online rooms on Cloudflare (P1, Issue #5): a Worker on its own subdomain, a Durable Object per room and one for
 // the room codes. The rules are server/room.mjs; this file keeps their state and sockets, as the local stand-in does in
-// memory (scripts/dev-rooms.mjs). Pages connect to wss://<this Worker>/api/ws?create=1 | ?code=XXXXX |
-// ?room=<id>[&token=<t>]; the page's Origin must be in ALLOWED_ORIGINS (wrangler.jsonc). ROOM_LIMITS (JSON, for tests
-// only, e.g. `wrangler dev --var ROOM_LIMITS:{"joinWait":2}`) overrides some of the rules' limits.
+// memory (scripts/dev-rooms.mjs). Pages connect to wss://<this Worker>/api/ws?create=1[&v=2] | ?code=XXXXX |
+// ?room=<id>[&token=<t>], with &name=<name> in an arena room (v=2); the page's Origin must be in ALLOWED_ORIGINS
+// (wrangler.jsonc). ROOM_LIMITS (JSON, for tests only, e.g. `wrangler dev --var ROOM_LIMITS:{"joinWait":2}`) overrides
+// some of the rules' limits.
 import {DurableObject} from 'cloudflare:workers';
-import {ROOM,CLOSE,newHub,reserveCode,resolveCode,closeCode,newRoom,joinRoom,roomMessage,leaveRoom,nextWake,wakeRoom,originAllowed} from './room.mjs';
+import {ROOM,CLOSE,newHub,reserveCode,resolveCode,closeCode,holdCode,newRoom,joinRoom,roomMessage,leaveRoom,nextWake,wakeRoom,originAllowed} from './room.mjs';
 
 const now=()=>Date.now()/1000,OPEN=1,limits=env=>env.ROOM_LIMITS?{...ROOM,...JSON.parse(env.ROOM_LIMITS)}:ROOM;
 // A browser cannot read why an upgrade failed, so a refusal is a WebSocket that says why and closes.
@@ -43,24 +44,33 @@ export class RoomHub extends DurableObject {
   reserve(id,ip){return this.change(hub=>reserveCode(hub,{id,ip,now:now()},limits(this.env)));}
   async resolve(code){return resolveCode((await this.ctx.storage.get('hub'))??newHub(),{code,now:now()},limits(this.env));}
   close(code){return this.change(hub=>closeCode(hub,{code,now:now()},limits(this.env)));}
+  hold(code,id){return this.change(hub=>holdCode(hub,{code,id,now:now()},limits(this.env)));}
 }
 
 // One room. Sockets use the hibernation API, tagged with their place, so an idle room costs nothing and loses nothing:
-// the room's state is stored on every join and leave, and its counters at most every 30 seconds while messages flow.
+// the room's state is stored on every change (room.rev), and otherwise (its counters, as signalling, relayed messages
+// and the feed go through) at most every 30 seconds.
 export class Room extends DurableObject {
   constructor(ctx,env){
     super(ctx,env);this.room=undefined;this.buckets={};this.savedAt=0;this.alarmAt=undefined;this.cfg=limits(env);
     // The heartbeat is answered without waking the room (and is not billed as a message).
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
   }
-  async load(){if(this.room===undefined)this.room=(await this.ctx.storage.get('room'))??null;return this.room;}
+  // A room stored by the rules before arena rooms (it has no members) is let go: rooms only live for minutes.
+  async load(){if(this.room===undefined){const r=(await this.ctx.storage.get('room'))??null;this.room=r?.members?r:null;}return this.room;}
   async save(force=false){if(!force&&now()-this.savedAt<30)return;this.savedAt=now();await this.ctx.storage.put('room',this.room);}
-  open(role,except){return this.ctx.getWebSockets(role).filter(ws=>ws!==except&&ws.readyState===OPEN);}
+  open(place,except){return this.ctx.getWebSockets(place).filter(ws=>ws!==except&&ws.readyState===OPEN);}
+  // A message to everyone (the room's state) is turned into text once.
   async run(actions,only=null){
+    const texts=new Map();
     for(const a of actions){
-      if(a.send){const text=typeof a.data==='string'?a.data:JSON.stringify(a.data);for(const ws of only&&a.send===only.role?[only.ws]:this.open(a.send))ws.send(text);}
+      if(a.send){
+        let text=typeof a.data==='string'?a.data:texts.get(a.data);if(text===undefined){text=JSON.stringify(a.data);texts.set(a.data,text);}
+        for(const ws of only&&a.send===only.place?[only.ws]:this.open(a.send))ws.send(text);
+      }
       else if(a.close){for(const ws of this.open(a.close,only?.ws))ws.close(a.code,a.reason);}
       else if(a.closeCode)await hubOf(this.env).close(a.closeCode);
+      else if(a.holdCode)await hubOf(this.env).hold(a.holdCode,a.id);
       else if(a.log)console.log(JSON.stringify({event:'room-closed',...a.log}));
     }
   }
@@ -72,27 +82,29 @@ export class Room extends DurableObject {
   }
   async fetch(req){
     const p=new URL(req.url).searchParams,made=p.get('made');let room=await this.load();
-    if(made&&!room)room=this.room=newRoom({id:p.get('id'),code:made,now:now()});
-    const r=joinRoom(room,{create:!!made,token:p.get('token'),now:now(),newToken:()=>crypto.randomUUID()},this.cfg);
+    if(made&&!room)room=this.room=newRoom({id:p.get('id'),code:made,now:now(),v:p.get('v')==='2'?2:1});
+    const r=joinRoom(room,{create:!!made,token:p.get('token'),name:p.get('name'),now:now(),newToken:()=>crypto.randomUUID()},this.cfg);
     if(r.error)return refuse(r.error);
     const [client,server]=Object.values(new WebSocketPair());
     // The place taken back: the old connection goes, then the new one is tagged with the place and hears it joined.
-    this.ctx.acceptWebSocket(server,[r.role]);delete this.buckets[r.role];
-    await this.run(r.actions,{role:r.role,ws:server});await this.save(true);await this.schedule();
+    this.ctx.acceptWebSocket(server,[r.place]);delete this.buckets[r.place];
+    await this.run(r.actions,{place:r.place,ws:server});await this.save(true);await this.schedule();
     return new Response(null,{status:101,webSocket:client});
   }
   async webSocketMessage(ws,message){
     const room=await this.load();if(!room)return ws.close(CLOSE['not-found'],'not-found');
-    const role=this.ctx.getTags(ws)[0],text=typeof message==='string'?message:null;
+    const place=this.ctx.getTags(ws)[0],text=typeof message==='string'?message:null;
     const bytes=text===null?message.byteLength:new TextEncoder().encode(text).length;
-    await this.run(roomMessage(room,{role,text,bytes,now:now(),buckets:this.buckets},this.cfg));await this.save();
+    // A message can set a deadline (two called to be ready), so the alarm is checked too.
+    const rev=room.rev;await this.run(roomMessage(room,{place,text,bytes,now:now(),buckets:this.buckets},this.cfg));
+    await this.save(room.rev!==rev);await this.schedule();
   }
   // A connection gone: it counts as leaving only if no other connection now holds its place (taken back elsewhere).
   async webSocketClose(ws,code,reason){
     // The closing handshake answered, or the client waits for it (about 10 s); 1005 and 1006 cannot be sent back.
     try{ws.close(code===1005||code===1006?1000:code,reason);}catch{}
-    const room=await this.load(),role=this.ctx.getTags(ws)[0];if(!room||this.open(role,ws).length)return;
-    await this.run(leaveRoom(room,{role,now:now()}));await this.save(true);await this.schedule();
+    const room=await this.load(),place=this.ctx.getTags(ws)[0];if(!room||this.open(place,ws).length)return;
+    await this.run(leaveRoom(room,{place,now:now()},this.cfg));await this.save(true);await this.schedule();
   }
   async webSocketError(ws){await this.webSocketClose(ws,1011,'error');}
   async alarm(){
