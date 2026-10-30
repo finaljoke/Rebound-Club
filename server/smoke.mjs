@@ -2,7 +2,8 @@
 // node server/smoke.mjs [ws://localhost:8787/api/ws] [--origin=http://localhost:4173] [--any-origin]
 // Opens a room, joins it by its code, trades signalling both ways and relays 100 messages in order, answers the
 // heartbeat, turns a third player away, takes a place back by its token, and refuses a stranger's Origin and a message
-// that is too large, each with its reason. --any-origin: the server lets every Origin in (the dev server's stand-in does,
+// that is too large, each with its reason. Then an arena room (v=2): three in by one code, a match called once both are
+// ready, the feed passed to the one watching, the result to all and the court turned over. --any-origin: the server lets every Origin in (the dev server's stand-in does,
 // for pages opened at a LAN address), so a stranger's room opens instead. Needs Node 22 or later (built-in WebSocket).
 // Two slower checks of what only a Durable Object does, run when asked:
 // --hibernate: a full room left 15 s with nothing but heartbeats (the object sleeps after 10) still knows both players
@@ -17,8 +18,8 @@ function client(query,from=origin){
   const ws=new WebSocket(`${base}?${query}`,{headers:{Origin:from}}),got=[],waiters=[];
   const closed=new Promise(r=>ws.addEventListener('close',e=>r({code:e.code,reason:e.reason})));
   ws.addEventListener('message',e=>{got.push(e.data==='pong'?'pong':JSON.parse(e.data));for(const w of [...waiters])w();});
-  const next=(type,ms=5000)=>new Promise((res,rej)=>{
-    const look=()=>{const i=got.findIndex(m=>m===type||m.type===type);if(i<0)return false;res(got.splice(i,1)[0]);const w=waiters.indexOf(look);if(w>=0)waiters.splice(w,1);return true;};
+  const next=(type,ms=5000,ok=()=>true)=>new Promise((res,rej)=>{
+    const look=()=>{const i=got.findIndex(m=>(m===type||m.type===type)&&ok(m));if(i<0)return false;res(got.splice(i,1)[0]);const w=waiters.indexOf(look);if(w>=0)waiters.splice(w,1);return true;};
     if(look())return;waiters.push(look);setTimeout(()=>rej(Error(`${query}: no ${type} (got ${JSON.stringify(got)})`)),ms);
   });
   return {next,closed,send:m=>ws.send(typeof m==='string'?m:JSON.stringify(m)),close:()=>ws.close()};
@@ -43,6 +44,16 @@ else{assert.equal((await stranger.next('error')).reason,'origin');assert.equal((
 t=Date.now();back.send({type:'relay',data:'x'.repeat(ROOM.maxMessage)});assert.deepEqual(await back.closed,{code:CLOSE['too-big'],reason:'too-big'});
 assert.deepEqual(await host.next('peer'),{type:'peer',present:false});step('too-large message cut off',t);
 host.close();await host.closed;
+t=Date.now();const A=client('create=1&v=2&name=smoke-a'),ja=await A.next('joined');assert.equal(ja.v,2);
+const B=client(`code=${ja.code}&name=smoke-b`);await B.next('joined');
+const C=client(`code=${ja.code}`),jc=await C.next('joined');assert.equal(jc.member,'p3');step('arena room: three in by one code',t);
+t=Date.now();A.send({type:'ready',n:1});B.send({type:'ready',n:1});
+for(const x of [A,B]){const s=await x.next('start');assert.deepEqual([s.n,s.a,s.b],[1,'p1','p2']);}step('both ready, match called',t);
+t=Date.now();A.send({type:'feed',n:1,msgs:[{type:'pos',x:1}]});assert.equal((await C.next('feed')).side,'a');
+B.send({type:'feed',n:1,msgs:[{type:'goal',side:'b',score:{a:0,b:5},winner:'b'}]});
+for(const x of [A,B,C])assert.equal((await x.next('result')).winner,'p2');
+assert.deepEqual((await C.next('room',5000,m=>m.match.n===2)).court,{a:'p2',b:'p3'});step('feed to the one watching, result to all, court turned over',t);
+for(const x of [A,B,C])x.close();await Promise.all([A.closed,B.closed,C.closed]);
 if(flag('hibernate')){
   t=Date.now();const a=client('create=1'),ra=await a.next('joined'),b=client(`room=${ra.id}`);await b.next('joined');await a.next('peer');
   for(let i=0;i<15;i++){await new Promise(r=>setTimeout(r,1000));a.send('ping');await a.next('pong');}

@@ -13,13 +13,14 @@ async function serve(cfg={}){
   return {url:`ws://127.0.0.1:${server.address().port}/api/ws`,http:`http://127.0.0.1:${server.address().port}`,server,logs,
     close:()=>new Promise(r=>{for(const sk of sockets)sk.destroy();server.closeAllConnections?.();server.close(r);})};
 }
-// A client that queues what it hears: next(type) waits for the next message of that type (a string for raw text).
+// A client that queues what it hears: next(type) waits for the next message of that type (a string for raw text), and
+// next(type, ms, test) for the next one of that type the test accepts.
 function client(base,query,origin='http://localhost:4173'){
   const ws=new WebSocket(`${base}?${query}`,{headers:{Origin:origin}}),got=[],waiters=[];
   const closed=new Promise(r=>ws.addEventListener('close',e=>r({code:e.code,reason:e.reason})));
   ws.addEventListener('message',e=>{const m=e.data==='pong'?'pong':JSON.parse(e.data);got.push(m);for(const w of [...waiters])w();});
-  const next=(type,ms=2000)=>new Promise((res,rej)=>{
-    const look=()=>{const i=got.findIndex(m=>m===type||m.type===type);if(i<0)return false;res(got.splice(i,1)[0]);const w=waiters.indexOf(look);if(w>=0)waiters.splice(w,1);return true;};
+  const next=(type,ms=2000,ok=()=>true)=>new Promise((res,rej)=>{
+    const look=()=>{const i=got.findIndex(m=>(m===type||m.type===type)&&ok(m));if(i<0)return false;res(got.splice(i,1)[0]);const w=waiters.indexOf(look);if(w>=0)waiters.splice(w,1);return true;};
     if(look())return;waiters.push(look);setTimeout(()=>rej(Error(`${query}: 没等到 ${type}，收到 ${JSON.stringify(got)}`)),ms);
   });
   return {ws,next,closed,send:m=>ws.send(typeof m==='string'?m:JSON.stringify(m)),close:()=>ws.close()};
@@ -71,6 +72,30 @@ test('本地替身：消息太大被断开、对方得知；来源不在白名�
     const second=client(s.url,'create=1');await second.next('joined');
     const third=client(s.url,'create=1');assert.equal((await third.next('error')).reason,'rate');assert.equal((await third.closed).code,CLOSE.rate);
     host.close();second.close();await Promise.all([host.closed,second.closed]);
+  }finally{await s.close();}
+});
+
+test('本地替身：擂台房，三人凭一个码进房；两人准备开打，观战流转给第三人；分出胜负后所有人收到结果，场上换人', async()=>{
+  const s=await serve();
+  try{
+    const a=client(s.url,`create=1&v=2&name=${encodeURIComponent('阿甲')}`),ja=await a.next('joined');
+    assert.deepEqual([ja.v,ja.member,ja.name,ja.role],[2,'p1','阿甲','host']);
+    const b=client(s.url,`code=${ja.code}&name=${encodeURIComponent('阿乙')}`);await b.next('joined');
+    const c=client(s.url,`code=${ja.code.toLowerCase()}`),jc=await c.next('joined');
+    assert.deepEqual([jc.member,jc.name],['p3','玩家 1'],'第二人进房后房间码照样能进');
+    const snap=await c.next('room',2000,m=>m.members.length===3);
+    assert.deepEqual(snap.members.map(m=>m.role),['player','player','queue']);assert.equal(snap.match.phase,'ready');
+    assert.deepEqual(await a.next('peer',2000,m=>m.present),{type:'peer',present:true,pair:2,opponent:'p2',side:'a'});
+    assert.equal((await b.next('watching',2000,m=>m.on)).on,true);
+    a.send({type:'ready',n:1});b.send({type:'ready',n:1});
+    for(const x of [a,b])assert.deepEqual(await x.next('start'),{type:'start',n:1,sync:'catchup',blind:false,a:'p1',b:'p2'});
+    a.send({type:'feed',n:1,msgs:[{type:'pos',x:1}]});assert.deepEqual(await c.next('feed'),{type:'feed',n:1,side:'a',msgs:[{type:'pos',x:1}]});
+    b.send({type:'feed',n:1,msgs:[{type:'goal',side:'b',score:{a:0,b:5},winner:'b'}]});
+    for(const x of [a,b,c])assert.deepEqual(await x.next('result'),{type:'result',n:1,winner:'p2',loser:'p1',score:{a:0,b:5},how:'score'});
+    const after=await c.next('room',2000,m=>m.match.n===2);
+    assert.deepEqual([after.court,after.queue],[{a:'p2',b:'p3'},['p1']],'输的下：赢的人当甲方，排队的人上场');
+    assert.deepEqual(await c.next('peer',2000,m=>m.present),{type:'peer',present:true,pair:3,opponent:'p2',side:'b'});
+    for(const x of [a,b,c])x.close();await Promise.all([a.closed,b.closed,c.closed]);
   }finally{await s.close();}
 });
 

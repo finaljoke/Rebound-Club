@@ -41,9 +41,11 @@ npm start
 - 文件：`dist/duel-core.mjs`（规则，参数在 `DUEL`）、`duel-bot.mjs`（只通过输入行动的 AI）、`duel-view.mjs`（翻成「我在近端」的单机形状交给 `scene3d`）、`duel-net.mjs`（消息、追帧、回环、`createClient`）、`duel.html/js/css`；`scene3d.mjs` 的 `buildWorld(assets,{duel:true})` 让远端角色出拳、近端球门与远端同宽；音效在 `sfx.mjs`，单机与对战共用。
 - 检查：`tests/duel-*.test.mjs`，`node scripts/duel-qa.mjs`（需要本地服务），`node scripts/duel-balance.mjs [局数] [种子]`（两个 AI 整局对打的观察数据，同参数输出逐字相同）。
 
-## 联机房间（P1，进行中，Issue #5）
+## 联机房间（P1 Issue #5；擂台房 Issue #9，进行中）
 
 两人用房间码或邀请链接进同一个房间。房间转发 WebRTC 信令；连不上直连时，替双方中转对局消息。
+
+擂台房（开房时带 `v=2`）最多 8 人：场上 2 人对打，其他人排队等上场或观战。房间负责开局、用进球消息记分、把观战流转给看的人，每局结束按房主定的规则换人。不带 `v=2` 的还是 P1 的 2 人房，消息和以前完全一样。对战页的擂台房界面在后续 PR 里做。
 
 - 对战页的「好友联机」：
   - 一人「创建房间」，把房间码或邀请链接（`duel.html?room=<id>`）发给对方；对方输码或点链接进房。
@@ -52,9 +54,14 @@ npm start
   - 对方断开时，对局停下等它回来；刷新页面会凭这个标签页保存的令牌回到原来的位置。
   - 页脚显示走的是直连还是中转，以及 ping。
 
-- 规则：`server/room.mjs`（纯 JS：房间码、进房、令牌、转发、限流、过期），本地替身和 Cloudflare Worker 共用。
-- 接口：WebSocket `/api/ws?create=1`（开房）、`?code=XXXXX`（凭码进房）、`?room=<id>[&token=<令牌>]`（邀请链接、断线回来）。
+- 规则：`server/room.mjs`（纯 JS：房间码、进房、令牌、转发、限流、过期，以及擂台房的排队、开局、记分、轮换），本地替身和 Cloudflare Worker 共用。
+- 接口：WebSocket `/api/ws?create=1[&v=2]`（开房）、`?code=XXXXX`（凭码进房）、`?room=<id>[&token=<令牌>]`（邀请链接、断线回来）；擂台房可以加 `&name=<名字>`。
   - 服务端发 `joined`、`peer`、`signal`、`relay`、`error`；客户端发 `signal`、`relay`、`bye`，以及心跳 `ping`（回 `pong`）。
+  - 擂台房另有：
+    - 服务端发 `room`（整个房间的快照，进房和每次有变化都发）、`start`（开局：编号、同步方式、甲乙双方）、`watching`（有没有人在看）、`feed`（转给看的人的观战流，带发送方的时钟差 `o`）、`result`（这一局谁赢、比分、怎么结束的）；
+    - 客户端发 `name`、`queue`、`watch`、`rules`（房主）、`ready`、`end`（房主）、`feed`（场上两人）；
+    - `peer` 多带对手、自己站哪边（甲方 `a` 发起直连）和这一对的编号 `pair`，`signal`、`relay` 带上 `pair`，上一对的会被丢掉。
+  - 擂台房的码在房间开着时一直能进；名字由房间检查（最长 12 个字）。
   - 房间 10 分钟收不到消息就关闭（心跳不算），所以在房间里的客户端每分钟要发一条消息。
   - 被拒或被断开时，关闭码和原因见 `CLOSE`。
 - 本地：`npm start` 的 4173 端口就带 `/api/ws`（`scripts/dev-rooms.mjs`、`dev-ws.mjs`）。零依赖；放行任何来源，方便局域网里的设备连进来。
@@ -71,7 +78,7 @@ npm start
 - 检查：
   - `tests/online-*.test.mjs`、`tests/duel-link.test.mjs`；
   - `node scripts/online-qa.mjs`（需要本地服务）：两个浏览器页面真实走 WebRTC，检查直连、掐断后退回中转、在连接上打对战，再在对战页上完整走一遍「好友联机」；
-  - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝。
+  - `node server/smoke.mjs [地址] [--any-origin] [--hibernate] [--expiry=秒]`：对正在运行的服务端，跑一遍开房、进房、信令、中转、断线回来和各种拒绝，再跑一遍擂台房的开局、观战流和换人。
   - 对本地替身要加 `--any-origin`；`--expiry` 要配合 `wrangler dev --var ROOM_LIMITS:{"joinWait":秒}`。
 
 ## 验证
