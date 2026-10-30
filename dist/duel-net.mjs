@@ -11,6 +11,7 @@
 // (`mi`); half the difference of the two smallest is the clock offset, assuming the fastest trip takes as long both ways.
 // With 30 position messages a second that settles within about a millisecond under symmetric jitter, where a single
 // round trip (ping/pong, kept for the round-trip time) is off by half the jitter.
+// Someone watching (createWatcher, arena rooms) gets both players' own messages from the room and replays them.
 import {WEAPONS} from './core.mjs';
 import {COURT,createDuel,startDuel,stepDuel,duelAttack,duelSkill,applyMessage,pauseDuel,resumeDuel,other,localBall} from './duel-core.mjs';
 import {viewFor} from './duel-view.mjs';
@@ -150,5 +151,58 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25,syn
     },
     pause(){pauseDuel(s);},resume(){resumeDuel(s);},
     sync,get outgoing(){return full&&out.on;},view
+  };
+}
+
+// A match as someone watching it sees it (arena rooms, Issue #9): both players' own messages, as the room passes them on
+// (the feed, duel-link.mjs), replayed `delay` seconds behind on one clock. Nothing is decided here (auth is off for
+// both): the ball flies and holds at a line until the deciding side's message, as on a player's copy for the other
+// side, so it only replays, and by `delay` everything due has come. The clock is A's: B's packs carry B's estimate of
+// the other clock (createClient clock.offset; none until it has one, and such a pack cannot be placed), which turns B's
+// stamps into A's. A's clock is taken to this one by the smallest arrival − stamp of A's messages, the fastest trip; it
+// only ever goes down, as a rising one would set the replay back and stall it. Joined mid-rally, it plays from the next
+// serve or goal on, with the score it was given until then. now(): this page's clock in seconds.
+export function createWatcher({now,delay=1,score=null}){
+  const s=createDuel({auth:{a:false,b:false}}),queue=[];let base=null,play=null,live=false;
+  if(score)s.score={a:score.a|0,b:score.b|0};
+  // A pack from `side` (msgs and o as the feed sends them), arrived at `at` on this clock.
+  function push({side,msgs,o,at=now()}){
+    if(side==='b'&&!Number.isFinite(o))return;
+    const shift=side==='b'?o:0;
+    for(const m of Array.isArray(msgs)?msgs:[]){
+      if(!Number.isFinite(m?.t))continue;const t=m.t+shift;queue.push({side,m,t});
+      if(side==='a')base=base===null?at-t:Math.min(base,at-t);
+    }
+    queue.sort((p,q)=>p.t-q.t);
+  }
+  function apply({side,m}){
+    if(m.type==='pos'){
+      const o=s.players[side];o.x=m.x;o.held=m.axis;
+      if(m.swing&&(!o.swing||m.swing.time<o.swing.time-.05))o.swing={...m.swing};else if(!m.swing&&o.swing&&!o.swing.hit)o.swing=null;
+      return;
+    }
+    if(m.type==='pause'){pauseDuel(s);return;}
+    if(m.type==='resume'){resumeDuel(s);return;}
+    if(!live){if(m.type!=='serve'&&m.type!=='goal')return;live=true;}
+    applyMessage(s,m,0);
+    // The strike's contact frame, if its punch was not drawn (as the players' copies do).
+    const p=m.type==='hit'&&s.players[m.side];if(p&&(!p.swing||p.swing.time>W.windup+W.active))p.swing={time:W.windup,hit:true,whiffed:false,armed:true};
+  }
+  return {
+    state:s,
+    // Live: playing the match (not waiting for the next serve). time: how far the replay has got, on A's clock.
+    get live(){return live;},get time(){return play;},
+    push,
+    // The replay moves on to now − delay, a message at a time; the events of all its steps are left on state.events.
+    step(){
+      if(base===null)return;
+      const target=now()-base-delay,events=[];
+      if(play===null)play=target;
+      const run=dt=>{if(dt>0){stepDuel(s,Math.min(dt,1));events.push(...s.events);}};
+      while(queue.length&&queue[0].t<=target){const q=queue.shift();if(q.t>play){run(q.t-play);play=q.t;}apply(q);}
+      if(target>play){run(target-play);play=target;}
+      s.events=[...events,...s.queued.splice(0)];
+    },
+    view(side='a'){return viewFor(s,side);}
   };
 }
