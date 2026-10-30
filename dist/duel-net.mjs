@@ -67,7 +67,8 @@ export function createClient({side,transport,now,posEvery=1/30,pingEvery=.25,syn
   function trip(msg,arrived){
     clock.trips.push(arrived-msg.t);if(clock.trips.length>120)clock.trips.shift();clock.mine=Math.min(...clock.trips);
     if(Number.isFinite(msg.mi))clock.theirs=msg.mi;
-    if(Number.isFinite(clock.theirs))clock.offset=(clock.mine-clock.theirs)/2;
+    // mine ≈ (our clock − theirs) + the trip here, theirs ≈ (their clock − ours) + the trip there.
+    if(Number.isFinite(clock.theirs))clock.offset=(clock.theirs-clock.mine)/2;
   }
   // at: when this step's tick starts (the decision is flown on to there; the tick then moves it with everything else).
   function receive({msg,at:arrived},at){
