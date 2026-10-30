@@ -152,4 +152,13 @@ body[data-screen=result] .watch-bar{display:none}
   body[data-room] .room-arena{padding:16px 6px 10px}
   body[data-room] .slot-av{width:42px;height:42px;font-size:18px}
   body[data-room][data-screen=ready] .start-button{height:46px;font-size:16px}
+  /* Little height: the main button (or what it waits for) and the smaller choice share a row, and the room's line
+     keeps to one, so the court card stays in view. */
+  body[data-room][data-screen=ready] .duel-menu{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr) auto;column-gap:8px}
+  body[data-room] .online-group{grid-column:1/-1}
+  body[data-room] :is(#room-wait,#start-match){grid-column:1;grid-row:2}
+  body[data-room] .duel-menu:not(:has(#room-sub:not([hidden]))) :is(#room-wait,#start-match){grid-column:1/-1}
+  body[data-room] #room-sub{grid-column:2;grid-row:2;height:46px;padding:0 14px}
+  body[data-room] .room-wait{min-height:46px;padding:2px 10px}
+  body[data-room] .online-status{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 }
