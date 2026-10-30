@@ -162,6 +162,8 @@ function hud(){
   put($('practice'),'hidden',!(game.practiceLeft>0&&ACTIVE_PHASES.includes(game.phase))||teaching);put($('practice'),'text',`练习 ×${game.practiceLeft}`);
   // Energy bar and skill buttons: state in words, spin direction as an arrow, disabled-looking only via class.
   put($('energy-fill'),'style.width',`${game.energy}%`);put($('energy-value'),'text',String(game.energy));put($('energy'),'aria-valuenow',String(game.energy));
+  // A full bar keeps the burst button lit with its flame (styles.css .charged) until it is spent, ball in reach or not.
+  const charged=game.energy>=SKILLS.burst.cost;$('skill-burst').classList.toggle('charged',charged);$('energy').classList.toggle('charged',charged);
   for(const kind of ['spin','burst']){const st=skillStatus(game,kind),b=$(`skill-${kind}`),label=SKILL_STATE[st.ok?'ok':st.reason];
     b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');put($(`${kind}-state`),'text',label);
     put(b,'aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
