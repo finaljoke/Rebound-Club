@@ -1,9 +1,10 @@
-// Online link (P1, Issue #5): the transport duel-net.mjs's createClient runs over between two players' pages. A WebRTC
-// data channel straight between them once one opens; until then, and whenever it goes quiet, the room's relay (the
-// rooms' WebSocket, server/room.mjs). Either way createClient sees one ordered channel: every frame carries its number
-// and the last number heard, so a switch resends what the other side has not confirmed, and nothing arrives twice or
-// out of order. The room's WebSocket also carries the WebRTC signalling, and is opened again (with the place's token)
-// when it drops.
+// Online link (P1, Issue #5; arena rooms, Issue #9): the transport duel-net.mjs's createClient runs over between two
+// players' pages. A WebRTC data channel straight between them once one opens; until then, and whenever it goes quiet,
+// the room's relay (the rooms' WebSocket, server/room.mjs). Either way createClient sees one ordered channel: every
+// frame carries its number and the last number heard, so a switch resends what the other side has not confirmed, and
+// nothing arrives twice or out of order. The room's WebSocket also carries the WebRTC signalling, and is opened again
+// (with the place's token) when it drops. In an arena room the two on the court change from match to match: each new
+// pairing gets a fresh channel, and the link also carries the room's own messages and the feed for whoever watches.
 
 // ice: STUN only (no TURN in P1: the room relays instead). In mainland China Xiaomi's and Mango TV's answer within
 // 100 ms, Cloudflare's in 150-260; Mango TV's and Cloudflare's also have IPv6 addresses, for phones on IPv6; Cloudflare's
@@ -14,12 +15,17 @@
 // heartbeat does not count), so one goes every minute; ping/pingLost: the room heartbeat, and how long without its
 // answer the socket counts as gone; retry: seconds between tries to get the room back; batch: bytes of frames sent as
 // one relay message when many go at once (the room takes 8 KB a message, and 120 at once); redial/redials: how long the
-// host waits for a direct channel before both start a fresh connection, and how many times.
+// host waits for a direct channel before both start a fresh connection, and how many times; feed: seconds between
+// packs of the feed (arena rooms).
 export const LINK={ice:[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.hitv.com:3478'},{urls:'stun:stun.cloudflare.com:3478'}],
   heartbeat:.5,silence:2.5,settle:5,
-  keep:60,ping:15,pingLost:40,retry:[1,2,4,8,15],batch:6000,redial:10,redials:5};
+  keep:60,ping:15,pingLost:40,retry:[1,2,4,8,15],batch:6000,redial:10,redials:5,feed:.2};
 // Refusals and closings that end a link for good (server/room.mjs CLOSE); any other drop is tried again.
-const FINAL=['not-found','full','expired','origin','rate','busy','token','too-big','too-fast','bad-message','replaced'];
+const FINAL=['not-found','full','expired','origin','rate','busy','token','too-big','too-fast','bad-message','replaced','bye'];
+// What goes in the feed: a player's own match messages (duel-net.mjs createClient) and the page's pause notes.
+const FEED=['pos','serve','hit','wide','goal','burstStart','pause','resume'];
+// The room's own messages in an arena room, handed to the page as events of the same type.
+const ROOM_EVENTS=['room','start','result','feed'];
 
 // The rooms' address: the dev server's stand-in for a page it serves (port 4173, any host on the LAN), else the
 // Worker. ?api=<ws url> on the page overrides both.
@@ -54,17 +60,24 @@ export function createStream({sendOn,deliver}){
 }
 
 // --- The link ----------------------------------------------------------------------------------------------------------
-// join: {create:true} | {code} | {room, token}. The room's places are 'host' and 'guest' (the page plays them as sides
-// a and b). Returns the transport createClient takes ({send, onMessage, close}) plus the room and the page's controls:
-// ready (resolves with {role, id, code, token} once in, rejects with the refusal), control(msg)/onControl(fn) (start,
-// pause, rematch: ordered with the match), onEvent(fn) ({type:'peer', present} | {type:'mode', mode:'relay'|'direct'} |
-// {type:'closed', reason} | {type:'retry'}). WebSocket / RTC are the browser's, or stand-ins for tests (RTC null: relay
-// only); now(): seconds, the clock createClient uses.
+// join: {create:true[, v:2]} | {code} | {room, token}, with name (arena rooms) for a newcomer. In a P1 room the places
+// are 'host' and 'guest' (the page plays them as sides a and b); in an arena room (v:2) the room says each pairing's
+// sides. Returns the transport createClient takes ({send, onMessage, close}) plus the room and the page's controls:
+// ready (resolves with {role, id, code, token, v, member, name} once in, rejects with the refusal), control(msg)/
+// onControl(fn) (start, pause, rematch: ordered with the match), onEvent(fn) ({type:'peer', present} | {type:'mode',
+// mode:'relay'|'direct'} | {type:'closed', reason} | {type:'retry'}; arena rooms also {type:'pair', pair, side,
+// opponent}, {type:'watching', on}, and the room's room, start, result and feed messages as they come). command(msg):
+// a message for the room (arena rooms: name, queue, watch, rules, ready, end); false when the room's socket is down.
+// WebSocket / RTC are the browser's, or stand-ins for tests (RTC null: relay only); now(): seconds, the clock
+// createClient uses.
 export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.WebSocket,RTC=globalThis.RTCPeerConnection,now=()=>performance.now()/1000,cfg=LINK}={}){
   const on={message:null,control:null,event:null},emit=e=>on.event?.(e);
   let ws=null,info=null,peer=false,closed=false,mode='relay',tries=0,lastPong=now(),pc=null,dc=null,polite=false,makingOffer=false,ignoreOffer=false;
   let lastDirect=-Infinity,beatSince=null,fellAt=-Infinity,dialedAt=0,redials=0;
-  const stream=createStream({sendOn,deliver:(kind,msg)=>kind==='g'?on.message?.(msg,now()):on.control?.(msg)});
+  // Arena rooms: this player's pairing on the court (null off it), its side and the opponent, and whether anyone watches.
+  let arena=false,pair=null,side=null,opponent=null,watched=false,feed=null;
+  const newStream=()=>createStream({sendOn,deliver:(kind,msg)=>kind==='g'?on.message?.(msg,now()):on.control?.(msg)});
+  let stream=newStream();
   let settle,fail;const ready=new Promise((res,rej)=>{settle=res;fail=rej;});ready.catch(()=>{});
 
   function sendOn(path,frames,many=false){
@@ -72,7 +85,7 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
     if(path==='direct'){if(dc?.readyState!=='open')return false;for(const f of list)dc.send(JSON.stringify(f));return true;}
     if(ws?.readyState!==1)return false;
     // Many at once (a resend) go packed, so the room's limits see a few messages, not a hundred.
-    let pack=[],size=0;const flush=()=>{if(pack.length)ws.send(JSON.stringify({type:'relay',data:pack.length===1?pack[0]:pack}));pack=[];size=0;};
+    let pack=[],size=0;const flush=()=>{if(pack.length)ws.send(JSON.stringify({type:'relay',...arena?{pair}:{},data:pack.length===1?pack[0]:pack}));pack=[];size=0;};
     for(const f of list){const n=JSON.stringify(f).length;if(size+n>cfg.batch)flush();pack.push(f);size+=n;}
     flush();return true;
   }
@@ -83,16 +96,27 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
   function open(){
     const p=new URLSearchParams();
     if(info){p.set('room',info.id);p.set('token',info.token);}
-    else if(join.create)p.set('create','1');else if(join.code)p.set('code',join.code);else{p.set('room',join.room);if(join.token)p.set('token',join.token);}
+    else{
+      if(join.create){p.set('create','1');if(join.v===2)p.set('v','2');}else if(join.code)p.set('code',join.code);else{p.set('room',join.room);if(join.token)p.set('token',join.token);}
+      if(join.name)p.set('name',join.name);
+    }
     const socket=ws=new WS(`${server}?${p}`);lastPong=now();
     socket.onopen=()=>{tries=0;if(mode==='relay')stream.resend();};
     socket.onmessage=e=>{
       if(socket!==ws)return;if(e.data==='pong'){lastPong=now();return;}
       let m;try{m=JSON.parse(e.data);}catch{return;}
-      if(m.type==='joined'){const first=!info;info={role:m.role,id:m.id,code:m.code,token:m.token};polite=m.role==='guest';if(first)settle({...info});setPeer(m.peer);}
-      else if(m.type==='peer')setPeer(m.present);
-      else if(m.type==='signal')onSignal(m.data);
-      else if(m.type==='relay')take(m.data);
+      if(m.type==='joined'){
+        const first=!info;arena=m.v===2;info={role:m.role,id:m.id,code:m.code,token:m.token,v:arena?2:1,member:m.member??null,name:m.name??null};
+        if(first)settle({...info});
+        // An arena room says this player's pairing in the peer message that follows.
+        if(!arena){polite=m.role==='guest';setPeer(m.peer);}
+      }
+      else if(m.type==='peer'){if(arena)onPair(m);else setPeer(m.present);}
+      // Signalling and relayed frames for an earlier pairing are dropped (the room drops most of them already).
+      else if(m.type==='signal'){if(!arena||m.pair===pair)onSignal(m.data);}
+      else if(m.type==='relay'){if(!arena||m.pair===pair)take(m.data);}
+      else if(m.type==='watching'){watched=!!m.on;emit({type:'watching',on:watched});}
+      else if(arena&&ROOM_EVENTS.includes(m.type))emit(m);
       else if(m.type==='error'){if(!info)fail(Error(m.reason));}
     };
     socket.onclose=e=>{
@@ -106,7 +130,19 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
     // The room drops what it cannot hand over, so on the other player's return the unconfirmed frames go again.
     if(present){redials=0;if(mode==='relay')stream.resend();startPeer();}else{dropPeer();setMode('relay');}
   }
-  const signal=data=>{if(ws?.readyState===1)ws.send(JSON.stringify({type:'signal',data}));};
+  // Arena rooms: whom this player faces. A new pairing, or none (off the court), starts afresh: a fresh ordered stream
+  // (what was unconfirmed was for the last opponent), the direct channel dropped and play back on the relay. Side b gives
+  // way when offers cross, so side a dials.
+  function onPair(m){
+    if(m.pair!==pair){
+      pair=m.pair??null;side=m.side??null;opponent=m.opponent??null;polite=side==='b';redials=0;dropPeer();stream=newStream();
+      if(peer){peer=false;emit({type:'peer',present:false});}
+      if(mode!=='relay'){mode='relay';emit({type:'mode',mode});}
+      emit({type:'pair',pair,side,opponent});
+    }
+    setPeer(!!m.present&&pair!==null);
+  }
+  const signal=data=>{if(ws?.readyState===1)ws.send(JSON.stringify(arena?{type:'signal',pair,data}:{type:'signal',data}));};
 
   // WebRTC, by MDN's perfect negotiation (the guest gives way when offers cross). Only the host opens the data channel,
   // so a connection starts with one offer: two crossing at the start left Chrome, now and then, with a polite side that
@@ -154,13 +190,35 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
     if(!polite&&RTC&&peer&&mode==='relay'&&dc?.readyState!=='open'&&now()-dialedAt>cfg.redial&&redials<cfg.redials){redials++;signal({redial:true});redial();}},cfg.heartbeat);
   every(()=>{if(ws?.readyState!==1)return;ws.send('ping');if(now()-lastPong>cfg.pingLost)ws.close(4900,'lost');},cfg.ping);
   every(()=>{if(ws?.readyState===1)ws.send(JSON.stringify({type:'keep'}));},cfg.keep);
+  // The feed (arena rooms): this player's own match messages, packed every cfg.feed seconds for the room to pass on to
+  // whoever watches, with this copy's clock offset (createClient clock.offset, once it has one), so a watcher can put
+  // both players on one clock. While nobody watches only goals go (the room keeps the score from them). Held while the
+  // room's socket is down, a stopped feed too: its last goal decides the match.
+  function flushFeed(){
+    if(!feed||ws?.readyState!==1)return;
+    if(feed.msgs.length){
+      const msgs=watched?feed.msgs:feed.msgs.filter(m=>m.type==='goal'),o=feed.offset?.();feed.msgs=[];
+      let pack=[],size=0;const go=()=>{if(pack.length)ws.send(JSON.stringify({type:'feed',n:feed.n,...Number.isFinite(o)?{o}:{},msgs:pack}));pack=[];size=0;};
+      for(const m of msgs){const k=JSON.stringify(m).length;if(size+k>cfg.batch)go();pack.push(m);size+=k;}
+      go();
+    }
+    if(feed.done)feed=null;
+  }
+  every(flushFeed,cfg.feed);
   function stop(){for(const id of timers){clearTimeout(id);clearInterval(id);}dropPeer();}
 
   open();
   return {
     ready,get role(){return info?.role;},get room(){return info;},get peer(){return peer;},get mode(){return mode;},get pending(){return stream.pending;},
+    get arena(){return arena;},get pair(){return pair;},get side(){return side;},get opponent(){return opponent;},get watched(){return watched;},
     send(msg){stream.send('g',msg);},onMessage(fn){on.message=fn;},
     control(msg){stream.send('c',msg);},onControl(fn){on.control=fn;},onEvent(fn){on.event=fn;},
+    command(msg){if(ws?.readyState!==1)return false;ws.send(JSON.stringify(msg));return true;},
+    // The feed for match n (offset(): the client's clock offset): feedPush takes what createClient sends and the page's
+    // {type:'pause'|'resume', t}; feedStop sends what is left (once the room's socket is up) and ends it.
+    feedStart(n,offset){flushFeed();feed={n,offset,msgs:[],done:false};},
+    feedPush(msg){if(!feed||feed.done||!FEED.includes(msg?.type))return;feed.msgs.push(msg);if(feed.msgs.length>3000)feed.msgs=feed.msgs.filter(m=>m.type==='goal');},
+    feedStop(){if(feed)feed.done=true;flushFeed();},
     // What the direct channel runs on, for the page to show: the chosen candidate pair's types ('host' on a LAN, 'srflx'
     // through a NAT, 'relay' a TURN server) and its round trip, with the link's mode.
     async stats(){

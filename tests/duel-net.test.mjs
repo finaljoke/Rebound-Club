@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createLoopback,createClient} from '../dist/duel-net.mjs';
+import {createLoopback,createClient,createWatcher} from '../dist/duel-net.mjs';
 import {createBot} from '../dist/duel-bot.mjs';
 import {COURT,localBall} from '../dist/duel-core.mjs';
 
@@ -59,6 +59,67 @@ test('两台设备的时钟不一样（乙方快 5 秒、慢 5 秒、快 30 秒�
     assert.ok(Math.abs(clients.b.clock.offset+skew)<.01,`差 ${skew} 秒：B 估的 ${clients.b.clock.offset}`);
     assert.ok(checked>=50,`差 ${skew} 秒：只比对了 ${checked} 次`);assert.ok(worst<=.05,`差 ${skew} 秒：最大偏差 ${worst.toFixed(4)} 米`);
   }
+});
+
+// Watching (arena rooms): two bots play over a loopback, B's clock `skew` s ahead; each one's own messages are packed
+// every 0.2 s as the link's feed does (B's offset only once it has one) and reach a watcher, whose clock is `wskew` off
+// A's, after a room trip of `room` s give or take 30 ms; from `joinAfter` goals on. Every step while both are playing,
+// the watcher's ball is compared with the ball of the copy that decided its flight (B's when it flies at A), at the
+// same moment of A's clock.
+const FEED=['pos','serve','hit','wide','goal','burstStart'],seeded=seed=>{let a=seed;return()=>{a=a*16807%2147483647;return a/2147483647;};};
+function watched({seed=1,delayMs=60,skew=5,wskew=-3,room=.12,joinAfter=0,cap=120*400}={}){
+  let T=0;const loop=createLoopback({delayMs,jitterMs:delayMs*.2,seed,now:()=>T}),out={a:[],b:[]},jitter=seeded(seed+9);
+  const tA={send:m=>{loop[0].send(m);out.a.push(m);},onMessage:fn=>loop[0].onMessage(fn),close(){}};
+  const tB={send:m=>{loop[1].send(m);out.b.push(m);},onMessage:fn=>loop[1].onMessage((m,at)=>fn(m,at+skew)),close(){}};
+  const c={a:createClient({side:'a',transport:tA,now:()=>T}),b:createClient({side:'b',transport:tB,now:()=>T+skew})};
+  const bots={a:createBot({seed:seed*2+1}),b:createBot({seed:seed*2+2})};c.a.start();c.b.start();
+  const w=createWatcher({now:()=>T+wskew}),inflight=[],past={a:[],b:[]},errs=[];let joined=false,goalsSeen=0,liveAtJoin=null;
+  for(let f=0;f<cap;f++){
+    T+=DT;loop.flush();
+    for(const side of ['a','b']){const d=bots[side].decide(c[side].view(),DT);c[side].step(DT,{axis:d.axis,swing:d.swing,skill:d.skill});c[side].state.events=[];
+      const s=c[side].state;past[side].push({x:s.ball.x,z:s.ball.z,phase:s.phase});}
+    if(f%24===0)for(const side of ['a','b']){
+      const msgs=out[side].splice(0).filter(m=>FEED.includes(m.type));
+      if(!joined&&c.a.state.score.a+c.a.state.score.b>=joinAfter){joined=true;liveAtJoin=w.live;}
+      if(joined&&msgs.length)inflight.push({at:T+room+(jitter()-.5)*.06,pack:{side,msgs,o:c[side].synced?c[side].clock.offset:null}});
+    }
+    for(let i=inflight.length-1;i>=0;i--)if(inflight[i].at<=T){const {pack,at}=inflight.splice(i,1)[0];w.push({...pack,at:at+wskew});}
+    w.step();goalsSeen+=w.state.events.filter(e=>e.type==='goal').length;
+    if(w.live&&w.state.phase==='playing'){const s=w.state,src=past[s.ball.vz<0?'b':'a'],h=src[Math.round(w.time/DT)-1];
+      if(h?.phase==='playing')errs.push(Math.hypot(h.x-s.ball.x,h.z-s.ball.z));}
+    if(c.a.state.phase==='won'&&c.b.state.phase==='won'&&w.state.phase==='won')break;
+  }
+  return {c,w,errs,goalsSeen,liveAtJoin};
+}
+
+test('观战：两个机器人打完一局，观众隔 1 秒回放；乙方时钟快 5 秒、观众时钟慢 3 秒，比分、胜者一致，球和判定方的对局相差不超过 0.15 米', ()=>{
+  for(const opts of [{seed:1},{seed:2,delayMs:150},{seed:3,room:.3},{seed:4,skew:-30,wskew:12}]){
+    const {c,w,errs,goalsSeen}=watched(opts),what=JSON.stringify(opts);
+    assert.equal(w.state.phase,'won',what);assert.deepEqual(w.state.score,c.a.state.score,what);assert.equal(w.state.winner,c.a.state.winner,what);
+    assert.equal(goalsSeen,c.a.state.score.a+c.a.state.score.b,`${what}：每个进球观众端出现一次`);
+    assert.ok(errs.length>3000,`${what}：只比对了 ${errs.length} 次`);assert.ok(Math.max(...errs)<=.15,`${what}：最大偏差 ${Math.max(...errs).toFixed(3)} 米`);
+  }
+});
+
+test('观战：中途进来，先显示给定的比分，等下一次发球才放画面；最后比分一致', ()=>{
+  const {c,w,errs,liveAtJoin}=watched({seed:5,joinAfter:2});
+  assert.equal(liveAtJoin,false);assert.deepEqual(w.state.score,c.a.state.score);assert.ok(errs.length>1000);assert.ok(Math.max(...errs)<=.15);
+  // Given the room's score, it shows it until play reaches it; a rally's messages before a serve are not played.
+  let T=0;const late=createWatcher({now:()=>T,score:{a:2,b:1}});
+  late.push({side:'a',msgs:[{type:'hit',t:0,side:'a',event:'hit',ball:{x:0,z:3,vx:0,vz:5,curve:null},rally:1,energy:50,power:false,shot:{side:'a',kind:'hit'},stop:0}],at:0});
+  T=2;late.step();assert.equal(late.live,false);assert.deepEqual(late.state.score,{a:2,b:1});assert.equal(late.state.phase,'ready');
+});
+
+test('观战：乙方的时钟差还没估出来的包放不进时间线，丢掉；暂停、继续跟着玩家的记录走', ()=>{
+  // A's pack lands at 6 with stamps up to 5.8: the fastest trip is 0.2 s, so the replay runs 1.2 s behind this clock.
+  let T=6;const w=createWatcher({now:()=>T,delay:1}),near=(a,b)=>Math.abs(a-b)<.02;
+  w.push({side:'b',msgs:[{type:'pos',t:3,x:2,axis:0,swing:null}],at:T});assert.equal(w.time,null,'只有乙方没对时的包：还没有时间线');
+  w.push({side:'a',msgs:[{type:'pos',t:5,x:1,axis:0,swing:null},{type:'serve',t:5.1,ball:{x:0,z:12,vx:0,vz:-6,curve:null,kind:null,z0:12,z1:1},serves:1},{type:'pause',t:5.3},{type:'resume',t:5.8}],at:T});
+  w.step();T=6.4;w.step();assert.equal(w.state.players.a.x,1);assert.equal(w.state.players.b.x,0,'没对时的乙方消息被丢掉');
+  assert.ok(w.live);assert.equal(w.state.phase,'playing');assert.ok(near(w.state.ball.z,12-6*.1),`发球后飞了 0.1 秒：${w.state.ball.z}`);
+  T=6.6;w.step();assert.equal(w.state.phase,'paused');assert.ok(near(w.state.ball.z,12-6*.2));
+  T=6.9;w.step();assert.ok(near(w.state.ball.z,12-6*.2),'暂停中不动');
+  T=7.2;w.step();assert.equal(w.state.phase,'playing');assert.ok(near(w.state.ball.z,12-6*.4),'继续后接着飞');
 });
 
 test('一条击球消息晚到 2 秒：接收方的球停在发送方的球门线上等待，收到后继续，比分不出错', ()=>{
