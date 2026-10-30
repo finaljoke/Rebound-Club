@@ -6,10 +6,12 @@ import {COURT,localBall} from '../dist/duel-core.mjs';
 
 const DT=1/120,HITS=['hit','perfect','soft','spin','burst'];
 // Two clients on one virtual clock over a loopback, each played by a bot from its own client's view.
-// onBefore runs ahead of each step's clients, onStep after them.
-function match({delayMs=150,jitterMs=30,seed=1,cap=120*600,sync,onBefore,onStep}={}){
+// onBefore runs ahead of each step's clients, onStep after them. skew: B's clock runs that many seconds ahead of A's (two
+// devices' clocks never agree), and what reaches B is stamped on it.
+function match({delayMs=150,jitterMs=30,seed=1,cap=120*600,sync,skew=0,onBefore,onStep}={}){
   let T=0;const now=()=>T,loop=createLoopback({delayMs,jitterMs,seed,now});
-  const clients={a:createClient({side:'a',transport:loop[0],now,sync}),b:createClient({side:'b',transport:loop[1],now,sync})};
+  const toB=skew?{send:m=>loop[1].send(m),onMessage:fn=>loop[1].onMessage((m,at)=>fn(m,at+skew)),close(){}}:loop[1];
+  const clients={a:createClient({side:'a',transport:loop[0],now,sync}),b:createClient({side:'b',transport:toB,now:()=>T+skew,sync})};
   const bots={a:createBot({seed:seed*2+1}),b:createBot({seed:seed*2+2})},goals={a:[],b:[]};
   for(const c of Object.values(clients))c.start();
   for(let f=0;f<cap&&!(clients.a.state.phase==='won'&&clients.b.state.phase==='won');f++){
@@ -42,6 +44,21 @@ test('收到击球消息追帧后，接收方的球与发送方同一时刻的�
         const d=Math.hypot(me.ball.x-them.ball.x,me.ball.z-them.ball.z);worst=Math.max(worst,d);checked++;}}
   }});
   assert.ok(checked>=50,`只比对了 ${checked} 次`);assert.ok(worst<=.05,`最大偏差 ${worst.toFixed(4)} 米`);
+});
+
+test('两台设备的时钟不一样（乙方快 5 秒、慢 5 秒、快 30 秒）：时钟差估得出来，接收方的球照样和发送方同一时刻的球对得上', ()=>{
+  for(const skew of [5,-5,30]){
+    let worst=0,checked=0;const seen={a:0,b:0};
+    const {clients}=match({seed:200,skew,cap:120*120,onStep:(c)=>{
+      for(const side of ['a','b']){const me=c[side].state,them=c[side==='a'?'b':'a'].state;
+        for(const e of me.events)if(HITS.includes(e.type)&&e.side!==side&&++seen[side]>=3){
+          const d=Math.hypot(me.ball.x-them.ball.x,me.ball.z-them.ball.z);worst=Math.max(worst,d);checked++;}}
+    }});
+    // offset is the other clock minus this one.
+    assert.ok(Math.abs(clients.a.clock.offset-skew)<.01,`差 ${skew} 秒：A 估的 ${clients.a.clock.offset}`);
+    assert.ok(Math.abs(clients.b.clock.offset+skew)<.01,`差 ${skew} 秒：B 估的 ${clients.b.clock.offset}`);
+    assert.ok(checked>=50,`差 ${skew} 秒：只比对了 ${checked} 次`);assert.ok(worst<=.05,`差 ${skew} 秒：最大偏差 ${worst.toFixed(4)} 米`);
+  }
 });
 
 test('一条击球消息晚到 2 秒：接收方的球停在发送方的球门线上等待，收到后继续，比分不出错', ()=>{
