@@ -7,10 +7,13 @@
 //    side sent across the fall arrive in order, once.
 // 4. Duels over fresh links, catch-up and full flight: a bot plays in each page (createClient) until the first goal, and
 //    both pages end with the same score.
-// 5. The duel page's 好友联机: the host (phone, portrait) opens a room, the guest (desktop) types its code in lower case;
-//    only the host can start; the host's Esc pauses both (the guest sees why) and the guest's 继续 resumes both after the
-//    hold; a goal leaves both pages on the same score, the footer telling direct and ping; a third page on the invite
-//    link hears the room is full; the guest leaving shows on the host's page. No page errors throughout.
+// 5. The duel page's 好友联机, an arena room: the host (phone, portrait) opens a room, the guest (desktop) types its code
+//    in lower case; both are called to the court and both say ready; the host's Esc pauses both (the guest sees why) and
+//    the guest's 继续 resumes both after the hold. A third page on the invite link is queued and watches the match from
+//    the next serve, without the controls, and can turn the view round. Nobody swings, so the match runs to 5: the
+//    watcher's replay ends on the players' score, the footer tells direct and ping, the loser goes to the back of the
+//    queue and the one queued comes on; when the winner's page goes away mid-match, the other player sees why. No page
+//    errors throughout.
 import {createRequire} from 'node:module';import assert from 'node:assert/strict';
 const require=createRequire('C:/Users/HUFAN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/qa.cjs');
 const {chromium}=require('playwright');
@@ -72,41 +75,60 @@ for(const sync of ['catchup','fullflight']){
 }
 // 5. The page itself.
 async function page(viewport){
-  const p=await (await b.newContext({viewport})).newPage();
+  const ctx=await b.newContext({viewport}),p=await ctx.newPage();
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await p.route('**/duel.js',async r=>{const x=await r.fetch();await r.fulfill({response:x,body:(await x.text())+'\nwindow.__qa={match:()=>match,room:()=>room};'});});
   return p;
 }
+const said=(p,re,ms=10000)=>p.waitForFunction(re=>new RegExp(re).test(document.getElementById('online-status').textContent),re.source,{timeout:ms});
 const H=await page({width:390,height:844}),G=await page({width:1280,height:800});
 for(const p of [H,G]){await p.goto('http://localhost:4173/duel.html');await p.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});await p.getByRole('radio',{name:'好友联机'}).click();}
-await H.getByRole('button',{name:'创建房间',exact:true}).click();
+await H.fill('#online-name','房主');await H.getByRole('button',{name:'创建房间',exact:true}).click();
 await H.waitForFunction(()=>/^[2-9A-Z]{5}$/.test(document.getElementById('room-code').textContent),null,{timeout:10000});
-const roomCode=await H.locator('#room-code').textContent();
-assert.match(await H.locator('#online-status').textContent(),/把房间码/);
-await G.fill('#join-code',roomCode.toLowerCase());await G.getByRole('button',{name:'加入',exact:true}).click();
-await G.waitForFunction(()=>/等房主开始/.test(document.getElementById('online-status').textContent),null,{timeout:10000});
-await H.waitForFunction(()=>/可以开始了/.test(document.getElementById('online-status').textContent),null,{timeout:10000});
-assert.equal(await G.locator('#start-match').isDisabled(),true,'访客不能开始');assert.equal(await G.locator('#sync-group').isHidden(),true,'访客不选同步方式');
-assert.equal(await H.locator('#start-match').isDisabled(),false,'房主可以开始');
+const roomCode=await H.locator('#room-code').textContent();await said(H,/等对手进房/);
+await G.fill('#online-name','访客');await G.fill('#join-code',roomCode.toLowerCase());await G.getByRole('button',{name:'加入',exact:true}).click();
+for(const p of [H,G])await said(p,/轮到你上场/);
+assert.equal(await G.locator('#sync-group').isHidden(),true,'只有房主选同步方式');assert.equal(await G.locator('#rotation-group').isHidden(),true,'只有房主选轮换');
+assert.equal(await H.locator('#rotation-group').isHidden(),false);
+assert.deepEqual(await H.locator('#room-members li').allInnerTexts().then(t=>t.map(x=>x.replace(/\s+/g,' '))),['房主（我） 房主 · 场上 · 甲方','访客 场上 · 乙方']);
+assert.equal(await G.locator('#start-match').isDisabled(),false,'两人都能点准备');
 await H.screenshot({path:'artifacts/duel/online-room-390x844.png',fullPage:true});await G.screenshot({path:'artifacts/duel/online-guest-1280x800.png'});
-await H.locator('#start-match').click();
-for(const p of [H,G])await p.waitForFunction(()=>__qa.match()?.state.phase==='playing',null,{timeout:15000});
+await H.locator('#start-match').click();await said(H,/已准备/);await G.locator('#start-match').click();
+for(const p of [H,G])await p.waitForFunction(()=>__qa.match()?.mode==='online'&&__qa.match().state.phase!=='ready',null,{timeout:15000});
 assert.deepEqual([await H.evaluate(()=>__qa.match().me),await G.evaluate(()=>__qa.match().me)],['a','b']);
-await H.keyboard.press('Escape');
+await H.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:10000});await H.keyboard.press('Escape');
 await G.waitForFunction(()=>__qa.match().state.phase==='paused'&&/对方暂停了/.test(document.getElementById('overlay-content').textContent),null,{timeout:5000});
 const t0=Date.now();await G.getByRole('button',{name:'继续对战'}).click();
 for(const p of [H,G])await p.waitForFunction(()=>__qa.match().state.phase!=='paused',null,{timeout:5000});
 const held=(Date.now()-t0)/1000;assert.ok(held>=.7,`继续前先等 ${held} 秒`);
-for(const p of [H,G])await p.waitForFunction(()=>{const s=__qa.match().state;return s.score.a+s.score.b>0;},null,{timeout:30000});
-await H.waitForTimeout(400);
-const ui={code:roomCode,held,scores:[await H.evaluate(()=>__qa.match().state.score),await G.evaluate(()=>__qa.match().state.score)],footer:await G.locator('#score').textContent()};
-assert.deepEqual(ui.scores[0],ui.scores[1],'两边比分');assert.match(ui.footer,/直连 · ping \d+/);
-const third=await page({width:390,height:844});await third.goto(H.url());
-await third.waitForFunction(()=>/房间已满/.test(document.getElementById('feedback').textContent),null,{timeout:10000});
-await G.keyboard.press('Escape');await G.getByRole('button',{name:'离开房间'}).first().click();
-await H.waitForFunction(()=>/对方断开了/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
-await H.screenshot({path:'artifacts/duel/online-host-390x844.png'});
-results.page=ui;
+// A third, by the invite link: queued, and watching the match a second behind, from the next serve on.
+const W=await page({width:390,height:844});await W.goto(H.url());await W.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
+await said(W,/排队中，第 1 位 · 场上：房主 对 访客/);
+await W.waitForFunction(()=>__qa.match()?.mode==='watch'&&__qa.match().watcher.live,null,{timeout:30000});
+assert.equal(await W.locator('#watch-bar').isVisible(),true);assert.equal(await W.locator('#attack').isVisible(),false,'观战时没有挥击按钮');
+await W.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:15000});await W.screenshot({path:'artifacts/duel/online-watch-390x844.png'});
+await W.getByRole('button',{name:'换个方向看'}).click();assert.equal(await W.evaluate(()=>__qa.match().view),'b');
+assert.match(await W.locator('#score').textContent(),/观战中/);
+// Nobody swings, so every serve scores: the match runs to 5, and the watcher's replay ends on the same score.
+for(const p of [H,G])await p.waitForFunction(()=>__qa.match()?.state.phase==='won',null,{timeout:120000});
+await W.waitForFunction(()=>__qa.match()?.state.phase==='won',null,{timeout:10000});
+const scores=await Promise.all([H,G,W].map(p=>p.evaluate(()=>__qa.match().state.score)));
+assert.deepEqual(scores[0],scores[1],'两人比分');assert.deepEqual(scores[2],scores[0],'观众回放的比分');
+const footer=await G.locator('#score').textContent();assert.match(footer,/直连 · ping \d+/);
+// The loser to the back of the queue, the one queued on against the winner.
+const won=scores[0].a>scores[0].b?{p:H,name:'房主'}:{p:G,name:'访客'},lost=won.p===H?{p:G,name:'访客'}:{p:H,name:'房主'};
+await W.waitForFunction(()=>/准备下一局/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
+await lost.p.waitForFunction(()=>/你排在第 1 位/.test(document.getElementById('overlay-content').textContent),null,{timeout:8000});
+await W.screenshot({path:'artifacts/duel/online-watch-result-390x844.png'});
+await W.getByRole('button',{name:'准备下一局'}).click();await won.p.getByRole('button',{name:'准备下一局'}).click();
+for(const p of [W,won.p])await p.waitForFunction(()=>__qa.match()?.mode==='online'&&__qa.match().state.phase!=='ready',null,{timeout:15000});
+// The loser, its result screen still up, is moved on to watching the next match as it starts.
+await lost.p.waitForFunction(()=>__qa.match()?.mode==='watch'&&__qa.match().n===2,null,{timeout:15000});
+// The winner's page goes away mid-match: the one it played sees why play stopped.
+await won.p.context().close();
+await W.waitForFunction(()=>/对方断开了/.test(document.getElementById('overlay-content').textContent),null,{timeout:15000});
+await W.screenshot({path:'artifacts/duel/online-gone-390x844.png'});
+results.page={code:roomCode,held,scores,footer};
 assert.deepEqual(errors,[]);
 console.log(JSON.stringify(results,null,1));console.log('PASS');
 await b.close();
