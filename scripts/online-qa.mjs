@@ -92,9 +92,12 @@ await H.waitForFunction(()=>/^[2-9A-Z]{5}$/.test(document.getElementById('room-c
 const roomCode=await H.locator('#room-code').textContent();await said(H,/等对手进房/);
 await G.fill('#online-name','访客');await G.fill('#join-code',roomCode.toLowerCase());await G.getByRole('button',{name:'加入',exact:true}).click();
 for(const p of [H,G])await said(p,/轮到你上场/);
-assert.equal(await G.locator('#sync-group').isHidden(),true,'只有房主选同步方式');assert.equal(await G.locator('#rotation-group').isHidden(),true,'只有房主选轮换');
-assert.equal(await H.locator('#rotation-group').isHidden(),false);
-assert.deepEqual(await H.locator('#room-members li').allInnerTexts().then(t=>t.map(x=>x.replace(/\s+/g,' '))),['房主（我） 房主 · 场上 · 甲方','访客 场上 · 乙方']);
+// Only the owner has the room's settings (folded: rotation and sync); the others see one line of rules.
+assert.equal(await G.locator('#room-settings').isHidden(),true,'只有房主改房间设置');assert.equal(await G.locator('#room-rules').isVisible(),true,'其他人看到一行规则');
+await H.locator('#room-settings summary').click();for(const id of ['#rotation-group','#room-sync-group'])assert.equal(await H.locator(id).isVisible(),true,id);await H.locator('#room-settings summary').click();
+// The court: 守擂 (the owner, side a) and 攻擂, each page marking its own side.
+const slots=p=>p.evaluate(()=>[...document.querySelectorAll('#room-arena .slot')].map(s=>[s.querySelector('.slot-name').textContent,s.querySelector('.slot-tag').textContent]));
+assert.deepEqual(await slots(H),[['房主','你 · 守擂'],['访客','攻擂']]);assert.deepEqual(await slots(G),[['房主','守擂'],['访客','你 · 攻擂']]);
 assert.equal(await G.locator('#start-match').isDisabled(),false,'两人都能点准备');
 await H.screenshot({path:'artifacts/duel/online-room-390x844.png',fullPage:true});await G.screenshot({path:'artifacts/duel/online-guest-1280x800.png'});
 await H.locator('#start-match').click();await said(H,/已准备/);await G.locator('#start-match').click();

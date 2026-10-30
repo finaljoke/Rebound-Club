@@ -2,45 +2,131 @@
    choices in the lobby panel. */
 .duel-menu{display:grid;gap:10px}
 .duel-group{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.duel-group[hidden]{display:none}
 .duel-label{flex:0 0 100%;font-size:11px;letter-spacing:.08em;color:var(--muted)}
 .duel-choice{flex:1 1 0;min-width:0;height:44px;padding:0 10px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(20,27,56,.88);color:var(--ink);font-size:14px;font-weight:700;white-space:nowrap}
 .duel-choice:hover{background:#1b2448}
 .duel-choice[aria-checked=true]{border-color:var(--orange);background:#2a1d2a;color:#fff;box-shadow:inset 0 0 0 1px var(--orange)}
-.duel-choice[hidden]{display:none}
 .duel-keys{margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
 .duel-keys b{color:var(--ink);font-weight:700}
 .duel-back{justify-self:center;font-size:12px}
-.online-lobby,.online-room{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%}
-.online-lobby[hidden],.online-room[hidden]{display:none}
-.online-code{flex:1 1 0;min-width:0;height:44px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(10,14,32,.9);color:var(--ink);font:700 18px/1 ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase}
-.online-code::placeholder{letter-spacing:0;color:var(--muted);font-weight:500}
-.room-code{flex:0 0 100%;display:flex;align-items:baseline;gap:12px}
-.room-code small{font-size:11px;color:var(--muted)}
-.room-code b{font:800 30px/1 ui-monospace,Consolas,monospace;letter-spacing:.18em;color:#fff}
-.online-status{flex:0 0 100%;margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
-.online-status:empty{display:none}
-/* Arena rooms: the name boxes, who is in the room, this player's own choices; and, watching, a bar over the court in
-   place of the controls (which are kept in place, unseen, so the court keeps its size). */
-.online-name{flex:1 1 100%;min-width:0;height:40px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(10,14,32,.9);color:var(--ink);font-size:14px}
+/* Folded away: the bot's test options; in a room, its settings and how to play. */
+.duel-fold,.room-fold{border:1px solid rgba(255,255,255,.12);border-radius:14px}
+.duel-fold>summary,.room-fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:0 14px;list-style:none;cursor:pointer;font-size:13px;color:#cfd6ef}
+.duel-fold>summary::-webkit-details-marker,.room-fold>summary::-webkit-details-marker{display:none}
+.duel-fold>summary b,.room-fold>summary b{color:var(--ink)}
+.fold-go{flex:none;color:var(--muted);font-weight:700}
+.fold-go::after{content:'›';display:inline-block;margin-left:6px;transition:transform .15s}
+[open]>summary .fold-go::after{transform:rotate(90deg)}
+.duel-fold>:not(summary),.room-fold>:not(summary){margin:0 12px 12px}
+/* Online, before a room: a name, then open a room or join one by its code, typed into one box drawn as five. */
+.online-group,.online-lobby{display:grid;gap:10px}
+.online-field{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+.online-field>span{display:flex;justify-content:space-between;gap:8px}
+.online-field small{font-size:11px}
+.online-name{width:100%;min-width:0;height:44px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(10,14,32,.9);color:var(--ink);font-size:15px}
 .online-name::placeholder{color:var(--muted)}
-.room-panel{flex:0 0 100%;display:grid;gap:8px}
-.room-panel[hidden]{display:none}
-.room-members{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.room-members li{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 10px;border-radius:12px;background:rgba(20,27,56,.6);font-size:13px}
-.room-members li.me{box-shadow:inset 0 0 0 1px var(--orange)}
-.room-members li.away{opacity:.5}
-.member-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:700}
-.member-tag{flex:0 0 auto;font-size:11px;color:var(--muted)}
-.member-tag.court{color:var(--gold)}
-.room-actions,.room-rename{display:flex;gap:8px}
-.room-actions:empty{display:none}
-.room-rename .online-name{flex:1 1 0}
+.online-option{display:grid;gap:8px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(20,27,56,.88)}
+.online-option h3{margin:0;font-size:15px;font-weight:800}
+.online-option p{margin:-4px 0 0;font-size:12px;color:var(--muted)}
+.online-host{padding:13px 16px;border-radius:14px;font-size:16px}
+.join-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.online-join{flex:none;height:48px;padding:0 18px}
+.code-boxes{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.code-boxes span{height:48px;border:1.5px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(10,14,32,.9);display:grid;place-items:center;color:var(--ink);font:800 22px/1 ui-monospace,Consolas,monospace;pointer-events:none}
+.code-boxes:focus-within span.next{border-color:var(--orange)}
+.online-code{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;font-size:16px;cursor:text}
+/* Online, in a room (body[data-room]): its top row, then the court (守擂 on the left, 攻擂 on the right), the queue and
+   the stands; settings and how to play folded. The main button, or what this player waits for, stays below. */
+.online-room{display:flex;flex-direction:column;gap:10px;min-height:0}
+.room-top{flex:none;display:flex;align-items:center;gap:6px}
+.room-chip{position:relative;height:40px;padding:0 12px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(20,27,56,.88);color:var(--ink);font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.room-code small{font-size:11px;color:var(--muted)}
+.room-code b{font:800 18px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em}
+.room-code.copied small{font-size:0}
+.room-code.copied small::before{content:'已复制';font-size:11px;color:var(--green)}
+.room-count{margin-right:auto;color:var(--muted)}
+.room-leave.confirm{border-color:#ff5a4a;color:#ffb3aa}
+.room-scroll{display:flex;flex-direction:column;gap:12px;min-height:0;padding-top:10px}
+.room-arena{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 60px minmax(0,1fr);align-items:start;padding:18px 8px 12px;border:1px solid #2a3560;border-radius:18px;background:radial-gradient(120% 100% at 50% 0%,#26336f,#141b38 72%)}
+.arena-cap{position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:0 10px;border:1px solid #2a3560;border-radius:999px;background:#0f1531;color:var(--muted);font-size:11px;font-weight:700;line-height:18px;white-space:nowrap}
+.slot{display:grid;justify-items:center;align-content:start;gap:4px;min-width:0;text-align:center}
+.slot-av{position:relative;width:52px;height:52px;border-radius:50%;background:var(--c,#3a4780);color:#0b1022;display:grid;place-items:center;font-size:22px;font-weight:900}
+.slot.me .slot-av{box-shadow:0 0 0 3px #141b38,0 0 0 6px var(--orange)}
+.slot.away .slot-av{filter:grayscale(1) brightness(.6)}
+.slot.empty .slot-av{background:transparent;border:2px dashed #3a4780;color:#5b6aa8;font-size:28px;font-weight:400}
+.crown{position:absolute;top:-6px;right:-15px;padding:0 5px;border-radius:6px;background:var(--gold);color:#1a1300;font-size:10px;font-style:normal;font-weight:800;line-height:16px}
+.slot-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0;border:0;background:none;color:var(--ink);font-size:15px;font-weight:800}
+.slot.empty .slot-name{color:var(--muted)}
+button.slot-name::after,button.q-name::after{content:' ✎';color:var(--muted);font-weight:400}
+.slot-tag{padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:#cfd6ef;font-size:11px;font-weight:700;white-space:nowrap}
+.slot.me .slot-tag{background:var(--orange);color:#fff7ea}
+.slot-state{font-size:12px;color:var(--muted)}
+.slot-state.ok{color:var(--green);font-weight:800}
+.slot-state:empty{display:none}
+.arena-mid{display:grid;justify-items:center;gap:8px;padding-top:10px}
+.arena-vs{color:var(--gold);font-size:28px;font-style:italic;font-weight:900;line-height:1;-webkit-text-stroke:5px #0d1022;paint-order:stroke fill}
+.room-arena.waiting .arena-vs{color:#3a4780;-webkit-text-stroke:0}
+.ready-ring{position:relative;width:44px;height:44px}
+.ready-ring svg{width:44px;height:44px;transform:rotate(-90deg)}
+.ready-ring circle{fill:none;stroke-width:4}
+.ring-track{stroke:#2a3560}
+.ring-left{stroke:var(--gold);stroke-linecap:round;stroke-dasharray:119.4}
+.ready-ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:16px;font-weight:900;font-variant-numeric:tabular-nums}
+.room-code-card{display:grid;justify-items:center;gap:6px;padding:16px 12px;border:1px solid #2a3560;border-radius:18px;background:rgba(20,27,56,.88);text-align:center}
+.room-code-card small{font-size:12px;color:var(--muted)}
+.room-code-card b{margin-right:-.2em;color:#fff;font:800 38px/1 ui-monospace,Consolas,monospace;letter-spacing:.2em}
+.room-code-card p{margin:0;font-size:12px;line-height:1.55;color:var(--muted)}
+.room-list h3{margin:0 0 6px;font-size:12px;font-weight:700;color:var(--muted)}
+.queue-list,.stands-list{margin:0;padding:0;list-style:none}
+.queue-list{display:grid;gap:6px}
+.queue-list li{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:14px;background:rgba(20,27,56,.88)}
+.queue-list li.me,.stands-list li.me{box-shadow:inset 0 0 0 1.5px var(--orange)}
+.queue-list li.away,.stands-list li.away{opacity:.55}
+.q-num{flex:none;width:22px;height:22px;border-radius:50%;background:#22305e;color:#cfd6ef;font-size:12px;font-weight:800;line-height:22px;text-align:center}
+.mini-av{flex:none;width:28px;height:28px;border-radius:50%;background:var(--c,#3a4780);color:#0b1022;display:grid;place-items:center;font-size:13px;font-weight:900}
+.q-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0;border:0;background:none;color:var(--ink);font-size:14px;font-weight:700;text-align:left}
+.q-tag{flex:none;color:var(--gold);font-size:11px;font-weight:800}
+.q-tag.you{padding:1px 8px;border-radius:999px;background:var(--orange);color:#fff7ea}
+.q-tag.away{color:var(--muted)}
+.stands-list{display:flex;flex-wrap:wrap;gap:6px}
+.stands-list li{display:inline-flex;align-items:center;gap:7px;max-width:100%;min-height:36px;padding:0 12px 0 4px;border-radius:999px;background:rgba(20,27,56,.88)}
+.stands-list .q-name{flex:0 1 auto}
+.room-rename{display:flex;gap:8px}
 .room-rename .duel-choice{flex:0 0 auto}
-.room-rules{margin:0;font-size:12px;color:var(--muted)}
-.room-rules:empty{display:none}
+.room-rules{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin:0;padding:0 14px;border:1px solid rgba(255,255,255,.12);border-radius:14px;color:#cfd6ef;font-size:13px}
+.room-rules b{color:var(--ink)}
+.room-rules small{color:var(--muted);font-size:12px;font-weight:700}
+.online-status{flex:none;margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+.online-status:empty{display:none}
+.room-wait{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;padding:6px 12px;border:1.5px dashed #3a4780;border-radius:18px;background:rgba(26,35,71,.5);color:#e6eaff;text-align:center}
+.room-wait b{font-size:16px}
+.room-wait small{font-size:12px;color:var(--muted)}
+.room-wait small:empty{display:none}
+.room-sub{height:44px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:transparent;color:#cfd6ef;font-size:14px;font-weight:700}
+/* The ready screen keeps some court (120px; 160px in a room); the panel takes the rest and scrolls inside (lobby.css
+   lays out the club's lobby). In a room the panel is a card: only its middle scrolls, the main button stays in view.
+   Wide screens put the court on the left and the panel on the right. */
+body[data-screen=ready] .layout{grid-template-rows:minmax(120px,1fr) minmax(0,max-content)}
+body[data-room][data-screen=ready] .layout{grid-template-rows:minmax(160px,1fr) minmax(0,max-content)}
+body[data-screen=ready] .duel-menu{min-height:0;max-height:100%;overflow-y:auto}
+body[data-room][data-screen=ready] .duel-menu{width:min(100%,520px);align-self:stretch;display:flex;flex-direction:column;gap:10px;padding:12px 14px 14px;border:1px solid rgba(255,255,255,.08);border-radius:22px;background:rgba(15,21,49,.96);overflow:hidden}
+body[data-room] :is(#mode-group,#test-options,#duel-keys,.duel-back){display:none}
+body[data-room] .online-group{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px}
+body[data-room] .online-room{flex:1 1 auto}
+body[data-room] .room-scroll{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain}
+body[data-room][data-screen=ready] .start-button{flex:none;height:54px;font-size:18px}
+/* Short phones: the lobby's two ways in sit tighter, so both stay in view with the court. */
+@media(max-height:640px) and (max-width:700px){
+  body[data-screen=ready] :is(.duel-menu,.online-group,.online-lobby){gap:8px}
+  body[data-screen=ready] .online-option{gap:6px;padding:10px}
+  body[data-screen=ready] .online-option p{display:none}
+  body[data-screen=ready] .online-host{padding:11px 16px}
+}
+@media(min-width:900px) and (min-height:571px){
+  body[data-room][data-screen=ready] .layout{max-width:1240px;grid-template-columns:minmax(0,1fr) 400px;grid-template-rows:minmax(0,1fr);grid-template-areas:"court prep";column-gap:24px}
+  body[data-room][data-screen=ready] .duel-menu{width:100%}
+}
 .watch-bar{position:fixed;left:50%;bottom:max(16px,calc(env(safe-area-inset-bottom) + 8px));transform:translateX(-50%);z-index:30;display:flex;gap:10px}
-.watch-bar[hidden]{display:none}
 .watch-button{height:44px;padding:0 18px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(20,27,56,.92);color:var(--ink);font-size:14px;font-weight:700;white-space:nowrap}
 body[data-watch] .move-control,body[data-watch] .attack-wrap{visibility:hidden}
 body[data-watch] .pause-button{display:none}
@@ -51,7 +137,19 @@ body[data-screen=result] .watch-bar{display:none}
 @media(max-height:570px) and (min-width:701px){
   /* Short landscape result cards drop their subtitles (styles.css); why a match ended early still shows. */
   body[data-screen=result] #result-why{display:block;margin:4px 0 10px}
+  body[data-screen=ready] .layout{grid-template-rows:minmax(0,1fr)}
   body[data-screen=ready] .duel-menu{gap:6px}
   body[data-screen=ready] .duel-choice{height:36px;font-size:12px}
   body[data-screen=ready] .duel-keys{font-size:11px}
+  body[data-screen=ready] :is(.online-group,.online-lobby){gap:8px}
+  body[data-screen=ready] .online-option{gap:6px;padding:10px}
+  body[data-screen=ready] :is(.online-option p,#mode-group .duel-label){display:none}
+  body[data-screen=ready] .online-host{padding:9px 16px;font-size:15px}
+  body[data-screen=ready] .code-boxes span{height:40px;font-size:19px}
+  body[data-screen=ready] .online-name{height:38px}
+  body[data-room][data-screen=ready] .layout{grid-template-columns:minmax(0,1fr) 340px}
+  body[data-room][data-screen=ready] .duel-menu{width:100%;gap:8px;padding:10px 12px 12px}
+  body[data-room] .room-arena{padding:16px 6px 10px}
+  body[data-room] .slot-av{width:42px;height:42px;font-size:18px}
+  body[data-room][data-screen=ready] .start-button{height:46px;font-size:16px}
 }

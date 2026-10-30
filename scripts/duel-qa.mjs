@@ -3,7 +3,8 @@
 // 1. Portrait 390×844 and landscape 844×390, against the bot: lobby, match and first-point screenshots in
 //    artifacts/duel/, the point played with key presses only; draw calls at the moments perf-qa measures (lobby, 1.5 s
 //    into the match, the other orientation) stay within 110.
-// 2. Simulated latency 250 ms each way (the button reads the round trip, 500): a point is still scored, with no errors.
+// 2. Simulated latency 250 ms each way (the button, in the folded 测试选项, reads the round trip, 500): a point is still
+//    scored, with no errors.
 //    The same at a 160 ms round trip with the full-flight sync, and a blind run names its sync on the result screen.
 // 3. Two players on one keyboard: the match starts and both players' keys are taken.
 import {createRequire} from 'node:module';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
@@ -54,13 +55,13 @@ for(const viewport of [{width:390,height:844},{width:844,height:390}]){
   results[tag]={draws,score:await p.evaluate(()=>__qa.match().state.score)};await p.context().close();
 }
 {const p=await open({width:390,height:844});
-  await p.locator('[data-latency="250"]').click();assert.equal(await p.locator('[data-latency="250"]').getAttribute('aria-checked'),'true');assert.equal((await p.locator('[data-latency="250"]').textContent()).trim(),'500','按钮标的是往返 ping');
+  await p.locator('#test-options summary').click();await p.locator('[data-latency="250"]').click();assert.equal(await p.locator('[data-latency="250"]').getAttribute('aria-checked'),'true');assert.equal((await p.locator('[data-latency="250"]').textContent()).trim(),'500','按钮标的是往返 ping');
   await p.getByRole('button',{name:'开始对战'}).click();await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});
   assert.ok(await playPoint(p),'250 毫秒下比分应变化');
   const st=await p.evaluate(()=>{const m=__qa.match();return {a:m.a.state.score,b:m.b.state.score,rtt:m.a.clock.rtt};});
   await p.screenshot({path:`${OUT}/latency250-390x844.png`});results.latency250=st;await p.context().close();}
 {const p=await open({width:390,height:844});
-  await p.getByRole('radio',{name:'160',exact:true}).click();await p.getByRole('radio',{name:'出球放慢'}).click();
+  await p.locator('#test-options summary').click();await p.getByRole('radio',{name:'160',exact:true}).click();await p.getByRole('radio',{name:'出球放慢'}).click();
   await p.getByRole('button',{name:'开始对战'}).click();await p.waitForFunction(()=>__qa.match().state.phase==='playing',null,{timeout:20000});
   assert.deepEqual(await p.evaluate(()=>[__qa.match().a.sync,__qa.match().b.sync]),['fullflight','fullflight']);
   assert.ok(await playPoint(p),'出球放慢、往返 160 毫秒下比分应变化');

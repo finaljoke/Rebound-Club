@@ -151,12 +151,13 @@ function setupUI(){
   const rules=mode==='online'?room?.snap?.rules:null;
   for(const b of document.querySelectorAll('[data-sync]'))b.setAttribute('aria-checked',String(b.dataset.sync===(rules?.sync??sync)));
   for(const b of document.querySelectorAll('[data-rotation]'))b.setAttribute('aria-checked',String(b.dataset.rotation===rules?.rotation));
-  $('mode-local').hidden=coarse;$('latency-group').hidden=mode!=='ai';$('online-group').hidden=mode!=='online';
-  $('sync-group').hidden=!(mode==='ai'||mode==='online'&&isOwner());$('rotation-group').hidden=!(mode==='online'&&isOwner());
-  $('duel-keys').innerHTML=mode==='online'?`${coarse?'按住左右箭头移动，点挥击回球；能量够时可放旋转、爆发。':'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b>'}<br>好友联机：一人创建房间，把房间码或邀请链接发给朋友，最多 8 人。场上两人对打，两人都点「准备」就开局；其他人排队等上场，或者观战。暂停时场上两人一起停。`
-    :coarse?'按住左右箭头移动，点挥击回球；能量够时可放旋转、爆发。':mode==='ai'
-    ?'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b><br>网络模拟：按往返 ping 计，同一地区朋友之间约 40–80，160 算差的网络。同步方式：「追帧」是现在的做法；「出球放慢」让飞向你的球完整飞完，延迟藏在你打出去的球上；「盲测」每局随机选一种，结束时揭晓。'
-    :'<b>近端</b> A / D 移动 · 空格挥击 · Q 旋转 · E 爆发<br><b>远端</b> ← / → 移动 · ↑ 挥击 · , 旋转 · . 爆发<br>两人都按屏幕方向移动和瞄准。';
+  // The bot's network and sync choices are folded into 测试选项; online, the owner's sync choice is in the room's settings.
+  $('mode-local').hidden=coarse;$('test-options').hidden=mode!=='ai';$('online-group').hidden=mode!=='online';
+  const keys=coarse?'按住左右箭头移动，点挥击回球；能量够时可放旋转、爆发。':'移动 <b>A / D</b> 或 <b>← / →</b> · 挥击 <b>空格</b> · 旋转 <b>J</b> · 爆发 <b>K</b> · 暂停 <b>Esc</b>';
+  $('duel-keys').hidden=mode==='online';
+  $('duel-keys').innerHTML=mode==='local'?'<b>近端</b> A / D 移动 · 空格挥击 · Q 旋转 · E 爆发<br><b>远端</b> ← / → 移动 · ↑ 挥击 · , 旋转 · . 爆发<br>两人都按屏幕方向移动和瞄准。':keys;
+  $('test-note').innerHTML='网络模拟：按往返 ping 计，同一地区朋友之间约 40–80，160 算差的网络。同步方式：「追帧」是现在的做法；「出球放慢」让飞向你的球完整飞完，延迟藏在你打出去的球上；「盲测」每局随机选一种，结束时揭晓。';
+  $('room-keys').innerHTML=`${keys}<br>场上两人对打，两人都点「准备」就开局；其他人在候场排队等上场，或者在看台观战。一局打完按房主定的规则换人。暂停时场上两人一起停。`;
   $('spin-key').textContent=mode==='local'?'50 · Q':'50 · J';$('burst-key').textContent=mode==='local'?'100 · E':'100 · K';
   roomUI();
 }
@@ -210,14 +211,20 @@ document.querySelector('.app').addEventListener('click',e=>{
   if(el.dataset.sync&&!match){if(mode==='online'){if(isOwner())room.link.command({type:'rules',sync:el.dataset.sync});return;}sync=el.dataset.sync;setupUI();return;}
   if(el.dataset.rotation){if(isOwner())room.link.command({type:'rules',rotation:el.dataset.rotation});return;}
   const action=el.dataset.action;
-  if(action==='start'&&court&&(mode==='online'||!match)){goFullscreen();if(mode==='online')startButton();else newMatch();}
+  if(action==='start'){if(mode==='online')roomAct($('start-match').dataset.go);else if(court&&!match){goFullscreen();newMatch();}}
   if(action==='resume')resume();
   if(action==='retry'){if(mode==='online')readyUp();else newMatch();}
   if(action==='setup')backToRoom();
   if(action==='host')openRoom({create:true,v:2,name:typedName()});
   if(action==='join'){const code=$('join-code').value.trim();if(code)openRoom({code,name:typedName()});else $('join-code').focus();}
   if(action==='invite')invite();
-  if(action==='leave'){leaveRoom();say('已离开房间。');}
+  // Leaving takes a second tap within 3 s: the button says so in the meantime (the room keeps no place for a mis-tap).
+  if(action==='leave'){const t=performance.now();
+    if(t-leaveArmed<3000){leaveArmed=0;leaveRoom();say('已离开房间。');}
+    else{leaveArmed=t;el.dataset.label??=el.textContent;el.textContent='再点一次离开';el.classList.add('confirm');
+      setTimeout(()=>{el.textContent=el.dataset.label;el.classList.remove('confirm');},3000);}}
+  if(action==='copy-code')copyCode();
+  if(action==='rename-open'){const row=$('room-rename'),box=$('rename-input');row.hidden=!row.hidden;if(!row.hidden){box.value=nameOf(myId());box.focus();box.select();}}
   if(action==='ready')readyUp();
   if(action==='queue')room?.link.command({type:'queue'});
   if(action==='unqueue')room?.link.command({type:'watch'});
@@ -266,6 +273,9 @@ window.addEventListener('keyup',e=>{input.key(e.key,false);keysB.delete(e.key);}
 // A window losing focus pauses a local match; online it would stop the other player too, so only a hidden page does.
 window.addEventListener('blur',()=>{if(match?.mode!=='online')suspend();});
 $('join-code').addEventListener('keydown',e=>{if(e.key==='Enter'){const code=e.target.value.trim();if(code)openRoom({code,name:typedName()});}});
+// The code box is one input drawn as five: each shows a character of the code as the room reads it (no case, spaces or dashes).
+$('join-code').addEventListener('input',()=>{const v=$('join-code').value.toUpperCase().replace(/[\s-]/g,'').slice(0,5);
+  $('code-boxes').querySelectorAll('span').forEach((b,i)=>{b.textContent=v[i]??'';b.classList.toggle('next',i===Math.min(v.length,4));});});
 $('rename-input').addEventListener('keydown',e=>{if(e.key==='Enter')rename();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)suspend();lastTime=0;});
 $('sound').addEventListener('click',()=>{soundOn=!soundOn;setSound(soundOn);$('sound').setAttribute('aria-pressed',String(soundOn));$('sound').setAttribute('aria-label',soundOn?'关闭音效':'开启音效');$('sound').innerHTML=`${soundOn?'♪':'♩'} <span>音效${soundOn?'开':'关'}</span>`;if(soundOn)sound('start');else if(navigator.audioSession)navigator.audioSession.type='auto';});
@@ -277,6 +287,8 @@ $('sound').addEventListener('click',()=>{soundOn=!soundOn;setSound(soundOn);$('s
 // the club's resume. Everyone off the court watches the match being played, replayed a second behind, from 甲's side or,
 // at a tap, 乙's.
 const RESUME_HOLD=.8,TOKENS='rebound-room-tokens',NAME='rebound-duel-name';
+// When a 离开 button was first tapped (the second tap within 3 s leaves).
+let leaveArmed=0;
 const ROOM_SAYS={'not-found':'房间不存在或已关闭。',full:'房间已满（最多 8 人）。',expired:'房间已过期。',origin:'这个页面连不上房间。',rate:'开房太频繁，请稍后再试。',
   busy:'房间正忙，请重试。',token:'房间认不出这台设备，请重新加入。',replaced:'这个位置在别的页面打开了。',gone:'和房间的连接断了。',bye:'已离开房间。'};
 const ROTATIONS={loser:'输的下',winner:'赢的下',both:'两个都下'},HOW={forfeit:'掉线判负',ended:'房主结束了这一局',left:'有人中途下场'};
@@ -392,11 +404,18 @@ function readyUp(){
   const m=room?.snap?.match;if(!m||m.phase!=='ready'||!courtSide()||m.ready.includes(myId()))return;
   room.link.command({type:'ready',n:m.n});if(match?.state.phase==='won')match=null;input.reset();uiPhase='';
 }
-function startButton(){
-  const mm=room?.snap?.match;if(!mm)return;
-  if(courtSide()&&mm.phase==='ready')readyUp();else if(mm.phase==='playing'&&!courtSide()){room.skipWatch=null;arenaSync();}
+// The panel's main button (roomGo says which it is now).
+function roomAct(go){
+  if(go==='ready'&&court){goFullscreen();readyUp();}
+  else if(go==='watch-match'&&court&&room){room.skipWatch=null;arenaSync();}
+  else if(go==='invite')invite();
+  else if(go==='queue')room?.link.command({type:'queue'});
 }
-function rename(){const v=$('rename-input').value.trim();keepName(v);$('online-name').value=v;room?.link.command({type:'name',name:v});}
+function rename(){const v=$('rename-input').value.trim();keepName(v);$('online-name').value=v;room?.link.command({type:'name',name:v});$('room-rename').hidden=true;}
+async function copyCode(){
+  const code=room?.info?.code,chip=document.querySelector('.room-code');if(!code)return;
+  try{await navigator.clipboard.writeText(code);chip.classList.add('copied');setTimeout(()=>chip.classList.remove('copied'),1500);}catch{say(`房间码：${code}`);}
+}
 const holdResume=()=>{match.resumeAt=performance.now()/1000+RESUME_HOLD;uiPhase='';};
 function onControl(c){
   const same=match?.mode==='online'&&match.n===c.n;
@@ -425,35 +444,66 @@ async function invite(){
   try{if(navigator.share){await navigator.share({title:'反弹守卫 · 好友联机',text,url});return;}}catch(e){if(e?.name==='AbortError')return;}
   try{await navigator.clipboard.writeText(url);say('邀请链接已复制，发给朋友就行。');}catch{say(`把这个链接发给朋友：${url}`);}
 }
-// The room's panel: who is in and where, this player's own choices (queue up or off, step off between matches, watch
-// the match on), its name, and the rules.
+// The room's panel (body[data-room], from the moment a room is opened): the court, the queue and the stands, whose names
+// are other people's and so always written as text; this player's own name is a button that opens the rename box.
+// Avatars are each member's initial (the number, for a 玩家 N) on a colour kept by its place in the room.
+const AVATAR=['#ff9a5a','#4fe0cf','#ffd23a','#ff8fb1','#8fb6ff','#b79bff','#7ee08a','#ffb38a'];
+const node=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
+const setText=(el,text)=>{if(el.textContent!==text)el.textContent=text;};
+function avatar(m,cls){
+  const e=node('span',cls,/^玩家 (\d+)$/.exec(m.name)?.[1]??Array.from(m.name||'?')[0]);e.setAttribute('aria-hidden','true');
+  e.style.setProperty('--c',AVATAR[((parseInt(String(m.id).replace(/\D/g,''),10)||1)-1)%AVATAR.length]);return e;
+}
+function nameButton(m,cls){
+  if(m.id!==myId())return node('span',cls,m.name);
+  const b=node('button',cls,m.name);b.type='button';b.dataset.action='rename-open';b.setAttribute('aria-label',`${m.name}（我），点一下改名`);return b;
+}
 function roomUI(){
-  const inRoom=!!room?.info,s=room?.snap;$('online-lobby').hidden=!!room;$('online-room').hidden=!inRoom;$('room-code').textContent=room?.info?.code??'-----';
-  $('room-panel').hidden=!s;
-  if(s){
-    const list=$('room-members'),mine=myId();list.textContent='';
-    for(const m of s.members){
-      const li=document.createElement('li'),name=document.createElement('span'),tag=document.createElement('span'),tags=[];
-      if(m.id===s.owner)tags.push('房主');
-      tags.push(m.role==='player'?`场上 · ${s.court.a===m.id?'甲方':'乙方'}`:m.role==='queue'?`排队第 ${s.queue.indexOf(m.id)+1}`:'观战');
-      if(!m.present)tags.push('掉线');
-      li.className=`${m.id===mine?'me':''}${m.present?'':' away'}`;name.className='member-name';name.textContent=m.id===mine?`${m.name}（我）`:m.name;
-      tag.className=`member-tag${m.role==='player'?' court':''}`;tag.textContent=tags.join(' · ');li.append(name,tag);list.append(li);
-    }
-    const me=s.members.find(m=>m.id===mine),acts=$('room-actions'),buttons=[];
-    if(me?.role==='watch')buttons.push(['queue','排队上场']);
-    if(me?.role==='queue')buttons.push(['unqueue','去观战']);
-    if(me?.role==='player'&&s.match.phase!=='playing')buttons.push(['unqueue','下场观战']);
-    if(me&&me.role!=='player'&&s.match.phase==='playing'&&!watching())buttons.push(['watch-match','观看比赛']);
-    acts.textContent='';
-    for(const [action,label] of buttons){const b=document.createElement('button');b.type='button';b.className='duel-choice';b.dataset.action=action;b.textContent=label;acts.append(b);}
-    const box=$('rename-input');if(document.activeElement!==box)box.value=me?.name??'';
-    $('room-rules').textContent=`规则：${ROTATIONS[s.rules.rotation]} · ${SYNC_NAMES[s.rules.sync]??'盲测'}${isOwner()?'':'（房主定）'}`;
-  }
+  const s=room?.snap;document.body.toggleAttribute('data-room',!!room);
+  $('online-lobby').hidden=!!room;$('online-room').hidden=!room;$('room-code').textContent=room?.info?.code??'-----';$('room-arena').hidden=!s;
+  if(s)roomPanel(s);
   onlineStatus();
 }
-// The room's line, kept up to date every frame (it counts down the seconds left to say ready).
-function onlineStatus(){const el=$('online-status'),text=(room?.notice??'')+statusText();if(el.textContent!==text)el.textContent=text;updateStart();}
+function roomPanel(s){
+  const mine=myId(),mm=s.match,byId=id=>s.members.find(m=>m.id===id),ready=id=>mm.phase==='ready'&&mm.ready.includes(id);
+  $('room-count').textContent=`${s.members.length}/${s.max}`;
+  // The court: 守擂 (side a, who stays on) on the left, 攻擂 on the right; an empty side waits for someone to come in.
+  const arena=$('room-arena');arena.classList.toggle('waiting',!(s.court.a&&s.court.b));
+  $('arena-cap').textContent=s.court.a&&s.court.b?`第 ${mm.n} 局 · 先进 ${DUEL.goals} 球`:'等人进来';
+  for(const side of ['a','b']){
+    const el=arena.querySelector(`[data-side="${side}"]`),m=byId(s.court[side]);el.textContent='';
+    if(!m){el.className='slot empty';el.append(node('span','slot-av','+'),node('b','slot-name','空位'),node('span','slot-state','等朋友进来'));continue;}
+    el.className=`slot${m.id===mine?' me':''}${m.present?'':' away'}`;
+    const av=avatar(m,'slot-av');if(m.id===s.owner)av.append(node('i','crown','房主'));
+    const state=!m.present?'掉线':ready(m.id)?'✓ 已准备':mm.phase==='ready'?'还没准备':mm.phase==='playing'?'对局中':'';
+    el.append(av,nameButton(m,'slot-name'),node('span','slot-tag',`${m.id===mine?'你 · ':''}${side==='a'?'守擂':'攻擂'}`),node('span',`slot-state${ready(m.id)?' ok':''}`,state));
+  }
+  // Alone in it, the code is what is needed: big, with how a friend gets in.
+  $('room-code-card').hidden=s.members.length>1;$('room-code-big').textContent=s.code;
+  // The queue, in order (the first one is next on), and the stands.
+  const queue=s.queue.map(byId).filter(Boolean),stands=s.members.filter(m=>m.role==='watch');
+  $('room-queue').hidden=!queue.length;$('queue-count').textContent=queue.length;$('room-stands').hidden=!stands.length;$('stands-count').textContent=stands.length;
+  const ql=$('queue-list'),sl=$('stands-list');ql.textContent='';sl.textContent='';
+  queue.forEach((m,i)=>{
+    const li=node('li',`${m.id===mine?'me':''}${m.present?'':' away'}`,'');li.append(node('span','q-num',String(i+1)),avatar(m,'mini-av'),nameButton(m,'q-name'));
+    if(!m.present)li.append(node('span','q-tag away','掉线'));else if(i===0)li.append(node('span','q-tag','下一个'));
+    if(m.id===mine)li.append(node('span','q-tag you','你'));ql.append(li);
+  });
+  for(const m of stands){const li=node('li',`${m.id===mine?'me':''}${m.present?'':' away'}`,'');li.append(avatar(m,'mini-av'),nameButton(m,'q-name'));sl.append(li);}
+  // The rules: the owner changes them in the folded settings; the others see one line.
+  const owner=isOwner(),line=owner?$('rules-line'):node('span','','');
+  line.replaceChildren(node('span','','规则 '),node('b','',ROTATIONS[s.rules.rotation]),node('span','',` · ${SYNC_NAMES[s.rules.sync]??'盲测'}`));
+  $('room-settings').hidden=!owner;$('room-rules').hidden=owner;if(!owner)$('room-rules').replaceChildren(line,node('small','','房主定'));
+}
+// The room's line, the main button and the court's ring, kept up to date every frame (they count down the seconds left
+// to say ready).
+function onlineStatus(){setText($('online-status'),(room?.notice??'')+statusText());updateStart();readyRing();}
+// READY_WAIT: the seconds the two called have to say ready once someone is queued (server/room.mjs ROOM.readyWait).
+const READY_WAIT=15,RING=119.4;
+function readyRing(){
+  const left=readyLeft(),ring=$('ready-ring');ring.hidden=left===null;if(left===null)return;
+  setText($('ready-left'),String(left));$('ring-left').style.strokeDashoffset=String(RING*(1-left/READY_WAIT));
+}
 function statusText(){
   if(!room)return '';if(room.retrying)return '连接中断，正在重连……';if(!room.info)return '正在连接房间……';
   const s=room.snap;if(!s)return room.info.v===2?'正在进房……':'这个房间是旧版页面开的，请房主刷新页面后重新开房。';
@@ -468,17 +518,29 @@ function statusText(){
   const pos=s.queue.indexOf(myId()),where=pos>=0?`排队中，第 ${pos+1} 位`:'观战中';
   return mm.phase==='playing'?`${where} · 场上：${vs}`:mm.phase==='ready'?`${where} · 下一局：${vs}`:`${where} · 等人上场`;
 }
-function updateStart(){
-  const b=$('start-match');let text='开始对战',ok=!match&&!!court;
-  if(mode==='online'){
-    const s=room?.snap,mm=s?.match,side=courtSide();ok=!!court&&!!mm;
-    if(!room?.info){ok=false;text='先创建或加入房间';}
-    else if(!mm){ok=false;text='正在进房';}
-    else if(side&&mm.phase==='ready'){const done=mm.ready.includes(myId());ok=ok&&!done&&(!match||match.state.phase==='won');text=done?'已准备':'准备';}
-    else if(side){ok=false;text=mm.phase==='idle'?'等对手进房':'对局中';}
-    else if(mm.phase==='playing'){ok=ok&&!watching();text='观看比赛';}
-    else{ok=false;text=s.queue.includes(myId())?'排队中':'观战中';}
+// What this player can do in the room now: the main button (go, its action) or, with nothing to do but wait, what it
+// waits for (wait, note); and the one smaller choice under it (sub).
+function roomGo(){
+  const s=room?.snap,mm=s?.match,side=courtSide(),me=myId();
+  if(!room?.info)return {wait:'正在连接房间……'};if(!mm)return {wait:'正在进房……'};
+  const pos=s.queue.indexOf(me),off={action:'unqueue',text:'下场观战'},toStands={action:'unqueue',text:'去看台'};
+  if(side){
+    if(mm.phase==='idle')return {go:'invite',text:'邀请好友',ok:true,sub:{action:'copy-code',text:'复制房间码'}};
+    if(mm.phase!=='ready')return {wait:'对局中'};
+    if(mm.ready.includes(me))return {wait:`已准备，等${nameOf(s.court[side==='a'?'b':'a'])}`,sub:off};
+    return {go:'ready',text:'准备',ok:!!court&&(!match||match.state.phase==='won'),sub:off};
   }
+  if(mm.phase==='playing')return {go:'watch-match',text:'观看比赛',ok:!!court&&!watching(),sub:pos>=0?toStands:{action:'queue',text:'排队上场'}};
+  if(pos>=0)return {wait:`候场第 ${pos+1} 位`,note:pos?`前面还有 ${pos} 人`:'下一个就是你',sub:toStands};
+  return {go:'queue',text:'排队上场',ok:true};
+}
+function updateStart(){
+  const b=$('start-match'),state=mode==='online'&&room?roomGo():null;let text='开始对战',ok=!match&&!!court;
+  // Online before a room the lobby's own buttons open or join one; in one, the main button, or what it waits for.
+  b.hidden=mode==='online'&&!state?.go;$('room-wait').hidden=!state?.wait;$('room-sub').hidden=!state?.sub;
+  if(state?.wait){setText($('room-wait-text'),state.wait);setText($('room-wait-note'),state.note??'');}
+  if(state?.sub){const sub=$('room-sub');sub.dataset.action=state.sub.action;setText(sub,state.sub.text);}
+  if(state?.go){text=state.text;ok=state.ok;b.dataset.go=state.go;}
   b.disabled=!ok;const label=b.firstChild;if(label?.nodeType===3&&label.textContent!==`${text} `)label.textContent=`${text} `;
 }
 // An invite link (?room=<id>) opens the page in the room, taking back this tab's place if it had one.
