@@ -5,14 +5,18 @@
 // out of order. The room's WebSocket also carries the WebRTC signalling, and is opened again (with the place's token)
 // when it drops.
 
-// ice: STUN only (no TURN in P1: the room relays instead). heartbeat: seconds between frames on a quiet direct channel;
+// ice: STUN only (no TURN in P1: the room relays instead). In mainland China Xiaomi's and Mango TV's answer within
+// 100 ms, Cloudflare's in 150-260; Mango TV's and Cloudflare's also have IPv6 addresses, for phones on IPv6; Cloudflare's
+// covers everywhere else. Three at most: Firefox warns past two, as each one that never answers keeps gathering going
+// longer. heartbeat: seconds between frames on a quiet direct channel;
 // silence: a direct channel this long without a frame is left for the relay; settle: how long a direct channel must keep
 // beating after that before play goes back to it; keep: the room closes after 10 minutes without a message (its
 // heartbeat does not count), so one goes every minute; ping/pingLost: the room heartbeat, and how long without its
 // answer the socket counts as gone; retry: seconds between tries to get the room back; batch: bytes of frames sent as
 // one relay message when many go at once (the room takes 8 KB a message, and 120 at once); redial/redials: how long the
 // host waits for a direct channel before both start a fresh connection, and how many times.
-export const LINK={ice:[{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'}],heartbeat:.5,silence:2.5,settle:5,
+export const LINK={ice:[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.hitv.com:3478'},{urls:'stun:stun.cloudflare.com:3478'}],
+  heartbeat:.5,silence:2.5,settle:5,
   keep:60,ping:15,pingLost:40,retry:[1,2,4,8,15],batch:6000,redial:10,redials:5};
 // Refusals and closings that end a link for good (server/room.mjs CLOSE); any other drop is tried again.
 const FINAL=['not-found','full','expired','origin','rate','busy','token','too-big','too-fast','bad-message','replaced'];
