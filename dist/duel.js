@@ -386,7 +386,16 @@ function startArena({n,sync:used,blind,a,b}){
   m.client=createClient({side,transport,now,sync:used});m.state=m.client.state;match=m;
   room.link.feedStart(n,()=>m.client.synced?m.client.clock.offset:null);
   const early=room.early.filter(x=>x.w.n===n);room.early=room.early.filter(x=>x.w.n>n);for(const x of early)m.onGame?.(x.w.m,x.at);
-  m.client.start();sound('start');uiPhase='';phaseUI();
+  m.client.start();sound('start');uiPhase='';phaseUI();vsFlash(a,b);
+}
+// The two the room called meet at the VS, over the court, during the serve's countdown (0.8 s, so play is not held up);
+// nothing with reduced motion.
+let vsTimer=0;
+function vsFlash(a,b){
+  if(reduceMotion)return;const el=$('vs-flash'),who=id=>room?.snap?.members.find(m=>m.id===id);
+  for(const [slot,id] of [['vs-a',a],['vs-b',b]]){const m=who(id);$(slot).replaceChildren(...m?[avatar(m,'mini-av'),node('span','vs-text',m.name)]:[]);}
+  clearTimeout(vsTimer);el.classList.remove('out');el.hidden=false;
+  vsTimer=setTimeout(()=>{el.classList.add('out');vsTimer=setTimeout(()=>{el.hidden=true;},300);},600);
 }
 // Off the court, a match being played is watched (on coming in, too), unless this page left it for the room's panel; a
 // match this page played or watched, once over, gives way to the next one.
@@ -511,6 +520,9 @@ function roomUI(){
   if(s)roomPanel(s);
   onlineStatus();
 }
+// When each player was first seen ready in this match: a new 已准备 pops in, and keeps popping through the panel's
+// redraws (it is drawn afresh on every event, often twice in a row) for as long as the pop lasts.
+let readySeen={n:0,at:{}};
 function roomPanel(s){
   const mine=myId(),mm=s.match,byId=id=>s.members.find(m=>m.id===id),ready=id=>mm.phase==='ready'&&mm.ready.includes(id);
   $('room-count').textContent=`${s.members.length}/${s.max}`;
@@ -523,19 +535,28 @@ function roomPanel(s){
     el.className=`slot${m.id===mine?' me':''}${m.present?'':' away'}`;
     const av=avatar(m,'slot-av');if(m.id===s.owner)av.append(node('i','crown','房主'));
     const state=!m.present?'掉线':ready(m.id)?'✓ 已准备':mm.phase==='ready'?'还没准备':mm.phase==='playing'?'对局中':'';
-    el.append(av,nameButton(m,'slot-name'),node('span','slot-tag',`${m.id===mine?'你 · ':''}${side==='a'?'守擂':'攻擂'}`),node('span',`slot-state${ready(m.id)?' ok':''}`,state));
+    if(readySeen.n!==mm.n)readySeen={n:mm.n,at:{}};if(ready(m.id))readySeen.at[m.id]??=performance.now();
+    const fresh=ready(m.id)&&performance.now()-readySeen.at[m.id]<400&&!reduceMotion;
+    el.append(av,nameButton(m,'slot-name'),node('span','slot-tag',`${m.id===mine?'你 · ':''}${side==='a'?'守擂':'攻擂'}`),node('span',`slot-state${ready(m.id)?' ok':''}${fresh?' pop':''}`,state));
   }
   // Alone in it, the code is what is needed: big, with how a friend gets in.
   $('room-code-card').hidden=s.members.length>1;$('room-code-big').textContent=s.code;
   // The queue, in order (the first one is next on), and the stands.
   const queue=s.queue.map(byId).filter(Boolean),stands=s.members.filter(m=>m.role==='watch');
   $('room-queue').hidden=!queue.length;$('queue-count').textContent=queue.length;$('room-stands').hidden=!stands.length;$('stands-count').textContent=stands.length;
-  const ql=$('queue-list'),sl=$('stands-list');ql.textContent='';sl.textContent='';
+  // Rows slide from where they were to where they are now (a new row fades in): the list is drawn afresh, so each row's
+  // old place is read first, by member.
+  const ql=$('queue-list'),sl=$('stands-list'),was=new Map([...ql.children].map(li=>[li.dataset.id,li.getBoundingClientRect().top]));ql.textContent='';sl.textContent='';
   queue.forEach((m,i)=>{
-    const li=node('li',`${m.id===mine?'me':''}${m.present?'':' away'}`,'');li.append(node('span','q-num',String(i+1)),avatar(m,'mini-av'),nameButton(m,'q-name'));
+    const li=node('li',`${m.id===mine?'me':''}${m.present?'':' away'}`,'');li.dataset.id=m.id;li.append(node('span','q-num',String(i+1)),avatar(m,'mini-av'),nameButton(m,'q-name'));
     if(!m.present)li.append(node('span','q-tag away','掉线'));else if(i===0)li.append(node('span','q-tag','下一个'));
     if(m.id===mine)li.append(node('span','q-tag you','你'));ql.append(li);
   });
+  if(!reduceMotion&&!$('room-queue').hidden)for(const li of ql.children){
+    const top=li.getBoundingClientRect().top,from=was.get(li.dataset.id);
+    if(from===undefined)li.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:220,easing:'ease-out'});
+    else if(Math.abs(from-top)>1)li.animate([{transform:`translateY(${from-top}px)`},{transform:'none'}],{duration:260,easing:'ease-out'});
+  }
   for(const m of stands){const li=node('li',`${m.id===mine?'me':''}${m.present?'':' away'}`,'');li.append(avatar(m,'mini-av'),nameButton(m,'q-name'));sl.append(li);}
   // The rules: the owner changes them in the folded settings; the others see one line.
   const owner=isOwner(),line=owner?$('rules-line'):node('span','','');
@@ -553,7 +574,7 @@ function onlineStatus(){
 const READY_WAIT=15,RING=119.4;
 function readyRing(){
   const left=readyLeft(),ring=$('ready-ring');ring.hidden=left===null;if(left===null)return;
-  setText($('ready-left'),String(left));$('ring-left').style.strokeDashoffset=String(RING*(1-left/READY_WAIT));
+  setText($('ready-left'),String(left));$('ring-left').style.strokeDashoffset=String(RING*(1-left/READY_WAIT));ring.classList.toggle('low',left<=5);
 }
 function statusText(){
   if(!room)return '';if(!room.info)return '正在连接房间……';

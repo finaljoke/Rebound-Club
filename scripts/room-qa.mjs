@@ -86,7 +86,8 @@ try{
   await p.locator('#room-sub').click();await p.waitForFunction(()=>!!document.querySelector('#stands-list li.me'),null,{timeout:5000});
   assert.equal(await p.locator('#start-match').getAttribute('data-go'),'queue');
   await fits(p,'8-stands',ROOM);
-  await p.locator('#start-match').click();await p.waitForFunction(()=>!!document.querySelector('#queue-list li.me')&&!document.getElementById('room-wait').hidden,null,{timeout:5000});
+  await p.locator('#start-match').click();await p.waitForFunction(()=>document.getAnimations().some(a=>a.effect?.target?.closest?.('#queue-list')),null,{timeout:2000});
+  await p.waitForFunction(()=>!!document.querySelector('#queue-list li.me')&&!document.getElementById('room-wait').hidden,null,{timeout:5000});
   assert.match(await p.locator('#room-wait-text').textContent(),/^候场第 \d 位$/);assert.equal(await p.locator('#room-sub').textContent(),'去看台');
   await fits(p,'8-queue',ROOM);
   // The owner's settings are folded: open, the rotation and the sync choices are there.
@@ -117,11 +118,35 @@ try{
   const onCourt=await p.evaluate(()=>__qa.room().snap.court.a);room2.find(b=>b.id===onCourt).send(JSON.stringify({type:'watch'}));
   await p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/^轮到你上场！对手是/.test(n.textContent);},null,{timeout:5000});
   await p.screenshot({path:'artifacts/room/9-called-390x844.png'});
+  // The one this player faces says ready (已准备 pops in); this player says ready, and the match starts with the VS.
+  const faced=await p.evaluate(()=>{const r=__qa.room(),s=r.snap,me=r.info.member;return {id:s.court.a===me?s.court.b:s.court.a,n:s.match.n};});
+  room2.find(b=>b.id===faced.id).send(JSON.stringify({type:'ready',n:faced.n}));
+  await p.waitForFunction(()=>!!document.querySelector('#room-arena .slot-state.ok.pop'),null,{timeout:5000});
+  await p.locator('#start-match').click();await p.waitForFunction(()=>!document.getElementById('vs-flash').hidden,null,{timeout:5000});
+  assert.match(await p.locator('#vs-flash').textContent(),/VS/);await p.screenshot({path:'artifacts/room/9-vs-390x844.png'});
+  await p.waitForFunction(()=>document.getElementById('vs-flash').hidden,null,{timeout:3000});
   // The room's socket lost: the notice says so, and goes once the room is back.
   await p.evaluate(()=>__qa.room().link.debug.dropSocket());
   await p.waitForFunction(()=>{const n=document.getElementById('online-notice');return !n.hidden&&/正在重连/.test(n.textContent);},null,{timeout:3000});
   await p.screenshot({path:'artifacts/room/9-reconnecting-390x844.png'});
   await p.waitForFunction(()=>__qa.room().snap&&document.getElementById('online-notice').hidden,null,{timeout:6000});
+  // Reduced motion: the same moments in another room, and nothing in the panel or over the court moves.
+  const still=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),q=await still.newPage();
+  q.on('pageerror',e=>errors.push(e.message));q.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await q.route('**/duel.js',async r=>{const x=await r.fetch();await r.fulfill({response:x,body:(await x.text())+'\nwindow.__qa={room:()=>room};'});});
+  await q.goto('http://localhost:4173/duel.html');await q.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
+  await q.getByRole('radio',{name:'好友联机'}).click();await q.getByRole('button',{name:'创建房间',exact:true}).click();
+  await q.waitForFunction(()=>/^[2-9A-Z]{5}$/.test(document.getElementById('room-code').textContent),null,{timeout:10000});
+  const code3=await q.locator('#room-code').textContent(),room3=[];for(const n of ['甲','乙','丙'])room3.push(await bot(code3,n));
+  await q.waitForFunction(()=>document.querySelectorAll('#queue-list li').length===2&&!document.getElementById('ready-ring').hidden,null,{timeout:5000});
+  const moving=()=>q.evaluate(()=>document.getAnimations().filter(a=>a.playState==='running'&&a.effect?.target?.closest?.('.duel-menu,#vs-flash')).length);
+  const n3=await q.evaluate(()=>__qa.room().snap.match.n);room3[0].send(JSON.stringify({type:'ready',n:n3}));
+  await q.waitForFunction(()=>!!document.querySelector('#room-arena .slot-state.ok'),null,{timeout:5000});
+  assert.equal(await q.locator('.slot-state.pop').count(),0,'减少动态效果时不弹');assert.equal(await moving(),0,'减少动态效果时面板不动');
+  room3[1].send(JSON.stringify({type:'watch'}));await q.waitForFunction(()=>document.querySelectorAll('#queue-list li').length===1,null,{timeout:5000});
+  assert.equal(await moving(),0,'候场换位不滑');
+  await q.locator('#start-match').click();await q.waitForFunction(()=>document.body.dataset.screen==='match',null,{timeout:5000});
+  for(let i=0;i<6;i++){assert.equal(await q.locator('#vs-flash').isHidden(),true,'减少动态效果时没有 VS');await q.waitForTimeout(100);}
   assert.deepEqual(errors,[]);
   await writeFile('artifacts/room/qa.json',JSON.stringify({results,errors},null,2));
   console.log(JSON.stringify({sizes:SIZES.length,checks:results.length,courts:results.filter(r=>r.viewport.height>r.viewport.width).map(r=>`${r.label} ${r.viewport.width}x${r.viewport.height}:${r.court}`)},null,1));console.log('PASS');

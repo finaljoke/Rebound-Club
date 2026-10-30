@@ -160,6 +160,26 @@ body[data-watch] .watch-plate.near{bottom:calc(var(--bottom) + 56px)}
   body[data-watch] .watch-plate.far{top:var(--top)}
   body[data-watch] .watch-queue{top:calc(var(--top) + 86px);left:auto;right:var(--edge-r);transform:none}
 }
+/* Motion, all of it off under reduced motion (styles.css stops CSS animations; duel.js skips the rest): the VS as a
+   match starts, the names meeting at it; a player's 已准备 popping in; the ring running down, red for its last 5 s. Rows
+   of the queue sliding to new places are animated in duel.js. */
+.vs-flash{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;gap:14px;padding:0 16px;background:radial-gradient(closest-side,rgba(11,16,34,.8),rgba(11,16,34,0));pointer-events:none}
+.vs-flash b{flex:none;color:var(--gold);font-size:62px;font-style:italic;font-weight:900;line-height:1;-webkit-text-stroke:8px #0d1022;paint-order:stroke fill;animation:vsSlam .6s cubic-bezier(.2,1.6,.4,1) both}
+.vs-name{display:flex;align-items:center;gap:8px;min-width:0;max-width:40%;color:var(--ink);font-size:22px;font-style:italic;font-weight:900;-webkit-text-stroke:5px #0d1022;paint-order:stroke fill;white-space:nowrap}
+.vs-name .mini-av{width:38px;height:38px;font-size:17px;font-style:normal;-webkit-text-stroke:0}
+.vs-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#vs-a{animation:vsFromLeft .45s ease-out both}
+#vs-b{flex-direction:row-reverse;animation:vsFromRight .45s ease-out both}
+.vs-flash.out{animation:vsOut .3s ease-in forwards}
+@keyframes vsSlam{0%{opacity:0;transform:scale(2.4)}60%{opacity:1;transform:scale(.92)}100%{transform:none}}
+@keyframes vsFromLeft{0%{opacity:0;transform:translateX(-80px)}100%{opacity:1;transform:none}}
+@keyframes vsFromRight{0%{opacity:0;transform:translateX(80px)}100%{opacity:1;transform:none}}
+@keyframes vsOut{to{opacity:0}}
+.slot-state.pop{animation:readyPop .35s cubic-bezier(.2,1.8,.4,1)}
+@keyframes readyPop{0%{transform:scale(.4)}100%{transform:none}}
+.ring-left{transition:stroke-dashoffset 1s linear,stroke .3s}
+.ready-ring.low .ring-left{stroke:#ff5a4a}
+.ready-ring.low b{color:#ff8a8a}
 /* Result and pause cards: the smaller choices are buttons a thumb can hit, 44px high. */
 .overlay-content :is(.result-links,.pause-actions){flex-wrap:wrap;gap:8px}
 .overlay-content :is(.result-links,.pause-actions) .secondary-button{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid rgba(255,255,255,.14);border-radius:12px;font-size:13px;text-decoration:none}
