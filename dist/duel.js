@@ -312,7 +312,8 @@ function openRoom(join){
   link.onControl(onControl);
   link.onEvent(e=>{
     if(room!==r)return;
-    if(e.type==='room'){r.snap=e;r.snapAt=performance.now()/1000;if(r.rejoin&&r.info){r.rejoin=false;giveUp();}arenaSync();if(match?.state.phase==='won')uiPhase='';setupUI();}
+    // A snapshot comes on every join, so it also means the room is back after a drop (off the court no peer message says so).
+    if(e.type==='room'){r.snap=e;r.snapAt=performance.now()/1000;r.retrying=false;if(r.rejoin&&r.info){r.rejoin=false;giveUp();}arenaSync();if(match?.state.phase==='won')uiPhase='';setupUI();}
     if(e.type==='start')startArena(e);
     if(e.type==='result')onResult(e);
     if(e.type==='feed'&&watching()&&e.n===match.n)match.watcher.push({side:e.side,msgs:e.msgs,o:e.o,at:performance.now()/1000});

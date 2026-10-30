@@ -12,7 +12,8 @@
 //    the guest's 继续 resumes both after the hold. A third page on the invite link is queued and watches the match from
 //    the next serve, without the controls, and can turn the view round. Nobody swings, so the match runs to 5: the
 //    watcher's replay ends on the players' score, the footer tells direct and ping, the loser goes to the back of the
-//    queue and the one queued comes on; when the winner's page goes away mid-match, the other player sees why.
+//    queue and the one queued comes on; when the winner's page goes away mid-match, the other player sees why. The
+//    loser, now watching, loses the room's socket: its line says it is reconnecting, then clears once it is back.
 // 6. In a fresh room of two, one player's page is loaded again mid-match: it gives the match up at once, the other's
 //    result screen says why, and the one who left is called back for the next match. Then the winner back on the room's
 //    panel before the loser's last goal has reached the room (both feeds held 3 s) is still the winner. No page errors
@@ -131,7 +132,11 @@ await lost.p.waitForFunction(()=>__qa.match()?.mode==='watch'&&__qa.match().n===
 await won.p.context().close();
 await W.waitForFunction(()=>/对方断开了/.test(document.getElementById('overlay-content').textContent),null,{timeout:15000});
 await W.screenshot({path:'artifacts/duel/online-gone-390x844.png'});
-results.page={code:roomCode,held,scores,footer};
+// The loser, watching match 2, loses the room's socket: the room's line says so, and stops saying so once it is back.
+await lost.p.evaluate(()=>__qa.room().link.debug.dropSocket());await said(lost.p,/正在重连/,3000);
+const dropAt=Date.now();await lost.p.waitForFunction(()=>__qa.room().snap&&!/重连/.test(document.getElementById('online-status').textContent),null,{timeout:5000});
+const back=(Date.now()-dropAt)/1000;
+results.page={code:roomCode,held,scores,footer,back};
 // 6. A reload mid-match, then a winner back on the panel early.
 const A=await page({width:390,height:844}),B=await page({width:1280,height:800});
 const booted=p=>p.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
