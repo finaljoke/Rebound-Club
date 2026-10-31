@@ -17,5 +17,8 @@
   // this: pages the dev server serves use its own stand-in (scripts/dev-rooms.mjs), not this Worker. To try such a page
   // against `wrangler dev` (?api=ws://127.0.0.1:8787/api/ws), add http://localhost:4173 here for the while: `wrangler dev`
   // keeps this value even over --var and .dev.vars.
-  "vars": {"ALLOWED_ORIGINS": "https://reboundclub.snowiscoming.com,https://reboundclub-preview.snowiscoming.com"}
+  // TURN_URLS: the TURN server handed to players (server/turn.mjs), comma-separated, a coturn in Shanghai; its secret is
+  // TURN_SECRET, set with `npx wrangler secret put TURN_SECRET`, never here.
+  "vars": {"ALLOWED_ORIGINS": "https://reboundclub.snowiscoming.com,https://reboundclub-preview.snowiscoming.com",
+    "TURN_URLS": "turn:123.206.117.98:3478?transport=udp,turn:123.206.117.98:3478?transport=tcp"}
 }

@@ -66,10 +66,11 @@ npm start
   - 擂台房的码在房间开着时一直能进；名字由房间检查（最长 12 个字）。
   - 房间 10 分钟收不到消息就关闭（心跳不算），所以在房间里的客户端每分钟要发一条消息。
   - 被拒或被断开时，关闭码和原因见 `CLOSE`。
-- 本地：`npm start` 的 4173 端口就带 `/api/ws`（`scripts/dev-rooms.mjs`、`dev-ws.mjs`）。零依赖；放行任何来源，方便局域网里的设备连进来。
+- 本地：`npm start` 的 4173 端口就带 `/api/ws`（`scripts/dev-rooms.mjs`、`dev-ws.mjs`）。零依赖；放行任何来源，方便局域网里的设备连进来。设了环境变量 `TURN_URLS`、`TURN_SECRET` 时，本机替身也发 TURN。
 - Cloudflare：
   - `server/worker.mjs`：一个 Worker 加两个 Durable Object，每个房间一个，房间码登记处一个。
   - 配置在 `server/wrangler.jsonc`，允许的来源写在 `ALLOWED_ORIGINS`：正式站和预览站。
+  - TURN：地址写在 `TURN_URLS`（现在是上海的一台 coturn），密钥 `TURN_SECRET` 用 `npx wrangler secret put TURN_SECRET` 设，等于 coturn 的 `static-auth-secret`。房间给每个连接发 12 小时有效的临时密码（`server/turn.mjs`）；没设密钥就不发。
   - wrangler 只装在 `server/` 里：`cd server && npx wrangler dev`，在 8787 端口跑真实运行时。
     - 开发服务器打开的页面加 `?api=ws://127.0.0.1:8787/api/ws` 连它时，要临时在 `ALLOWED_ORIGINS` 里加上 `http://localhost:4173`。`wrangler dev` 不让 `--var` 和 `.dev.vars` 改这个值。
   - 房间关闭时，日志里有一行 `room-closed`，记下它收了多少条消息，用来核对计费。
@@ -77,7 +78,8 @@ npm start
   - 先走房间中转；WebRTC 直连一打开就换过去。直连 2.5 秒没动静，就退回中转并重新找路线；稳定 5 秒后再换回直连。
   - 每帧带序号和「已收到到第几帧」，换通道时重发对方没确认的，所以不丢、不重、不乱序。
   - 房间的 WebSocket 断了，会凭令牌自动重连。
-  - 只用 STUN，不接 TURN。房间地址：开发服务器（4173 端口）打开的页面连本机替身，其余连 `rebound-api.snowiscoming.com`，页面加 `?api=` 可以指定。
+  - 用 STUN 找路线。房间发了 TURN 时，它顶替 Cloudflare 的 STUN：直连打不通就经它中转，比房间中转近得多（从上海测，两人往返约 15 毫秒，房间中转约 650 毫秒）。页面加 `?ice=relay` 时直连只许走 TURN，用来在真机上确认它通不通。
+  - 房间地址：开发服务器（4173 端口）打开的页面连本机替身，其余连 `rebound-api.snowiscoming.com`，页面加 `?api=` 可以指定。
   - 擂台房（`join` 带 `v:2`）：
     - 每换一对对手，就重新建一条有序流，拆掉旧的直连，由甲方发起新的直连；上一对的消息不会串过来。
     - `command` 发房间消息（准备、排队、观战、改名、规则、结束这一局）；房间发来的快照、开局、结果、观战流都作为事件交给页面。

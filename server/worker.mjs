@@ -3,9 +3,12 @@
 // memory (scripts/dev-rooms.mjs). Pages connect to wss://<this Worker>/api/ws?create=1[&v=2] | ?code=XXXXX |
 // ?room=<id>[&token=<t>], with &name=<name> in an arena room (v=2); the page's Origin must be in ALLOWED_ORIGINS
 // (wrangler.jsonc). ROOM_LIMITS (JSON, for tests only, e.g. `wrangler dev --var ROOM_LIMITS:{"joinWait":2}`) overrides
-// some of the rules' limits.
+// some of the rules' limits. TURN_URLS (wrangler.jsonc) and the secret TURN_SECRET (`wrangler secret put TURN_SECRET`,
+// coturn's static-auth-secret) hand each connection a TURN server with its own credentials (server/turn.mjs); without
+// the secret none is handed out.
 import {DurableObject} from 'cloudflare:workers';
 import {ROOM,CLOSE,newHub,reserveCode,resolveCode,closeCode,holdCode,newRoom,joinRoom,roomMessage,leaveRoom,nextWake,wakeRoom,originAllowed} from './room.mjs';
+import {turnServer} from './turn.mjs';
 
 const now=()=>Date.now()/1000,OPEN=1,limits=env=>env.ROOM_LIMITS?{...ROOM,...JSON.parse(env.ROOM_LIMITS)}:ROOM;
 // A browser cannot read why an upgrade failed, so a refusal is a WebSocket that says why and closes.
@@ -83,7 +86,8 @@ export class Room extends DurableObject {
   async fetch(req){
     const p=new URL(req.url).searchParams,made=p.get('made');let room=await this.load();
     if(made&&!room)room=this.room=newRoom({id:p.get('id'),code:made,now:now(),v:p.get('v')==='2'?2:1});
-    const r=joinRoom(room,{create:!!made,token:p.get('token'),name:p.get('name'),now:now(),newToken:()=>crypto.randomUUID()},this.cfg);
+    const turn=await turnServer({urls:this.env.TURN_URLS,secret:this.env.TURN_SECRET,now:now()});
+    const r=joinRoom(room,{create:!!made,token:p.get('token'),name:p.get('name'),now:now(),newToken:()=>crypto.randomUUID(),turn},this.cfg);
     if(r.error)return refuse(r.error);
     const [client,server]=Object.values(new WebSocketPair());
     // The place taken back: the old connection goes, then the new one is tagged with the place and hears it joined.
