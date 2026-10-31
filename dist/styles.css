@@ -227,6 +227,9 @@ body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .energy{b
 .result-highlight{color:var(--gold);background:rgba(255,210,58,.12)}
 .result-stats>span{border-right-color:rgba(255,255,255,.1)}.result-stats b{color:var(--ink)}
 .result-advice{background:rgba(255,255,255,.06);color:#cfd6ef}.result-advice b{color:var(--muted)}
+/* How the conceded balls got through, one short line under the stats. */
+.result-misses{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 11px;font-size:11px;color:var(--muted);margin:-7px 0 18px}.result-misses b{color:#ff8a8a;font-weight:700}
+@media(max-height:570px) and (min-width:701px){body[data-screen=result] .result-misses{margin:-4px 0 10px}}
 dialog{background:#141b38;color:var(--ink);box-shadow:0 22px 70px rgba(0,0,0,.55)}dialog::backdrop{background:rgba(5,8,20,.62)}
 dialog li p,.dialog-intro,.dialog-tip,.selection-note,.dialog-close,.selector-close{color:var(--muted)}.dialog-tip{background:rgba(255,255,255,.06)}
 .level-button{background:#1a2347;border-color:#2c3a72;color:#cfd6ef}.level-button>small{color:var(--muted)}

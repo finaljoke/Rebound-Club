@@ -84,7 +84,7 @@ export function createGame(level=0,weapon='glove',options={}){
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
-    rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],
+    rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],chase:null,missCause:null,
     energy:options.tutorial&&levelIndex===0?0:SKILLS.start,skill:null,skillSeq:0,queued:[],
     whiff:null,tutorial:options.tutorial&&levelIndex===0?{step:0,attempt:0,shotStep:0,keeperX:0,done:false}:null,
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
@@ -306,6 +306,15 @@ function whiffReason(s,w,sw){
   if(f.inc&&f.z<r.near&&lateral(f))return {reason:'late'};
   return {reason:'unclear'};
 }
+// Why a conceded ball got through, from what the defender did while it came in (s.chase): a whiff names its own cause,
+// a swing still out as the ball went past came too late, and otherwise the ball either sat in the box unanswered or
+// never reached it. One of early, late, reach, idle, unclear.
+function missCause(s,w){
+  const c=s.chase,sw=s.swing;
+  if(c?.whiff)return c.whiff;
+  if(sw&&!sw.hit&&!sw.whiffed){const r=whiffReason(s,w,sw).reason;return r==='none'?'late':r;}
+  return c?.reach?'idle':'reach';
+}
 // The keeper gets one chance as the ball crosses its line; the goal itself is the drawn mouth further back.
 function farEnd(s,prevZ,prevX,wall){
   const b=s.ball,k=s.keeper,g=s.level.goalHalf;
@@ -362,11 +371,13 @@ function tick(s,dt,axis){
   if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*RUN*dt,-3.45,3.45);
   if(sw){
     sw.time+=dt;
-    if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');}
+    if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');if(s.chase&&s.whiff.reason!=='none')s.chase.whiff=s.whiff.reason;}
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
   const b=s.ball,prevZ=b.z,prevX=b.x;
   const wall=advanceBall(b,dt);if(wall){s.events.push('wall');if(b.vz>0&&s.shot)s.shot.banked=true;}
+  // What the defender does about an incoming ball, kept until it goes back out, so a conceded one can say why.
+  if(b.vz>0)s.chase=null;else{s.chase??={reach:false,whiff:null};if(inHitRange(s))s.chase.reach=true;}
   if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // What the ball was doing while the window was open, so a whiff can be explained honestly.
     const r=hitZone(s),dx=b.x-s.player.x,inc=b.vz<0;sw.first??={z:b.z,dx,inc};sw.last={z:b.z,dx,inc};
@@ -380,6 +391,7 @@ function tick(s,dt,axis){
   }
   if(b.z<=0&&s.tutorial){tutorialReset(s,'tutorialRetry');return;}
   if(b.z<=0){
+    s.missCause=missCause(s,w);s.chase=null;
     s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;
     // Practice balls keep the real feel but don't cost a life.
     if(s.practiceLeft>0){s.practiceLeft--;s.events.push('practice');}
