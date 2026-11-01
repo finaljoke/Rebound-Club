@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z,GOAL_TOP,ZONES} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z,GOAL_TOP,ZONES,playerGear} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
@@ -539,7 +539,7 @@ export function buildWorld(assets){
     // Striker: idle or a side-step by the held direction; the punch follows the rules' swing clock (or the burst's).
     hero.position.set(pose.px,0,-s.player.z);follow=pose.px*FOLLOW;
     hero.rotation.z=s.phase==='playing'?-axis*.075:0;
-    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=WEAPONS[s.weapon];
+    const moving=s.phase==='playing'&&Math.abs(axis)>.05,sw=s.swing,w=playerGear(s);
     if(sw!==lastSwing){if(lastSwing&&!sw)swingEnd.at=s.elapsed;else if(sw)punchLeft=s.ball.x<s.player.x-.08;lastSwing=sw;}
     if(sw)swingEnd.time=sw.time;
     const left=!sk&&punchLeft,c=left?PUNCH.left:PUNCH.right;let sTime=0,sWeight=0;

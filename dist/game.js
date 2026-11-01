@@ -1,10 +1,10 @@
-import {SKILLS,GOAL_CAM,goalLock,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX,GOAL_SCORE,ZONES} from './core.mjs';
+import {SKILLS,GOAL_CAM,goalLock,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX,GOAL_SCORE,ZONES,skillCost} from './core.mjs';
 import {createInput} from './input.mjs';
 import {renderShareCard,shareCard} from './share.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
 import {PLAYERS,playerSpec} from './characters.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE,ZONE_NAME} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE,ZONE_NAME,styleSummary} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 // In a match tips float over the court as a caption: any change to the feedback line shows it for a few seconds.
@@ -112,9 +112,14 @@ function selections(){
 // default), else the saved pick. The court's figure is also on the canvas (data-player) for checks.
 let pendingPlayer=null;
 const shownPlayer=()=>pendingPlayer??court3D?.player??playerSpec(progress.player).id;
+// The rules play the style (core.mjs STYLES) of the figure the lobby shows: the one on court, or a pick still loading,
+// or with no 3D court (2D fallback) the saved pick. A figure that failed to load plays as the default it falls back to.
+const pickedStyle=()=>playerSpec(shownPlayer()).style;
+// A figure's style in one line: its name, strength and cost.
+function styleLine(id){const s=styleSummary(playerSpec(id).style);return s.good.length?`${s.name}：${s.good.join('，')}；代价：${s.bad.join('，')}`:`${s.name}：标准手感，没有长处也没有代价`;}
 function players(){
-  const shown=shownPlayer();if(court3D?.player)canvas.dataset.player=court3D.player;$('prep-player-name').textContent=playerSpec(shown).name;
-  $('players').innerHTML=PLAYERS.map(p=>`<button class='player-card ${p.id===shown?'selected':''}' data-player='${p.id}' aria-label='${p.name}' aria-pressed='${p.id===shown}'><img src='./portraits/${p.id}.png' alt='' width='256' height='256'><b>${p.name}</b></button>`).join('');
+  const shown=shownPlayer();if(court3D?.player)canvas.dataset.player=court3D.player;if(game.phase==='ready')game.style=playerSpec(shown).style;$('prep-player-name').textContent=playerSpec(shown).name;$('player-style').textContent=styleLine(shown);
+  $('players').innerHTML=PLAYERS.map(p=>`<button class='player-card ${p.id===shown?'selected':''}' data-player='${p.id}' aria-label='${p.name}' aria-pressed='${p.id===shown}'><img src='./portraits/${p.id}.png' alt='' width='256' height='256'><b>${p.name}</b><small>${styleSummary(p.style).name}</small></button>`).join('');
 }
 // One dialog, two pickers: the lobby button says which one shows.
 function openSelection(mode){
@@ -124,7 +129,7 @@ function openSelection(mode){
   dialog.querySelector(player?'.player-card.selected':'.level-button.selected')?.focus();
 }
 // The lobby hides the pops with display:none, which would replay a leftover .show animation when the next match shows them.
-function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;resumeHold=0;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;resumeHold=0;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial,style:pickedStyle()});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
@@ -181,9 +186,11 @@ function hud(){
   put($('energy-fill'),'style.width',`${game.energy}%`);put($('energy-value'),'text',String(game.energy));put($('energy'),'aria-valuenow',String(game.energy));
   // A full bar keeps the burst button lit with its flame (styles.css .charged) until it is spent, ball in reach or not.
   const charged=game.energy>=SKILLS.burst.cost;$('skill-burst').classList.toggle('charged',charged);$('energy').classList.toggle('charged',charged);
+  // The spin's cost depends on the style: its button and the tick on the energy bar follow it.
+  const spinCost=skillCost(game,'spin');put($('skill-spin').querySelector('small'),'text',`${spinCost} · J`);put(document.querySelector('.energy-tick'),'style.left',`calc(${spinCost/SKILLS.max*100}% - 1px)`);
   for(const kind of ['spin','burst']){const st=skillStatus(game,kind),b=$(`skill-${kind}`),label=SKILL_STATE[st.ok?'ok':st.reason];
     b.classList.toggle('ready',st.ok);b.classList.toggle('low',st.reason==='energy');put($(`${kind}-state`),'text',label);
-    put(b,'aria-label',`${kind==='spin'?'旋转回击，消耗50能量':'爆发回击，消耗100能量'}，${label}`);}
+    put(b,'aria-label',`${kind==='spin'?`旋转回击，消耗${spinCost}能量`:'爆发回击，消耗100能量'}，${label}`);}
   const pv=game.phase==='playing'&&game.ball.vz<0?spinPreview(game,aimNow):null;put($('spin-dir'),'text',pv?(pv.dir==='left'?' ↺':' ↻'):'');
   put($('combo'),'style.opacity',game.combo>1?'1':'0');put($('combo').querySelector('b'),'text',String(game.combo));
   for(const [id,direction] of [['move-left',-1],['move-right',1]]){
@@ -421,7 +428,7 @@ function frame(time){
     if(e==='whiff')sound('whiff');
     buzz(e);
     if(e==='serve'&&!lessonShown&&!teaching){say(game.level.lesson);lessonShown=true;}
-    if(e==='serve'&&!teaching&&!skillIntroShown){verdict('能量 50 放「旋转」改路线 · 满 100 放「爆发」','info');skillIntroShown=true;}
+    if(e==='serve'&&!teaching&&!skillIntroShown){verdict(`能量 ${skillCost(game,'spin')} 放「旋转」改路线 · 满 100 放「爆发」`,'info');skillIntroShown=true;}
     if(e==='energy50'||e==='energy100'){const el=$('energy');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
     if(e==='energy100'&&!fullHintShown){say('能量满了：等球进框按「爆发」（K）打出强力回击，或先用「旋转」（J）。');fullHintShown=true;}
     if(e==='spin'){const f=hitFeel(game.weapon,'spin');sound(f.sound,f.intensity);sound('whirl');pop(game.ball.curve?.k>0?'右旋 ↻':'左旋 ↺');say('旋转球会沿弧线拐弯，撞到侧墙后变回直线。');}

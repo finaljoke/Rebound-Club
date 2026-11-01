@@ -37,6 +37,10 @@ export const BANK_FROM=2,GOAL_SCORE=[1000,1500,2500];
 // scales the drawn arc and color marks the zone on screen. The mouth is GOAL_TOP tall, split in equal thirds.
 export const GOAL_TOP=1.25,EARLY_SPEED=.85,LATE_SPEED=1.05;
 export const ZONES={low:{mult:1,h:.21,loft:.35,color:'#8fd3ff'},mid:{mult:2,h:.62,loft:.6,color:'#ff8a3c'},top:{mult:3,h:1.04,loft:1.5,color:'#ffd84d'}};
+// Player styles (single player): each figure plays one (characters.mjs PLAYERS), a small strength paired with a small
+// cost. run scales RUN, width the hit box's width, power the power shot's speed, recovery the swing's recovery, and
+// spinCost replaces the spin's energy cost. 'balanced' changes nothing.
+export const STYLES={balanced:{},agile:{run:1.1,width:.95},power:{power:1.1,recovery:1.4},skill:{spinCost:40,power:.95},guard:{width:1.1,run:.95}};
 export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 // Active skills, all first-round playtest values in one place. Energy lives only in the match state.
@@ -51,6 +55,16 @@ export const SKILLS={max:100,start:50,gainHit:12,gainPerfect:25,
 export const GOAL_CAM={camStart:.45,slowWindow:.22,slow:.3,hold:.6,back:.45,brief:.35};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
+const styleOf=s=>STYLES[s.style]??STYLES.balanced;
+// The glove as this player's style plays it (hit box width, swing recovery); built once per weapon and style.
+const GEAR=new Map();
+export function playerGear(s){
+  const key=s.weapon+'|'+s.style;let g=GEAR.get(key);
+  if(!g){const w=WEAPONS[s.weapon],st=styleOf(s);g={...w,width:w.width*(st.width??1),recovery:w.recovery*(st.recovery??1)};GEAR.set(key,g);}
+  return g;
+}
+// A skill's energy cost for this player: a style may cheapen the spin.
+export function skillCost(s,kind){return kind==='spin'?styleOf(s).spinCost??SKILLS.spin.cost:SKILLS[kind].cost;}
 const aimSide=axis=>axis<-.5?-1:axis>.5?1:0;
 // Heading from (x, z) to the aimed mark on the goal line. Timing never enters it: timing decides power and height.
 export function aimAngle(s,x,z,axis){const g=s.level.goalHalf*AIM_SHARE,d=aimSide(axis);return Math.atan2((d?d*g:clamp(x,-g,g))-x,GOAL_Z-z);}
@@ -96,7 +110,7 @@ function serve(s){
 }
 export function createGame(level=0,weapon='glove',options={}){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
-  return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',phase:'ready',
+  return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',style:STYLES[options.style]?options.style:'balanced',phase:'ready',
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
@@ -114,7 +128,7 @@ export function pauseGame(s){if(ACTIVE_PHASES.includes(s.phase)){s.previousPhase
 export function resumeGame(s){if(s.phase==='paused'){s.phase=s.previousPhase||'playing';s.previousPhase=null;}}
 // The exact rectangle a swing can connect in, and the band inside it that yields a power shot.
 export function hitZone(s){
-  const w=WEAPONS[s.weapon],sweet=sweetZ(s,w),band=PERFECT_BAND*w.reach*.5;
+  const w=playerGear(s),sweet=sweetZ(s,w),band=PERFECT_BAND*w.reach*.5;
   return {left:s.player.x-w.width,right:s.player.x+w.width,near:s.player.z-.12,far:s.player.z+w.reach,sweetNear:sweet-band,sweetFar:sweet+band};
 }
 export function inHitRange(s){
@@ -163,7 +177,7 @@ function strike(s,w,sw,axis){
   // Timing picks the line (ZONES): early lobs high and slow, the power band drives through the middle, late skims low.
   const zone=perfect?'mid':!soft&&t>PERFECT_BAND?'top':'low';
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
-  const v=s.level.speed*s.rally*(perfect?POWER:soft?SOFT:zone==='top'?EARLY_SPEED:LATE_SPEED);
+  const v=s.level.speed*s.rally*(perfect?POWER*(styleOf(s).power??1):soft?SOFT:zone==='top'?EARLY_SPEED:LATE_SPEED);
   b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,GOAL_Z,zone);
   sw.hit=true;s.shots++;s.power=perfect;
   // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
@@ -183,7 +197,7 @@ function strike(s,w,sw,axis){
 // --- Active skills -------------------------------------------------------------------------------
 function addEnergy(s,n,events){
   if(n<=0)return;const before=s.energy;s.energy=Math.min(SKILLS.max,before+n);events.push('energy');
-  if(before<SKILLS.spin.cost&&s.energy>=SKILLS.spin.cost)events.push('energy50');
+  const spin=skillCost(s,'spin');if(before<spin&&s.energy>=spin)events.push('energy50');
   if(before<SKILLS.max&&s.energy>=SKILLS.max)events.push('energy100');
 }
 // A spin bends toward the held side (with nothing held, away from the keeper; left when it stands central) and lands
@@ -201,7 +215,7 @@ function spinShot(s,x,z,axis){
 const inRect=(b,r)=>b.x>=r.left&&b.x<=r.right&&b.z>=r.near&&b.z<=r.far;
 // Burst is a little more forgiving than the gear's own zone: wider and a touch further out, never further back.
 export function burstZone(s){
-  const w=WEAPONS[s.weapon],r=hitZone(s),half=w.width*SKILLS.burst.widthScale;
+  const w=playerGear(s),r=hitZone(s),half=w.width*SKILLS.burst.widthScale;
   return {...r,left:s.player.x-half,right:s.player.x+half,far:r.far+SKILLS.burst.frontExtra};
 }
 // Read-only: whether a skill would be accepted right now, and if not, the reason to show the player.
@@ -212,7 +226,7 @@ export function skillStatus(s,kind){
   if(s.skill)return {ok:false,reason:'charging'};
   if(s.phase!=='playing')return {ok:false,reason:'state'};
   if(s.swing||s.skill)return {ok:false,reason:'busy'};
-  if(s.energy<cfg.cost)return {ok:false,reason:'energy'};
+  if(s.energy<skillCost(s,kind))return {ok:false,reason:'energy'};
   if(!(s.ball.vz<0&&inRect(s.ball,kind==='burst'?burstZone(s):hitZone(s))))return {ok:false,reason:'window'};
   return {ok:true};
 }
@@ -228,7 +242,7 @@ function registerContact(s,b,angle,kind,id,events){
 // burst freezes the rally and strikes when its own clock reaches the duration (see tick).
 export function useSkill(s,kind,axis=0){
   const status=skillStatus(s,kind);if(!status.ok)return status;
-  s.energy-=SKILLS[kind].cost;
+  s.energy-=skillCost(s,kind);
   const w=WEAPONS[s.weapon],id=++s.skillSeq,b=s.ball;
   if(kind==='spin'){
     const {dir,angle,v,curve}=spinShot(s,b.x,b.z,axis);noteAim(s,dir);s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
@@ -388,11 +402,11 @@ function tick(s,dt,axis){
     if(s.countdown<=0){if(s.phase!=='serving')serve(s);s.phase='playing';s.events.push('serve');}
     return;
   }
-  const w=WEAPONS[s.weapon],sw=s.swing;
+  const w=playerGear(s),sw=s.swing;
   s.held=axis;
   // Once the ball is in the hit box, and while a swing can still connect, the defender is planted: the held direction
   // aims instead of sliding off the ball, so pressing it a beat before the swing is safe.
-  if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*RUN*dt,-3.45,3.45);
+  if(!(sw&&!sw.hit&&!sw.whiffed)&&!(!sw&&inHitRange(s)))s.player.x=clamp(s.player.x+axis*RUN*(styleOf(s).run??1)*dt,-3.45,3.45);
   if(sw){
     sw.time+=dt;
     if(!sw.hit&&!sw.whiffed&&sw.time>w.windup+w.active){sw.whiffed=true;s.whiff=whiffReason(s,w,sw);s.events.push('whiff');if(s.chase&&s.whiff.reason!=='none')s.chase.whiff=s.whiff.reason;}
