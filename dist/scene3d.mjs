@@ -568,12 +568,13 @@ export function buildWorld(assets){
     ball.position.set(pose.bx,height,-pose.bz);
     if(goalCam.goalAt>=0&&(s.phase==='goal'||s.phase==='won'))netShot(s,now,reduceMotion,sm);else restoreNet();
     throwConfetti(s,now,reduceMotion);
-    const powered=(s.power||s.ball.kind==='burst')&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
+    // A fireball (core.mjs CHAIN) wears the power look with a thick red-orange trail.
+    const fire=!!s.shot?.fire&&s.ball.vz>0,powered=(s.power||s.ball.kind==='burst'||fire)&&s.ball.vz>0,spinning=s.ball.kind==='spin'&&s.ball.vz>0,size=powered?1.25:1,squash=!reduceMotion&&fxFeel&&fxAge<.09?(1-fxAge/.09)*Math.min(1,fxFeel.intensity*.6):0;
     ball.scale.setScalar(size);ballBody.material=powered?powerMat:ballMat;
-    const burstTrail=s.ball.kind==='burst'&&s.ball.vz>0;
+    const burstTrail=(s.ball.kind==='burst'||fire)&&s.ball.vz>0;
     // Speed reads in the trail: from 3 up to 10 it grows brighter and thicker (the gaps already widen with speed).
     const quick=Math.max(0,Math.min(1,(Math.hypot(s.ball.vx,s.ball.vz)-3)/7));
-    trail.forEach((m,i)=>{m.material.color.set(powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);cheer(now,reduceMotion);
+    trail.forEach((m,i)=>{m.material.color.set(fire?'#ff3b1f':powered?'#ff6a2b':spinning?'#37d6c0':'#ffda7d');m.material.opacity=(i+1)*(burstTrail?.09:.035*(1+1.4*quick));m.scale.setScalar(burstTrail?1.9:1+.6*quick);});rollBall(size);wallImpacts(s,now);cheer(now,reduceMotion);
     ball.visible=!['miss','lost'].includes(s.phase);
     const r=hitZone(s),incoming=s.phase==='playing'&&s.ball.vz<0,p=incoming&&!s.swing?swingPreview(s,axis):{kind:'none'};
     const [edgeColor,edgeOpacity,fillOpacity,bandOpacity]=tint[p.kind]||tint.none,dim=s.swing?.45:incoming?1:.5;
@@ -597,7 +598,7 @@ export function buildWorld(assets){
       // Red/green only says whether the keeper covers that line right now; it is not a promise of a goal.
       route.forEach((d,i)=>{const on=i+1<fl.count&&fl.zs[i+1]>s.ball.z;d.visible=on;if(on)d.position.set(fl.xs[i+1],.052,-fl.zs[i+1]);});
       const gx=fl.goal??fl.xs[fl.count-1];routeMat.color.set(s.ball.kind==='spin'?'#9df0e2':'#fff6d8');
-      target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':Math.abs(gx-s.keeper.x)<=KEEPER_REACH?'#ff5a4a':'#5fe07a');target.visible=true;
+      target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':!s.shot.fire&&Math.abs(gx-s.keeper.x)<=KEEPER_REACH?'#ff5a4a':'#5fe07a');target.visible=true;
       const zone=ZONES[s.shot.zone];zoneMark.visible=!!zone&&Math.abs(gx)<=s.level.goalHalf;
       if(zoneMark.visible){zoneMark.position.set(gx,zone.h,-GOAL_Z);zoneRing.material.color.set(zone.color);for(const z in zoneTags)zoneTags[z].visible=z===s.shot.zone;}
     }else{route.forEach(d=>d.visible=false);target.visible=false;zoneMark.visible=false;}

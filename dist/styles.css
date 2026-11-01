@@ -206,7 +206,16 @@ body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .overlay{
 .boot{background:#070b1d;color:var(--ink)}.boot small{color:var(--muted)}
 .court-wrap{background:#070b1d;border-color:#1d2550}
 .court-badge{background:rgba(14,20,46,.74);border-color:var(--glass-line);color:#cfe9ff}.court-badge .live-dot{background:var(--green)}
-.combo{color:var(--gold);text-shadow:0 2px 0 #0d1022}.combo b{font-style:italic;font-weight:900}
+.combo{color:var(--gold);text-shadow:0 2px 0 #0d1022}
+/* Perfect chain under the combo: five pips toward the fireball, or the armed fireball. */
+.chain{display:flex;justify-content:center;gap:3px;margin-top:4px;font-size:9px;font-style:normal;font-weight:800;letter-spacing:1px;white-space:nowrap}.chain[hidden]{display:none}
+.chain i{width:6px;height:6px;border-radius:50%;border:1px solid currentColor;opacity:.55}.chain i.on{background:currentColor;opacity:1}
+.chain.fire{color:#ff6a2b;animation:fire-pulse .7s ease-in-out infinite alternate}@keyframes fire-pulse{to{color:#ffd84d}}
+@media(prefers-reduced-motion:reduce){.chain.fire{animation:none}}
+/* In the match the corner above belongs to the sound button: the combo sits under it in portrait (beside the centred
+   badge) and under the badge in landscape. */
+body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .combo{top:calc(var(--top) + 48px);right:var(--edge-r)}
+@media(min-aspect-ratio:1/1){body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .combo{top:calc(var(--top) + 86px)}}.combo b{font-style:italic;font-weight:900}
 .hit-pop{font-size:30px;font-style:italic;font-weight:900;-webkit-text-stroke:5px #0d1022;paint-order:stroke fill;text-shadow:0 3px 0 #0d1022}.hit-pop.miss{color:#ff8a8a}
 .result-pop{font-style:italic;box-shadow:0 4px 0 #0d102255}.result-pop.good{background:var(--gold);color:#1a1300}.result-pop.bad{background:#ff5a4a;color:#fff7ea}.result-pop.info{background:rgba(14,20,46,.84);color:#cfe9ff}
 .progress-track{background:rgba(255,255,255,.16)}.practice-chip{background:rgba(30,200,180,.18);color:#7ff0e0}
