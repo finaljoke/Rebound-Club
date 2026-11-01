@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z,GOAL_TOP,ZONES} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
@@ -76,20 +76,41 @@ export function buildWorld(assets){
   const farNet=new THREE.LineBasicMaterial({color:'#e8f0ff',transparent:true,opacity:.5});
   let farNetLines=null,netRest=null,netDirty=false;
   function buildFarGoal(g){
-    for(const child of [...farGoal.children]){farGoal.remove(child);if(child!==sign)child.geometry?.dispose();}
+    for(const child of [...farGoal.children]){
+      farGoal.remove(child);if(child!==sign)child.geometry?.dispose();
+      if(child.userData.zoneBand){child.material.map?.dispose();child.material.dispose();}
+    }
     const edge=SIDE+.4,span=edge-g;
     for(const side of [-1,1]){
       box(span,.32,.65,'#141a33',farGoal,side*(g+span/2),.17,-.3);
       box(span,.95,.32,'#1a2142',farGoal,side*(g+span/2),.82,-.42);
       mesh(new THREE.PlaneGeometry(span-.08,.72),ledFar,farGoal,side*(g+span/2),.84,-.255,false).receiveShadow=false;
-      const post=rod([side*g,.02,.1],[side*g,1.25,.1],.07,'#ffffff',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
-      rod([side*g,1.25,.1],[side*g,.9,-.75],.045,'#e8edf8',farGoal);
-      sphere(.078,'#ffffff',farGoal,side*g,1.25,.1,1,1,1).castShadow=false;
+      const post=rod([side*g,.02,.1],[side*g,GOAL_TOP,.1],.07,'#ffffff',farGoal);post.name=side<0?'post-left':'post-right';post.position.x=side*g;
+      rod([side*g,GOAL_TOP,.1],[side*g,.9,-.75],.045,'#e8edf8',farGoal);
+      sphere(.078,'#ffffff',farGoal,side*g,GOAL_TOP,.1,1,1,1).castShadow=false;
     }
-    rod([-g,1.25,.1],[g,1.25,.1],.07,'#ffffff',farGoal);
+    rod([-g,GOAL_TOP,.1],[g,GOAL_TOP,.1],.07,'#ffffff',farGoal);
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e8edf8',farGoal);
-    farNetLines=new THREE.LineSegments(netGeometry(g,1.25,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
+    farNetLines=new THREE.LineSegments(netGeometry(g,GOAL_TOP,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
+    // Height zones (ZONES): a band in each zone's colour across the mouth, thin lines between them, and the zone's
+    // mult beside both posts.
+    ['low','mid','top'].forEach((zone,i)=>{
+      const h=GOAL_TOP/3,y=h*(i+.5),see=o=>Object.assign(o,{receiveShadow:false}).userData.zoneBand=true;
+      see(mesh(new THREE.PlaneGeometry(2*g,h),new THREE.MeshBasicMaterial({color:ZONES[zone].color,transparent:true,opacity:.2,depthWrite:false}),farGoal,0,y,-.02,false));
+      if(i)see(mesh(new THREE.PlaneGeometry(2*g,.025),new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:.55,depthWrite:false}),farGoal,0,h*i,-.01,false));
+      for(const side of [-1,1]){const tag=zoneTag(zone,.32);tag.position.set(side*(g+.28),y,.12);tag.userData.zoneBand=true;farGoal.add(tag);}
+    });
     mergeRigidParts(farGoal);
+  }
+  // A square chip with a height zone's mult in the zone's colour, large enough to read at the far goal.
+  function zoneTag(zone,size){
+    const geometry=new THREE.PlaneGeometry(size,size);
+    if(typeof document==='undefined')return new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+    const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d');
+    ctx.fillStyle='#141a33e6';ctx.beginPath();ctx.roundRect(4,4,120,120,22);ctx.fill();
+    ctx.fillStyle=ZONES[zone].color;ctx.font='900 76px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(`×${ZONES[zone].mult}`,64,70);
+    const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
+    return new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false}));
   }
   function label(value,width,height,color='#2c5745',background=null){
     // Without a DOM (node tests) the same-sized plane is built untextured, so its placement can still be checked.
@@ -228,6 +249,10 @@ export function buildWorld(assets){
   const spinArc=Array.from({length:16},()=>{const d=new THREE.Mesh(dotGeo,spinMat);d.rotation.x=-Math.PI/2;d.scale.setScalar(1.25);d.renderOrder=6;d.visible=false;scene.add(d);return d;});
   // Depth-tested like the route: the ring lies on the far goal line behind the keeper, so drawn on top it would cover them.
   const target=flat(new THREE.RingGeometry(.3,.42,32),'#7ee08a',.9,.05);target.material.depthTest=true;target.visible=false;
+  // Where a shot meets the mouth: a standing ring at its zone's height in the zone's colour, the zone's mult above it.
+  const zoneMark=new THREE.Group(),zoneRing=new THREE.Mesh(new THREE.RingGeometry(.13,.19,28),new THREE.MeshBasicMaterial({transparent:true,opacity:.9,depthWrite:false}));
+  const zoneTags={};zoneMark.add(zoneRing);zoneMark.visible=false;scene.add(zoneMark);
+  for(const zone in ZONES){const tag=zoneTag(zone,.3);tag.position.y=.36;zoneTags[zone]=tag;zoneMark.add(tag);}
   // What the keeper covers: drawn at its feet at the true save reach.
   const reachBar=flat(unit,'#9cc8ea',.28,.05);reachBar.scale.set(KEEPER_REACH*2,.38,1);
   // Burst's slightly wider catch frame, shown only while it is affordable, so the extra margin is never hidden.
@@ -378,7 +403,7 @@ export function buildWorld(assets){
   // when ready, the head follows the ball, and both arms swing toward the save point by weight w (sinking to the turf
   // once a dive lands). react: an extra [clip, time, weight] layer (a cheer).
   const armTarget=new THREE.Vector3();
-  function poseGoalie(a,dir,land,w,tx,ready,sink,shuffle,t,look,react){
+  function poseGoalie(a,dir,land,w,tx,ready,sink,shuffle,t,look,react,ty=HIT_HEIGHT){
     const layers=[],k=Math.min(1,a*3),rw=a>0?0:react?react[2]:0;
     if(a>0)layers.push([dir>0?'diveLeft':'diveRight',.1+.18*Math.min(1,a/.6),k],['idle',t,1-k,true]);
     // A side shuffle is 70% side-step over idle, so the arms do not swing out past the save reach.
@@ -388,7 +413,7 @@ export function buildWorld(assets){
     goalie.pose(layers,{lockHips:a>0});
     goalie.crouch(sink);goalie.lean('spine',.16*ready*(1-a));
     if(look&&a<.15)goalie.look('head',look,.6);
-    if(w>0){armTarget.set(tx,HIT_HEIGHT-(HIT_HEIGHT-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
+    if(w>0){armTarget.set(tx,ty-(ty-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
   // out toward the ball side, measured once from the model.
@@ -405,22 +430,25 @@ export function buildWorld(assets){
   // through contact, a big dive then lands on its side, and the keeper gets back up. A shot it can reach is met at its
   // gap; one it cannot (a goal) gets a full-effort dive that stops short of the ball's path. Shots heading clearly wide
   // are only watched. The rules' own save (keeper.dive restarting) fixes side, stretch and contact from the real save.
-  const DIVE={load:.1,launch:.14,hold:.06,land:.22,up:.5},dive={state:null,on:false,locked:false,at:0,dir:1,amt:0,tx:0,lastK:0},diveOut={a:0,w:0,tx:0,land:0,crouch:0,step:0,dir:1};
+  const DIVE={load:.1,launch:.14,hold:.06,land:.22,up:.5},dive={state:null,on:false,locked:false,at:0,dir:1,amt:0,tx:0,ty:HIT_HEIGHT,lastK:0},diveOut={a:0,w:0,tx:0,ty:HIT_HEIGHT,land:0,crouch:0,step:0,dir:1};
+  // The ball at the keeper's line, for the height the hands reach to (a scratch copy, reused).
+  const atKeeper={ball:{}};
   function trackDive(s,now,pose,sm){
     const d=dive,k=s.keeper,b=s.ball,o=diveOut;o.a=o.w=o.land=o.crouch=o.step=0;
     if(d.state!==s||s.phase==='ready')Object.assign(d,{state:s,on:false,locked:false,lastK:k.dive});
     const saved=k.dive>d.lastK+.01;d.lastK=k.dive;
-    if(saved)Object.assign(d,{on:true,locked:true,at:d.on?Math.min(d.at,now):now,dir:k.diveDir,amt:saveStretch(Math.abs(pose.bx-pose.kx)),tx:pose.bx});
+    if(saved)Object.assign(d,{on:true,locked:true,at:d.on?Math.min(d.at,now):now,dir:k.diveDir,amt:saveStretch(Math.abs(pose.bx-pose.kx)),tx:pose.bx,ty:b.h0??HIT_HEIGHT});
     else if(s.phase==='playing'&&b.vz>0&&b.z<KEEPER_Z&&!d.locked){
       const tk=(KEEPER_Z-b.z)/b.vz,goalX=foldX(b.x+b.vx*(GOAL_Z-b.z)/b.vz);
       if(tk<=DIVE.load+DIVE.launch&&Math.abs(goalX)<=s.level.goalHalf+.3){
         const cross=foldX(b.x+b.vx*tk),gap=cross-k.x,g=Math.abs(gap);
-        Object.assign(d,{on:true,at:now+tk,dir:Math.sign(gap)||1,amt:g<=KEEPER_REACH?saveStretch(g):beatenDive(g),tx:cross});
+        Object.assign(atKeeper.ball,b).z=KEEPER_Z;
+        Object.assign(d,{on:true,at:now+tk,dir:Math.sign(gap)||1,amt:g<=KEEPER_REACH?saveStretch(g):beatenDive(g),tx:cross,ty:ballHeight(atKeeper)});
       }
     }
     const big=d.amt>.6,end=DIVE.hold+(big?DIVE.land:0)+DIVE.up;
     if(d.on&&now-d.at>end){d.on=false;d.locked=false;}
-    o.dir=d.dir;o.tx=d.tx;if(!d.on)return o;
+    o.dir=d.dir;o.tx=d.tx;o.ty=d.ty;if(!d.on)return o;
     const u=now-d.at;
     if(u<-DIVE.launch){const p=sm((u+DIVE.launch+DIVE.load)/DIVE.load);o.crouch=.1*p;o.step=.07*p;o.w=.25*p;}
     else if(u<DIVE.hold){const p=Math.min(1,(u+DIVE.launch)/DIVE.launch),e=1-(1-p)**2;o.a=d.amt*e;o.w=.25+.75*e;o.crouch=.1*(1-e);o.step=.07*(1-e);}
@@ -533,7 +561,7 @@ export function buildWorld(assets){
     keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-sink,-KEEPER_Z);
     // Shuffling means actually moving: the keeper's step since the last simulation tick.
     const kStep=s.pose?k.x-s.pose.kx:0,shuffling=!dv.a&&Math.abs(kStep)>1e-4&&s.phase==='playing',kw=react.kind==='miss'?reactEnv(goalie,'cheer'):0;
-    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady,sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null);
+    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady,sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null,dv.ty);
     // Big heads and gloves reach the turf first when the body lies on its side: lift the whole body by the deepest point.
     const low=goalie.lowestPoint();if(low<0){keeper.position.y-=low;keeper.updateMatrixWorld(true);}
     const height=ballHeight(heightProbe);
@@ -570,7 +598,9 @@ export function buildWorld(assets){
       route.forEach((d,i)=>{const on=i+1<fl.count&&fl.zs[i+1]>s.ball.z;d.visible=on;if(on)d.position.set(fl.xs[i+1],.052,-fl.zs[i+1]);});
       const gx=fl.goal??fl.xs[fl.count-1];routeMat.color.set(s.ball.kind==='spin'?'#9df0e2':'#fff6d8');
       target.position.set(gx,.05,-GOAL_Z);target.material.color.set(Math.abs(gx)>s.level.goalHalf?'#c9c9b8':Math.abs(gx-s.keeper.x)<=KEEPER_REACH?'#ff5a4a':'#5fe07a');target.visible=true;
-    }else{route.forEach(d=>d.visible=false);target.visible=false;}
+      const zone=ZONES[s.shot.zone];zoneMark.visible=!!zone&&Math.abs(gx)<=s.level.goalHalf;
+      if(zoneMark.visible){zoneMark.position.set(gx,zone.h,-GOAL_Z);zoneRing.material.color.set(zone.color);for(const z in zoneTags)zoneTags[z].visible=z===s.shot.zone;}
+    }else{route.forEach(d=>d.visible=false);target.visible=false;zoneMark.visible=false;}
     const sp=incoming&&skillStatus(s,'spin').ok?spinPreview(s,axis):null;
     spinArc.forEach((d,i)=>{const on=!!sp&&i<sp.count;d.visible=on&&showHints;if(on)d.position.set(sp.xs[i],.055,-sp.zs[i]);});
     const showBurst=incoming&&!s.swing&&!s.tutorial&&s.energy>=SKILLS.burst.cost;

@@ -29,8 +29,14 @@ export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=
 export const AIM_SHARE=.8,SPIN_SHARE=.9;
 // Bank shot, from level BANK_FROM (index) on: a clean contact in front of the power band with a side held goes into that
 // side wall and comes off it to the other side's aim mark. A goal scores GOAL_SCORE by side-wall bounces (two or more
-// count as two), plus the power bonus as before.
+// count as two), times the height zone's mult.
 export const BANK_FROM=2,GOAL_SCORE=[1000,1500,2500];
+// Height zones: timing picks the ball's line. An early contact lobs slower (EARLY_SPEED) into the top of the mouth, the
+// power band drives through the middle, a late contact skims low and quicker (LATE_SPEED), a soft one low; skills fly
+// through the middle. Only the zone enters the rules (the goal's mult); h is the drawn height at the goal line, loft
+// scales the drawn arc and color marks the zone on screen. The mouth is GOAL_TOP tall, split in equal thirds.
+export const GOAL_TOP=1.25,EARLY_SPEED=.85,LATE_SPEED=1.05;
+export const ZONES={low:{mult:1,h:.21,loft:.35,color:'#8fd3ff'},mid:{mult:2,h:.62,loft:.6,color:'#ff8a3c'},top:{mult:3,h:1.04,loft:1.5,color:'#ffd84d'}};
 export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 // Active skills, all first-round playtest values in one place. Energy lives only in the match state.
@@ -46,13 +52,17 @@ export const GOAL_CAM={camStart:.45,slowWindow:.22,slow:.3,hold:.6,back:.45,brie
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sweetZ=(s,w)=>s.player.z+w.reach*.5;
 const aimSide=axis=>axis<-.5?-1:axis>.5?1:0;
-// Heading from (x, z) to the aimed mark on the goal line. Timing never enters it: timing only decides power.
+// Heading from (x, z) to the aimed mark on the goal line. Timing never enters it: timing decides power and height.
 export function aimAngle(s,x,z,axis){const g=s.level.goalHalf*AIM_SHARE,d=aimSide(axis);return Math.atan2((d?d*g:clamp(x,-g,g))-x,GOAL_Z-z);}
 // Folds a straight-line x back between the side walls, as repeated bounces would.
 export function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
 // Heading from (x, z) into the held side's wall so the ball comes off it onto the other side's mark.
 export function bankAngle(s,x,z,axis){const d=aimSide(axis);return Math.atan2(d*(2*SIDE+s.level.goalHalf*AIM_SHARE)-x,GOAL_Z-z);}
-function launch(b,z1){b.z0=b.z;b.z1=z1;}
+// Starts a new leg from the height the ball is drawn at now; a shot (zone given) ends at its zone's height.
+function launch(b,z1,zone=null){
+  b.h0=b.z0===undefined?HIT_HEIGHT:ballHeight({ball:b});b.z0=b.z;b.z1=z1;
+  b.h1=zone?ZONES[zone].h:HIT_HEIGHT;b.loft=zone?ZONES[zone].loft:1;
+}
 // One fixed step of ball flight, shared by the simulation and every prediction. A spinning ball turns its
 // heading by curvature × distance until its stop depth; any side-wall bounce reflects it and ends the spin.
 // Returns -1/1 when a side wall was hit this step, else 0.
@@ -125,14 +135,16 @@ export function crossingFrom(x,z,vx,vz,s){
   return {x:at,viaWall:Math.abs(raw)>SIDE,inMouth:Math.abs(at)<=s.level.goalHalf,blocked:Math.abs(at-s.keeper.x)<=KEEPER_REACH};
 }
 export function predictCrossing(s){const b=s.ball;return b.vz>0?crossingFrom(b.x,b.z,b.vx,b.vz,s):null;}
-// Visual height only: each leg of flight is a parabola that starts and ends at hitting height.
+// Visual height only: each leg of flight is a parabola from its start height (h0) to its end height (h1), both hitting
+// height unless set by launch; a shot ends at its zone's height on the goal line.
 // Drawn height only (no rule reads it). One fixed gravity: the apex follows the flight time over the span, so a fast
-// ball flies flat and a slow one lobs. GRAVITY keeps level 1's serve (speed 4·PACE) at the old ARC apex; MAX_APEX caps slow lobs.
+// ball flies flat and a slow one lobs; a shot's zone scales it (loft). GRAVITY keeps level 1's serve (speed 4·PACE) at
+// the old ARC apex; MAX_APEX caps slow lobs.
 export const GRAVITY=8*ARC/((KEEPER_Z-.3-PLAYER_Z)/(4*PACE))**2,MAX_APEX=1.5;
 export function ballHeight(s){
-  const b=s.ball,span=(b.z1??PLAYER_Z)-(b.z0??b.z);
+  const b=s.ball,span=(b.z1??PLAYER_Z)-(b.z0??b.z),h0=b.h0??HIT_HEIGHT,h1=b.h1??HIT_HEIGHT;
   const u=Math.abs(span)<1e-6?1:clamp((b.z-b.z0)/span,0,1),time=Math.abs(span)/Math.max(1e-6,Math.abs(b.vz??0));
-  return HIT_HEIGHT+Math.min(MAX_APEX,GRAVITY*time*time/8)*4*u*(1-u);
+  return h0+(h1-h0)*u+Math.min(MAX_APEX,GRAVITY*time*time/8*(b.loft??1))*4*u*(1-u);
 }
 // The last three aimed sides (-1, 0, 1), which a pattern-reading keeper leans on.
 function noteAim(s,side){s.aims.push(side);if(s.aims.length>3)s.aims.shift();}
@@ -148,16 +160,18 @@ function strike(s,w,sw,axis){
   const soft=!sw.armed,perfect=!soft&&Math.abs(t)<=PERFECT_BAND;
   const bank=!soft&&t>PERFECT_BAND&&aimSide(axis)!==0&&s.levelIndex>=BANK_FROM&&!s.tutorial;
   const angle=bank?bankAngle(s,b.x,b.z,axis):aimAngle(s,b.x,b.z,axis);
+  // Timing picks the line (ZONES): early lobs high and slow, the power band drives through the middle, late skims low.
+  const zone=perfect?'mid':!soft&&t>PERFECT_BAND?'top':'low';
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
-  const v=s.level.speed*s.rally*(perfect?POWER:soft?SOFT:1);
-  b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
+  const v=s.level.speed*s.rally*(perfect?POWER:soft?SOFT:zone==='top'?EARLY_SPEED:LATE_SPEED);
+  b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,GOAL_Z,zone);
   sw.hit=true;s.shots++;s.power=perfect;
   // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
   // A bank is noted on the side it lands, which is what a pattern-reading keeper guesses at.
   s.lastShot=soft?'soft':perfect?'perfect':bank?'bank':['left','straight','right'][aimSide(axis)+1];noteAim(s,bank?-aimSide(axis):aimSide(axis));
-  s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed};
+  s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed,zone};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   // Every contact holds the frame for a moment (user request, 2026-10-27); a perfect strike holds longer.
   s.hitstop=perfect?.07:.05;
@@ -202,12 +216,13 @@ export function skillStatus(s,kind){
   if(!(s.ball.vz<0&&inRect(s.ball,kind==='burst'?burstZone(s):hitZone(s))))return {ok:false,reason:'window'};
   return {ok:true};
 }
-// Shared bookkeeping for a skill contact: counted once, scored as a plain contact, never as a perfect.
+// Shared bookkeeping for a skill contact: counted once, scored as a plain contact, never as a perfect; it flies through
+// the middle zone.
 function registerContact(s,b,angle,kind,id,events){
   s.shots++;s.power=false;s.flash=1;
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=100;
-  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id};events.push(kind);
+  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id,zone:'mid'};events.push(kind);
 }
 // The first accepted action takes the lock: it spends energy exactly once. Spin strikes immediately;
 // burst freezes the rally and strikes when its own clock reaches the duration (see tick).
@@ -217,7 +232,7 @@ export function useSkill(s,kind,axis=0){
   const w=WEAPONS[s.weapon],id=++s.skillSeq,b=s.ball;
   if(kind==='spin'){
     const {dir,angle,v,curve}=spinShot(s,b.x,b.z,axis);noteAim(s,dir);s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
-    b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
+    b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,GOAL_Z,'mid');
     b.kind='spin';b.curve=curve;
     registerContact(s,b,angle,'spin',id,s.queued);
     s.swing={time:w.windup,hit:true,armed:true,whiffed:false,skill:'spin'};
@@ -230,7 +245,7 @@ export function useSkill(s,kind,axis=0){
 function launchBurst(s,axis){
   const k=s.skill,b=s.ball,w=WEAPONS[s.weapon],cfg=SKILLS.burst;k.angle=aimAngle(s,k.x,k.z,axis);noteAim(s,aimSide(axis));
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);const v=Math.min(cfg.maxSpeed,s.level.speed*s.rally*cfg.speedScale);
-  b.x=k.x;b.z=k.z;b.vx=Math.sin(k.angle)*v;b.vz=Math.cos(k.angle)*v;launch(b,KEEPER_Z);b.kind='burst';b.curve=null;
+  b.x=k.x;b.z=k.z;b.vx=Math.sin(k.angle)*v;b.vz=Math.cos(k.angle)*v;launch(b,GOAL_Z,'mid');b.kind='burst';b.curve=null;
   registerContact(s,b,k.angle,'burst',k.id,s.events);
   s.skill=null;s.phase='playing';s.swing={time:w.windup+w.active,hit:true,armed:true,whiffed:false,skill:'burst'};
 }
@@ -344,9 +359,9 @@ function farEnd(s,prevZ,prevX,wall){
     return;
   }
   if(goalX!==null&&Math.abs(goalX)<=g){
-    const banks=s.shot?.banks||0;
-    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks};
-    s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
+    const banks=s.shot?.banks||0,zone=s.shot?.zone??null;
+    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks,zone};
+    s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(ZONES[zone]?.mult??1);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
     return;
