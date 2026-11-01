@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGame,startGame,stepGame,attack,useSkill,swingPreview,inHitRange,spinPreview,crossingFrom,WEAPONS,LEVELS,SKILLS,PLAYER_Z,PERFECT_BAND,POWER,RALLY_STEP,AIM_SHARE,PACE} from '../dist/core.mjs';
 
-// Aim comes from the direction held at contact; timing only decides power.
+// Aim comes from the direction held at contact; timing decides power and height (zones.test.mjs).
 function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const sweet=s=>PLAYER_Z+WEAPONS[s.weapon].reach*.5;

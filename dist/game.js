@@ -1,10 +1,10 @@
-import {SKILLS,GOAL_CAM,goalLock,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX,GOAL_SCORE} from './core.mjs';
+import {SKILLS,GOAL_CAM,goalLock,useSkill,skillStatus,spinPreview,predictFlight,burstZone,LEVELS,WEAPONS,ACTIVE_PHASES,KEEPER_Z,KEEPER_REACH,FAR_WALL,GOAL_Z,createGame,startGame,stepGame,attack,pauseGame,resumeGame,ballHeight,hitZone,swingPreview,crossingFrom,foldX,GOAL_SCORE,ZONES} from './core.mjs';
 import {createInput} from './input.mjs';
 import {renderShareCard,shareCard} from './share.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
 import {PLAYERS,playerSpec} from './characters.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,TUTORIAL_TIPS,SKILL_STATE,ZONE_NAME} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 // In a match tips float over the court as a caption: any change to the feedback line shows it for a few seconds.
@@ -362,6 +362,8 @@ function hints(){
     for(let i=1;i<fl.count;i++){if(fl.zs[i]<=game.ball.z)continue;const q=project(fl.xs[i],fl.zs[i]);ellipse(q.x,q.y,2,1.4,game.ball.kind==='spin'?'#37d6c0dd':'#fff6d8cc');}
     const gx=fl.goal??fl.xs[fl.count-1],t=project(gx,GOAL_Z),open=Math.abs(gx)<=game.level.goalHalf,blocked=Math.abs(gx-game.keeper.x)<=KEEPER_REACH;
     ctx.beginPath();ctx.ellipse(t.x,t.y,9,5,0,0,Math.PI*2);ctx.strokeStyle=!open?'#c9c9b8':blocked?'#ff5a4a':'#5fe07a';ctx.lineWidth=3;ctx.stroke();
+    // The top-down view has no height: the shot's zone is its mult beside the end ring, in the zone's colour.
+    const zone=ZONES[game.shot?.zone];if(zone&&open)text(`×${zone.mult}`,t.x,t.y-9,11,zone.color,'800');
   }
   if(incoming&&skillStatus(game,'spin').ok){const sp=spinPreview(game,input.axis());for(let i=1;i<sp.count;i++){const q=project(sp.xs[i],sp.zs[i]);ellipse(q.x,q.y,2.4,1.6,'#37d6c0ee');}}
   if(incoming&&!game.swing&&game.energy>=SKILLS.burst.cost){const z=burstZone(game);polygon(quad(z.left,z.right,z.near,z.far),null,'#ff9a3caa',1.4);}
@@ -426,7 +428,8 @@ function frame(time){
     if(e==='burstStart'){sound('charge');$('feedback').textContent='蓄力爆发……';}
     if(e==='burstStrike')sound('strike');
     if(e==='burst'){const f=hitFeel(game.weapon,'burst');sound(f.sound,f.intensity);sound('impact');pop('爆发！');shake=Math.max(shake,.08);say('爆发球很快，但正对门将一样会被扑住。');}
-    if(e==='hit'){const bank=game.lastShot==='bank';pop(bank?(game.shot.angle>0?'借右墙 ↗':'借左墙 ↖'):aim[game.lastShot]||'好球！');if(!teaching)say(bank?'早一点出手按住方向，球会借那侧的墙弹到另一边，门将要等撞墙才回头。':'挥击时按住 ← 或 → 就往那边打，不按打直线。看红绿终点判断门将有没有封住。');}
+    if(e==='hit'){const bank=game.lastShot==='bank',lob=game.shot.zone==='top';pop(`${bank?(game.shot.angle>0?'借右墙 ↗':'借左墙 ↖'):aim[game.lastShot]||'好球！'} · ${lob?'高吊':'低平'}`);
+      if(!teaching)say(bank?'早出手按住方向：球高吊着借那侧的墙弹到另一边，门将要等撞墙才回头。进了算上区 ×3。':lob?'早出手是高吊球：慢一些，门将更容易追上，进了算上区 ×3。':'晚出手是低平快球：最难追，进了算下区 ×1。在橙色甜点正中出手打重炮，算中区 ×2。');}
     if(e==='perfect'){pop('重炮！');shake=Math.max(shake,.06);}
     if(e==='soft'){pop('软球',true);say('挥早了：球自己撞上来，只能打出慢速直球。等框变亮再按。');}
     if(e==='whiff'){pop(whiffHint(game.whiff),true);say({early:'球还没到框里就挥了，等影子进框再按。',late:'球已经过了身位，下次早一点出手。',reach:'球在框外，先移到影子上再挥击。',none:'现在没有来球，等球飞回来。'}[game.whiff?.reason]||'这次没碰到球，看框亮起再出手。');}
@@ -435,7 +438,8 @@ function frame(time){
     if(e==='save'){verdict(teaching?'门将挡住了 · 按住空的一侧再挥击':game.lastShot==='perfect'?'重炮被扑住 · 门将封住了这条线':'被扑住 · 门将封住了这条线','bad');shake=Math.max(shake,.03);if(!teaching)say('终点变红说明门将挡在那条线上。挥击时按住另一侧方向键，或用旋转绕开它。');}
     // The winning goal's camera shot plays out before the result card covers the court.
     if(e==='goal'&&game.phase==='won')resultAt=performance.now()+1000*(reduceMotion?.3:game.lastGoal?.key?GOAL_CAM.hold+GOAL_CAM.back:.6);
-    if(e==='goal'&&!teaching){const banks=game.lastGoal?.banks||0;verdict(banks?`${banks>1?'两次':''}借墙破门！+${GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]}`:game.lastShot==='perfect'?'重炮破门！':'进球！','good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
+    if(e==='goal'&&!teaching){const g=game.lastGoal,banks=g?.banks||0,zone=ZONES[g?.zone],what=banks?`${banks>1?'两次':''}借墙破门`:game.lastShot==='perfect'?'重炮破门':'进球';
+      verdict(`${zone?`${ZONE_NAME[g.zone]} ×${zone.mult} · `:''}${what}！+${GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(zone?.mult??1)}`,'good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
     if(e==='wide'){verdict('打偏了 · 球出了门框','bad');if(!teaching)say('这球偏出了门框，下一球换个方向。');}
     if(e==='practice'){verdict(`练习球 · 不扣机会（还剩 ${game.practiceLeft}）`,'info');say('看地上的影子，移动到亮框里再挥击。');trail=[];}
     if(['hit','perfect','goal'].includes(e)&&!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}

@@ -29,6 +29,7 @@ test('前两关、不按方向、软球都不借墙',()=>{
   s=play(2);incoming(s);swingAt(s,1.6,1);assert.equal(s.lastShot,'soft');assert.equal(predictFlight(s).wall,null);
 });
 // Sends the ball from (0, 4) so its straight line crosses the goal line at `raw` (folded by the walls), keeper out of reach.
+// The shot carries no height zone, so the bank tier alone is scored (zones.test.mjs multiplies it).
 function shootAt(s,raw){
   const b=s.ball,z=4,angle=Math.atan2(raw,GOAL_Z-z),v=12;b.x=0;b.z=z;b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;b.z0=z;b.z1=GOAL_Z;b.curve=null;
   s.level={...s.level,keeper:{...s.level.keeper,speed:0}};s.keeper.x=s.keeper.target=2.4;s.keeper.delay=0;s.keeper.err=0;
@@ -44,7 +45,8 @@ test('借墙球真实打进时按借墙得分，结算亮点记下借墙破门',
   const s=play(2);s.level={...s.level,keeper:{...s.level.keeper,speed:0}};s.keeper.x=s.keeper.target=1.5;
   incoming(s);swingAt(s,.7,1);const before=s.score;
   for(let i=0;i<600&&!s.events.includes('goal');i++)stepGame(s,1/120,0);
-  assert.equal(s.goals,1);assert.equal(s.score-before,1500);
+  // An early contact is a lob as well, so it lands in the top zone (zones.test.mjs).
+  assert.equal(s.goals,1);assert.equal(s.score-before,1500*3);
   const stats=createMatchStats();recordMatchEvent(stats,'goal',s);assert.equal(stats.bankGoals,1);
   assert.equal(matchSummary({...s,phase:'won',bestCombo:1},stats).highlight,'借墙破门 1 次');
 });

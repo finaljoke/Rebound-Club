@@ -1,6 +1,8 @@
 export function screenFor(phase){return phase==='ready'?'ready':phase==='paused'?'paused':['won','lost'].includes(phase)?'result':'match';}
 // Why each conceded ball got through (core.mjs missCause), in the order ties are listed.
 export const MISS_CAUSE={early:'出手太早',late:'出手太晚',reach:'没跑到位',idle:'没有出手',unclear:'挥空'};
+// Names of the goal's height zones (core.mjs ZONES).
+export const ZONE_NAME={low:'下区',mid:'中区',top:'上区'};
 export function createMatchStats(){return {powerHits:0,powerGoals:0,saves:0,whiffs:0,practiceConceded:0,spinShots:0,spinGoals:0,burstShots:0,burstGoals:0,bankGoals:0,
   missCauses:Object.fromEntries(Object.keys(MISS_CAUSE).map(k=>[k,0]))};}
 export function recordMatchEvent(stats,event,state){
