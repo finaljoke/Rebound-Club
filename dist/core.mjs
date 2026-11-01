@@ -12,7 +12,7 @@ export const PACE=1.5;
 export const LEVELS = [
   {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。挥击时按住 ← 或 →，球就往那边飞。',goals:2,practice:3,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
   {name:'左右开弓',tag:'按住方向，指哪打哪',lesson:'门将守住了正中。挥击时按住 ← 打左边，按住 → 打右边，看准它站哪边。',goals:3,practice:2,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
-  {name:'预判时刻',tag:'甜点重炮与旋转',lesson:'普通变向会被追上。在橙色甜点出手打重炮，或用旋转绕过门将。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.5,pattern:.3,recover:.7},color:'#5c5a8b'},
+  {name:'预判时刻',tag:'重炮、旋转与借墙',lesson:'普通变向会被追上。在橙色甜点出手打重炮，用旋转绕过门将，或早一点出手按住方向，借那侧的墙弹到另一边。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.5,pattern:.3,recover:.7},color:'#5c5a8b'},
   {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠，还会盯着你在框里按的方向。按住另一侧打对角，或最后一刻再换方向骗它。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.6,pattern:.3,recover:.6},color:'#867045'},
   {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.45,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
   {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将会读招。变向、重炮、旋转都要用上，出手前别暴露方向。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4,read:.8,pattern:.5,recover:.9},color:'#285b54'}
@@ -27,6 +27,10 @@ export const PLAYER_Z=1.6,MAX_AIM=.45,PERFECT_BAND=.3,RALLY_STEP=1.05,RALLY_CAP=
 // Aim: left/right held at contact sends the ball to that side of the goal mouth, AIM_SHARE of its half width out;
 // nothing held goes straight, pulled in to the same mark when the defender stands outside it. Spins land further out.
 export const AIM_SHARE=.8,SPIN_SHARE=.9;
+// Bank shot, from level BANK_FROM (index) on: a clean contact in front of the power band with a side held goes into that
+// side wall and comes off it to the other side's aim mark. A goal scores GOAL_SCORE by side-wall bounces (two or more
+// count as two), plus the power bonus as before.
+export const BANK_FROM=2,GOAL_SCORE=[1000,1500,2500];
 export const KEEPER_Z=9.3,FAR_WALL=9.8,GOAL_Z=9.7,SIDE=3.82,KEEPER_REACH=.55;
 export const ACTIVE_PHASES=['playing','serving','miss','goal','skill'];
 // Active skills, all first-round playtest values in one place. Energy lives only in the match state.
@@ -46,6 +50,8 @@ const aimSide=axis=>axis<-.5?-1:axis>.5?1:0;
 export function aimAngle(s,x,z,axis){const g=s.level.goalHalf*AIM_SHARE,d=aimSide(axis);return Math.atan2((d?d*g:clamp(x,-g,g))-x,GOAL_Z-z);}
 // Folds a straight-line x back between the side walls, as repeated bounces would.
 export function foldX(raw){const period=4*SIDE;let u=((raw+SIDE)%period+period)%period;if(u>2*SIDE)u=period-u;return u-SIDE;}
+// Heading from (x, z) into the held side's wall so the ball comes off it onto the other side's mark.
+export function bankAngle(s,x,z,axis){const d=aimSide(axis);return Math.atan2(d*(2*SIDE+s.level.goalHalf*AIM_SHARE)-x,GOAL_Z-z);}
 function launch(b,z1){b.z0=b.z;b.z1=z1;}
 // One fixed step of ball flight, shared by the simulation and every prediction. A spinning ball turns its
 // heading by curvature × distance until its stop depth; any side-wall bounce reflects it and ends the spin.
@@ -140,7 +146,8 @@ function predictSide(s){
 function strike(s,w,sw,axis){
   const b=s.ball,t=clamp((b.z-sweetZ(s,w))/(w.reach*.5),-1,1);
   const soft=!sw.armed,perfect=!soft&&Math.abs(t)<=PERFECT_BAND;
-  const angle=aimAngle(s,b.x,b.z,axis);
+  const bank=!soft&&t>PERFECT_BAND&&aimSide(axis)!==0&&s.levelIndex>=BANK_FROM&&!s.tutorial;
+  const angle=bank?bankAngle(s,b.x,b.z,axis):aimAngle(s,b.x,b.z,axis);
   s.rally=Math.min(RALLY_CAP,s.rally*RALLY_STEP);
   const v=s.level.speed*s.rally*(perfect?POWER:soft?SOFT:1);
   b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,KEEPER_Z);
@@ -148,7 +155,8 @@ function strike(s,w,sw,axis){
   // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
-  s.lastShot=soft?'soft':perfect?'perfect':['left','straight','right'][aimSide(axis)+1];noteAim(s,aimSide(axis));
+  // A bank is noted on the side it lands, which is what a pattern-reading keeper guesses at.
+  s.lastShot=soft?'soft':perfect?'perfect':bank?'bank':['left','straight','right'][aimSide(axis)+1];noteAim(s,bank?-aimSide(axis):aimSide(axis));
   s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   // Every contact holds the frame for a moment (user request, 2026-10-27); a perfect strike holds longer.
@@ -336,8 +344,9 @@ function farEnd(s,prevZ,prevX,wall){
     return;
   }
   if(goalX!==null&&Math.abs(goalX)<=g){
-    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1};
-    s.goals++;s.score+=1000+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
+    const banks=s.shot?.banks||0;
+    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks};
+    s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]+(s.power?500:0);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
     return;
@@ -375,7 +384,7 @@ function tick(s,dt,axis){
     if(sw.time>w.windup+w.active+w.recovery+(sw.whiffed?w.whiff:0))s.swing=null;
   }
   const b=s.ball,prevZ=b.z,prevX=b.x;
-  const wall=advanceBall(b,dt);if(wall){s.events.push('wall');if(b.vz>0&&s.shot)s.shot.banked=true;}
+  const wall=advanceBall(b,dt);if(wall){s.events.push('wall');if(b.vz>0&&s.shot){s.shot.banked=true;s.shot.banks=(s.shot.banks||0)+1;}}
   // What the defender does about an incoming ball, kept until it goes back out, so a conceded one can say why.
   if(b.vz>0)s.chase=null;else{s.chase??={reach:false,whiff:null};if(inHitRange(s))s.chase.reach=true;}
   if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
