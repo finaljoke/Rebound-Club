@@ -1,7 +1,7 @@
 export function screenFor(phase){return phase==='ready'?'ready':phase==='paused'?'paused':['won','lost'].includes(phase)?'result':'match';}
 // Why each conceded ball got through (core.mjs missCause), in the order ties are listed.
 export const MISS_CAUSE={early:'出手太早',late:'出手太晚',reach:'没跑到位',idle:'没有出手',unclear:'挥空'};
-export function createMatchStats(){return {powerHits:0,powerGoals:0,saves:0,whiffs:0,practiceConceded:0,spinShots:0,spinGoals:0,burstShots:0,burstGoals:0,
+export function createMatchStats(){return {powerHits:0,powerGoals:0,saves:0,whiffs:0,practiceConceded:0,spinShots:0,spinGoals:0,burstShots:0,burstGoals:0,bankGoals:0,
   missCauses:Object.fromEntries(Object.keys(MISS_CAUSE).map(k=>[k,0]))};}
 export function recordMatchEvent(stats,event,state){
   if(event==='perfect')stats.powerHits++;
@@ -10,6 +10,7 @@ export function recordMatchEvent(stats,event,state){
   if(event==='burst')stats.burstShots++;
   if(event==='goal'&&state.lastShot==='spin')stats.spinGoals++;
   if(event==='goal'&&state.lastShot==='burst')stats.burstGoals++;
+  if(event==='goal'&&state.lastGoal?.banks>0)stats.bankGoals++;
   if(event==='save')stats.saves++;
   if(event==='whiff')stats.whiffs++;
   if(event==='practice')stats.practiceConceded++;
@@ -19,7 +20,7 @@ export function matchSummary(s,stats){
   const won=s.phase==='won';let advice=s.level.lesson;
   if(!won&&stats.whiffs>=3)advice='下局先等击球框亮起，再出手。把第一球接稳。';
   else if(!won&&stats.saves>=3)advice='挥击时按住另一侧方向键，或用旋转绕过门将的封堵。';
-  const highlight=stats.powerGoals>0?`重炮破门 ${stats.powerGoals} 次`:stats.burstGoals>0?`爆发破门 ${stats.burstGoals} 次`:stats.spinGoals>0?`旋转绕过门将 ${stats.spinGoals} 次`:s.bestCombo>=3?`连续回击 ${s.bestCombo} 次`:s.goals>0?`攻破球门 ${s.goals} 次`:'下一球，稳稳接住。';
+  const highlight=stats.powerGoals>0?`重炮破门 ${stats.powerGoals} 次`:stats.burstGoals>0?`爆发破门 ${stats.burstGoals} 次`:stats.spinGoals>0?`旋转绕过门将 ${stats.spinGoals} 次`:stats.bankGoals>0?`借墙破门 ${stats.bankGoals} 次`:s.bestCombo>=3?`连续回击 ${s.bestCombo} 次`:s.goals>0?`攻破球门 ${s.goals} 次`:'下一球，稳稳接住。';
   // Practice balls count too: the title already treats them as conceded.
   const conceded=Object.entries(stats.missCauses).filter(([,n])=>n>0).map(([cause,n])=>({cause,label:MISS_CAUSE[cause],n})).sort((a,b)=>b.n-a.n);
   return {won,title:won?(s.misses===0&&stats.practiceConceded===0?'零失球，漂亮拿下！':'好球，这局拿下！'):'差一点，再来一球。',

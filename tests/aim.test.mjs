@@ -14,10 +14,11 @@ const speed=b=>Math.hypot(b.vx,b.vz);
 test('按住左键击中打向球门左侧，右键打向右侧，落点固定在门宽 80% 处',()=>{
   for(const level of [0,5]){
     const g=LEVELS[level].goalHalf*AIM_SHARE;
+    // Contact behind the sweet spot: from level 3 an early one with a side held banks instead (bank.test.mjs).
     for(const x of [-2,0,2]){
-      let s=play(level);incoming(s,x);swingAt(s,sweet(s)+.3,-1);
+      let s=play(level);incoming(s,x);swingAt(s,sweet(s)-.3,-1);
       assert.ok(s.ball.vz>0);assert.equal(s.lastShot,'left');assert.ok(Math.abs(goalX(s)+g)<1e-6,`关${level+1} x=${x} 左 ${goalX(s)}`);
-      s=play(level);incoming(s,x);swingAt(s,sweet(s)+.3,1);
+      s=play(level);incoming(s,x);swingAt(s,sweet(s)-.3,1);
       assert.equal(s.lastShot,'right');assert.ok(Math.abs(goalX(s)-g)<1e-6,`关${level+1} x=${x} 右 ${goalX(s)}`);
     }
   }
