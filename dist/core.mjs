@@ -37,6 +37,10 @@ export const BANK_FROM=2,GOAL_SCORE=[1000,1500,2500];
 // scales the drawn arc and color marks the zone on screen. The mouth is GOAL_TOP tall, split in equal thirds.
 export const GOAL_TOP=1.25,EARLY_SPEED=.85,LATE_SPEED=1.05;
 export const ZONES={low:{mult:1,h:.21,loft:.35,color:'#8fd3ff'},mid:{mult:2,h:.62,loft:.6,color:'#ff8a3c'},top:{mult:3,h:1.04,loft:1.5,color:'#ffd84d'}};
+// Perfect chain (single player, not in the tutorial): perfect returns in a row. The bonus-th in a row scores
+// bonusScore; the fire-th arms a fireball and the chain starts over. The next contact of any kind takes the fireball:
+// it goes through the keeper, though it still has to find the mouth.
+export const CHAIN={bonus:3,bonusScore:500,fire:5};
 // Player styles (single player): each figure plays one (characters.mjs PLAYERS), a small strength paired with a small
 // cost. run scales RUN, width the hit box's width, power the power shot's speed, recovery the swing's recovery, and
 // spinCost replaces the spin's energy cost. 'balanced' changes nothing.
@@ -114,7 +118,7 @@ export function createGame(level=0,weapon='glove',options={}){
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
     keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
-    rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],chase:null,missCause:null,
+    rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],chase:null,missCause:null,chain:0,fire:false,
     energy:options.tutorial&&levelIndex===0?0:SKILLS.start,skill:null,skillSeq:0,queued:[],
     whiff:null,tutorial:options.tutorial&&levelIndex===0?{step:0,attempt:0,shotStep:0,keeperX:0,done:false}:null,
     countdown:.8,flash:0,lastHit:'',events:[],accumulator:0,previousPhase:null};
@@ -185,16 +189,25 @@ function strike(s,w,sw,axis){
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
   // A bank is noted on the side it lands, which is what a pattern-reading keeper guesses at.
   s.lastShot=soft?'soft':perfect?'perfect':bank?'bank':['left','straight','right'][aimSide(axis)+1];noteAim(s,bank?-aimSide(axis):aimSide(axis));
-  s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed,zone};
+  s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed,zone,fire:takeFire(s)};
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   // Every contact holds the frame for a moment (user request, 2026-10-27); a perfect strike holds longer.
   s.hitstop=perfect?.07:.05;
   s.events.push(perfect?'perfect':soft?'soft':'hit');
+  if(!s.tutorial)chainStep(s,perfect);
   b.kind=perfect?'perfect':null;b.curve=null;
   if(!s.tutorial)addEnergy(s,soft?0:perfect?SKILLS.gainPerfect:SKILLS.gainHit,s.events);
   const tu=s.tutorial;if(tu){tu.shotStep=tu.step;if(tu.step<2){tu.step++;s.events.push('tutorialStep');}}
 }
 // --- Active skills -------------------------------------------------------------------------------
+// Perfect chain bookkeeping (CHAIN) for a return: other returns break it, the milestones pay out.
+function chainStep(s,perfect){
+  if(!perfect){s.chain=0;return;}
+  s.chain++;if(s.chain===CHAIN.bonus){s.score+=CHAIN.bonusScore;s.events.push('chain3');}
+  if(s.chain>=CHAIN.fire){s.chain=0;s.fire=true;s.events.push('fireReady');}
+}
+// An armed fireball goes on the contact that asks for it.
+function takeFire(s){const fire=s.fire;s.fire=false;return fire;}
 function addEnergy(s,n,events){
   if(n<=0)return;const before=s.energy;s.energy=Math.min(SKILLS.max,before+n);events.push('energy');
   const spin=skillCost(s,'spin');if(before<spin&&s.energy>=spin)events.push('energy50');
@@ -236,7 +249,7 @@ function registerContact(s,b,angle,kind,id,events){
   s.shots++;s.power=false;s.flash=1;
   s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=100;
-  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id,zone:'mid'};events.push(kind);
+  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id,zone:'mid',fire:takeFire(s)};events.push(kind);
 }
 // The first accepted action takes the lock: it spends energy exactly once. Spin strikes immediately;
 // burst freezes the rally and strikes when its own clock reaches the duration (see tick).
@@ -279,8 +292,8 @@ export function predictFlight(s){
   }
   return out;
 }
-// Key goals: the match winner, power, burst and spin shots, and any shot that comes off a side wall.
-function keyGoal(s,banksAhead=false){return s.goals+1>=s.level.goals||['perfect','burst','spin'].includes(s.lastShot)||!!s.shot?.banked||banksAhead;}
+// Key goals: the match winner, power, burst and spin shots, fireballs, and any shot that comes off a side wall.
+function keyGoal(s,banksAhead=false){return s.goals+1>=s.level.goals||['perfect','burst','spin'].includes(s.lastShot)||!!s.shot?.fire||!!s.shot?.banked||banksAhead;}
 // A goal is certain once the keeper cannot reach the ball's crossing point at its line even moving at full speed from
 // now with no reaction delay (it moves once per step, before the ball). Returns {x, t, key} or null; read-only.
 export function goalLock(s){
@@ -293,7 +306,7 @@ export function goalLock(s){
     if(keeperX===null&&pz<KEEPER_Z&&b.z>=KEEPER_Z){keeperX=at(KEEPER_Z);keeperSteps=i;}
     if(pz<GOAL_Z&&b.z>=GOAL_Z){
       const x=at(GOAL_Z);if(Math.abs(x)>g)return null;
-      if(keeperX!==null&&Math.abs(keeperX-s.keeper.x)<=KEEPER_REACH+s.level.keeper.speed*keeperSteps*dt+1e-9)return null;
+      if(keeperX!==null&&!s.shot?.fire&&Math.abs(keeperX-s.keeper.x)<=KEEPER_REACH+s.level.keeper.speed*keeperSteps*dt+1e-9)return null;
       return {x,t:i*dt,key:keyGoal(s,banks)};
     }
   }
@@ -365,7 +378,10 @@ function farEnd(s,prevZ,prevX,wall){
     return;
   }
   if(s.tutorial&&b.z>FAR_WALL){s.tutorial.attempt+=s.tutorial.shotStep===2?1:0;tutorialReset(s,'wide');return;}
-  if(keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH){
+  const reached=keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH;
+  // A fireball goes through: the keeper still dives at it.
+  if(reached&&s.shot?.fire){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.events.push('pierce');}
+  else if(reached){
     // Saves come back at varied angles, so the defender still has to move. Returns are never skill shots.
     b.x=keeperX;const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
     b.curve=null;b.kind=null;b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
@@ -374,7 +390,7 @@ function farEnd(s,prevZ,prevX,wall){
   }
   if(goalX!==null&&Math.abs(goalX)<=g){
     const banks=s.shot?.banks||0,zone=s.shot?.zone??null;
-    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks,zone};
+    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks,zone,fire:!!s.shot?.fire};
     s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(ZONES[zone]?.mult??1);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
@@ -430,7 +446,7 @@ function tick(s,dt,axis){
   if(b.z<=0&&s.tutorial){tutorialReset(s,'tutorialRetry');return;}
   if(b.z<=0){
     s.missCause=missCause(s,w);s.chase=null;
-    s.combo=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;
+    s.combo=0;s.chain=0;s.rally=1;s.power=false;s.flash=-1;s.swing=null;
     // Practice balls keep the real feel but don't cost a life.
     if(s.practiceLeft>0){s.practiceLeft--;s.events.push('practice');}
     else{s.misses++;s.events.push('miss');}
