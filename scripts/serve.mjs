@@ -22,4 +22,6 @@ export function createDevServer({rooms:options}={}){
   server.rooms=rooms;return server;
 }
 const direct=process.argv[1]&&path.resolve(process.argv[1]).toLowerCase()===fileURLToPath(import.meta.url).toLowerCase();
-if(direct)createDevServer({rooms:{log:stats=>console.log('room closed',JSON.stringify(stats))}}).listen(4173,'0.0.0.0',()=>console.log('Local: http://localhost:4173'));
+// TURN_URLS and TURN_SECRET in the environment hand that TURN server out, as the Worker does (server/turn.mjs).
+const turn=process.env.TURN_SECRET?{urls:process.env.TURN_URLS,secret:process.env.TURN_SECRET}:null;
+if(direct)createDevServer({rooms:{log:stats=>console.log('room closed',JSON.stringify(stats)),turn}}).listen(4173,'0.0.0.0',()=>console.log('Local: http://localhost:4173'));

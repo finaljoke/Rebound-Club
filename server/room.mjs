@@ -203,8 +203,9 @@ function removeMember(room,id,now,cfg){
 }
 
 // A connection asking in: create (the opener, on a room just made), or token (taking back a place), or neither (someone
-// new, by code or invite). name: what to go by (arena rooms). Returns {place, token, actions} or {error}.
-export function joinRoom(room,{create=false,token=null,name=null,now,newToken},cfg=ROOM){
+// new, by code or invite). name: what to go by (arena rooms). turn: this connection's TURN server and credentials
+// (server/turn.mjs), passed on in its joined message. Returns {place, token, actions} or {error}.
+export function joinRoom(room,{create=false,token=null,name=null,now,newToken,turn=null},cfg=ROOM){
   if(!room||room.closed)return {error:'not-found'};
   let x;const actions=[];
   if(create&&room.owner)return {error:'busy'};
@@ -223,6 +224,7 @@ export function joinRoom(room,{create=false,token=null,name=null,now,newToken},c
   x.present=true;x.awayAt=null;room.emptySince=null;room.lastActive=now;
   const side=sideOf(room,x.id),opp=side?room.court[other(side)]:null,peer=!!(opp&&room.members[opp]?.present);
   const joined={type:'joined',role:room.owner===x.id?'host':'guest',id:room.id,code:room.code,token:x.token,peer};
+  if(turn)joined.turn=turn;
   // A P1 page takes `peer` here for the first peer message; an arena page is sent its peer and watching after this.
   if(arena(room)){Object.assign(joined,{v:2,member:x.id,name:x.name});x.peer=null;x.watch=null;}
   else x.peer=JSON.stringify({type:'peer',present:peer});

@@ -1,15 +1,19 @@
 // Online link (P1, Issue #5; arena rooms, Issue #9): the transport duel-net.mjs's createClient runs over between two
-// players' pages. A WebRTC data channel straight between them once one opens; until then, and whenever it goes quiet,
-// the room's relay (the rooms' WebSocket, server/room.mjs). Either way createClient sees one ordered channel: every
+// players' pages. A WebRTC data channel between them once one opens (straight, or through the TURN server the room
+// hands out when it has one); until then, and whenever it goes quiet, the room's relay (the rooms' WebSocket,
+// server/room.mjs). Either way createClient sees one ordered channel: every
 // frame carries its number and the last number heard, so a switch resends what the other side has not confirmed, and
 // nothing arrives twice or out of order. The room's WebSocket also carries the WebRTC signalling, and is opened again
 // (with the place's token) when it drops. In an arena room the two on the court change from match to match: each new
 // pairing gets a fresh channel, and the link also carries the room's own messages and the feed for whoever watches.
 
-// ice: STUN only (no TURN in P1: the room relays instead). In mainland China Xiaomi's and Mango TV's answer within
-// 100 ms, Cloudflare's in 150-260; Mango TV's and Cloudflare's also have IPv6 addresses, for phones on IPv6; Cloudflare's
-// covers everywhere else. Three at most: Firefox warns past two, as each one that never answers keeps gathering going
-// longer. heartbeat: seconds between frames on a quiet direct channel;
+// ice: STUN servers. In mainland China Xiaomi's and Mango TV's answer within 100 ms, Cloudflare's in 150-260; Mango TV's
+// and Cloudflare's also have IPv6 addresses, for phones on IPv6; Cloudflare's covers everywhere else. Three at most:
+// Firefox warns past two, as each one that never answers keeps gathering going longer. A TURN server from the room
+// (joined.turn, server/turn.mjs) takes Cloudflare's place: it answers as a STUN server too, and a direct channel that
+// cannot open straight goes through it, near the players, rather than over the room's relay far away (from Shanghai
+// the rooms' WebSocket was about 650 ms there and back between two players, a TURN server in Shanghai 15).
+// heartbeat: seconds between frames on a quiet direct channel;
 // silence: a direct channel this long without a frame is left for the relay; settle: how long a direct channel must keep
 // beating after that before play goes back to it; keep: the room closes after 10 minutes without a message (its
 // heartbeat does not count), so one goes every minute; ping/pingLost: the room heartbeat, and how long without its
@@ -35,6 +39,9 @@ export function roomsServer(loc=globalThis.location){
   if(loc?.port==='4173')return `${loc.protocol==='https:'?'wss':'ws'}://${loc.host}/api/ws`;
   return ROOMS_API;
 }
+// ?ice=relay on the page: the direct channel may only go through the room's TURN server (to check on a device that the
+// relay works; with none from the room, no direct channel opens and play stays on the room's relay).
+export const relayOnly=(loc=globalThis.location)=>new URLSearchParams(loc?.search??'').get('ice')==='relay';
 
 // --- The ordered stream over two paths -------------------------------------------------------------------------------
 // sendOn(path, frame) puts a frame on 'direct' or 'relay' and returns false when that path cannot take it now (it stays
@@ -69,10 +76,11 @@ export function createStream({sendOn,deliver}){
 // opponent}, {type:'watching', on}, and the room's room, start, result and feed messages as they come). command(msg):
 // a message for the room (arena rooms: name, queue, watch, rules, ready, end); false when the room's socket is down.
 // WebSocket / RTC are the browser's, or stand-ins for tests (RTC null: relay only); now(): seconds, the clock
-// createClient uses.
-export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.WebSocket,RTC=globalThis.RTCPeerConnection,now=()=>performance.now()/1000,cfg=LINK}={}){
+// createClient uses; relayOnly: the direct channel only through the room's TURN server (?ice=relay).
+export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.WebSocket,RTC=globalThis.RTCPeerConnection,now=()=>performance.now()/1000,cfg=LINK,relayOnly:onlyRelay=relayOnly()}={}){
   const on={message:null,control:null,event:null},emit=e=>on.event?.(e);
-  let ws=null,info=null,peer=false,closed=false,mode='relay',tries=0,lastPong=now(),pc=null,dc=null,polite=false,makingOffer=false,ignoreOffer=false;
+  // turn: the room's TURN server with this connection's credentials (each joined brings fresh ones), or null.
+  let ws=null,info=null,turn=null,peer=false,closed=false,mode='relay',tries=0,lastPong=now(),pc=null,dc=null,polite=false,makingOffer=false,ignoreOffer=false;
   let lastDirect=-Infinity,beatSince=null,fellAt=-Infinity,dialedAt=0,redials=0;
   // Arena rooms: this player's pairing on the court (null off it), its side and the opponent, and whether anyone watches.
   let arena=false,pair=null,side=null,opponent=null,watched=false,feed=null;
@@ -106,7 +114,7 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
       if(socket!==ws)return;if(e.data==='pong'){lastPong=now();return;}
       let m;try{m=JSON.parse(e.data);}catch{return;}
       if(m.type==='joined'){
-        const first=!info;arena=m.v===2;info={role:m.role,id:m.id,code:m.code,token:m.token,v:arena?2:1,member:m.member??null,name:m.name??null};
+        const first=!info;arena=m.v===2;turn=m.turn??null;info={role:m.role,id:m.id,code:m.code,token:m.token,v:arena?2:1,member:m.member??null,name:m.name??null};
         if(first)settle({...info});
         // An arena room says this player's pairing in the peer message that follows.
         if(!arena){polite=m.role==='guest';setPeer(m.peer);}
@@ -146,10 +154,11 @@ export function createLink({server=roomsServer(),join,WebSocket:WS=globalThis.We
 
   // WebRTC, by MDN's perfect negotiation (the guest gives way when offers cross). Only the host opens the data channel,
   // so a connection starts with one offer: two crossing at the start left Chrome, now and then, with a polite side that
-  // gathered no address after giving way.
+  // gathered no address after giving way. The room's TURN server, when it hands one, takes the last STUN server's place.
+  const rtcConfig=()=>({iceServers:turn?[...cfg.ice.slice(0,-1),turn]:cfg.ice,...onlyRelay?{iceTransportPolicy:'relay'}:{}});
   function startPeer(){
     if(!RTC||pc||!peer||closed)return;
-    const conn=pc=new RTC({iceServers:cfg.ice});makingOffer=false;ignoreOffer=false;dialedAt=now();
+    const conn=pc=new RTC(rtcConfig());makingOffer=false;ignoreOffer=false;dialedAt=now();
     const wire=channel=>{
       dc=channel;
       channel.onmessage=e=>{if(conn!==pc)return;const t=now();if(t-lastDirect>cfg.silence)beatSince=t;lastDirect=t;
