@@ -244,6 +244,8 @@ body:is([data-screen=match],[data-screen=paused],[data-screen=result]) .tutorial
 .player-card{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:6px 6px 9px;border:1px solid #2c3a72;border-radius:13px;background:#1a2347;color:#cfd6ef;font-size:13px}
 .player-card img{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:9px;background:#141b38}
 .player-card b{white-space:nowrap}
+.player-card small{font-size:11px;opacity:.75}
+.player-style{margin:10px 2px 0;font-size:12px;line-height:1.5;color:var(--muted);text-align:center}
 .player-card.selected{background:var(--orange);border-color:var(--orange);color:#fff7ea}
 .player-card.selected img{background:#c9532c}
 .player-options[hidden],.level-options[hidden]{display:none}
