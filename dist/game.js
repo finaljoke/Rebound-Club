@@ -4,7 +4,7 @@ import {renderShareCard,shareCard} from './share.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
 import {PLAYERS,playerSpec} from './characters.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,timingWord,SAVE_WHY,TUTORIAL_TIPS,SKILL_STATE,STANCE_NAME,styleSummary} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,timingWord,SAVE_WHY,TUTORIAL_TIPS,SKILL_STATE,STANCE_NAME,STANCE_ANSWER,styleSummary} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 // In a match tips float over the court as a caption: any change to the feedback line shows it for a few seconds.
@@ -19,7 +19,7 @@ const input=createInput();
 let storage;try{storage=window.localStorage;}catch{storage=null;}
 const progress=loadProgress(storage);
 let selected=0,game=createGame(),uiPhase='',soundOn=!progress.muted,audio=null;
-let shareShot=null,resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false;
+let shareShot=null,resultAt=0,lastTime=0,trail=[],particles=[],viewWidth=0,viewHeight=0,shake=0,lessonShown=false,skillIntroShown=false,fullHintShown=false,stancesSeen=new Set();
 // Resuming a rally holds the court still for a countdown as long as the serve's, so both hands are back on the controls.
 const RESUME_HOLD=.8;let resumeHold=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -129,7 +129,7 @@ function openSelection(mode){
   dialog.querySelector(player?'.player-card.selected':'.level-button.selected')?.focus();
 }
 // The lobby hides the pops with display:none, which would replay a leftover .show animation when the next match shows them.
-function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;resumeHold=0;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial,style:pickedStyle()});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
+function ready(tutorial=false){$('result-pop').className='result-pop';$('hit-pop').className='hit-pop';lessonShown=false;stancesSeen=new Set();resumeHold=0;matchStats=createMatchStats();game=createGame(tutorial?0:selected,'glove',{tutorial,style:pickedStyle()});trail=[];particles=[];input.reset();uiPhase='';selections();phaseUI();hud();}
 function overlay(html){$('overlay-content').innerHTML=html;$('overlay').hidden=false;}
 function phaseUI(){
   if(game.phase===uiPhase)return;
@@ -391,6 +391,8 @@ function keeper(){
   line(p.x-5*s,p.y-14*s,p.x-7*s,p.y,'#ad805f',6*s);line(p.x+5*s,p.y-14*s,p.x+7*s,p.y,'#ad805f',6*s);
   polygon([[p.x-12*s+lean*.4,p.y-36*s],[p.x+12*s+lean*.4,p.y-36*s],[p.x+10*s,p.y-14*s],[p.x-10*s,p.y-14*s]],'#3d6f95','#2c5574',1);
   for(const side of [-1,1]){const hx=p.x+side*(20*s)+lean,hy=p.y-40*s-(k.dive>0?8:0);line(p.x+side*11*s+lean*.4,p.y-33*s,hx,hy,'#bc8b65',5*s);ellipse(hx,hy,6*s,6*s,'#f2c14e');}
+  if(k.stance&&game.phase==='playing'&&game.ball.vz<0){const st=k.stance,name=st.kind==='lean'?(st.side>0?'压边 →':'← 压边'):STANCE_NAME[st.kind];
+    text(name,p.x,p.y-58*s,12,{lean:'#9cc8ea',rush:'#ffb347',set:'#ff8f8f'}[st.kind],'800');}
   ellipse(p.x+lean*.5,p.y-43*s,8*s,9*s,'#bf8f69');ellipse(p.x+lean*.5,p.y-47*s,8*s,6*s,'#30392f');
 }
 function ball(){
@@ -432,6 +434,9 @@ function frame(time){
     if(e==='whiff')sound('whiff');
     buzz(e);
     if(e==='serve'&&!lessonShown&&!teaching){say(game.level.lesson);lessonShown=true;}
+    // The first time a match meets each keeper stance, the caption says what beats it (STANCE_ANSWER).
+    if(e==='stance'&&lessonShown&&game.keeper.stance&&!stancesSeen.has(game.keeper.stance.kind)){const st=game.keeper.stance;stancesSeen.add(st.kind);
+      say(`门将${st.kind==='lean'?(st.side>0?'往右边靠':'往左边靠'):STANCE_NAME[st.kind]}了：${STANCE_ANSWER[st.kind]}。`);}
     if(e==='serve'&&!teaching&&!skillIntroShown){verdict(`能量 ${skillCost(game,'spin')} 放「旋转」改路线 · 满 100 放「爆发」`,'info');skillIntroShown=true;}
     if(e==='energy50'||e==='energy100'){const el=$('energy');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
     if(e==='energy100'&&!fullHintShown){say('能量满了：等球进框按「爆发」（K）打出强力回击，或先用「旋转」（J）。');fullHintShown=true;}

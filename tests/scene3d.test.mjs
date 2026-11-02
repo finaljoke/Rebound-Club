@@ -5,7 +5,7 @@ import {buildWorld} from '../dist/scene3d.mjs';
 import {loadCharacters} from './helpers/characters.mjs';
 import {heroInFrame} from './helpers/framing.mjs';
 const assets=await loadCharacters();
-import {createGame,startGame,stepGame,ballHeight,hitZone,swingPreview,LEVELS,KEEPER_Z,KEEPER_REACH,WEAPONS,PLAYER_Z} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,ballHeight,hitZone,swingPreview,LEVELS,KEEPER_Z,KEEPER_REACH,WEAPONS,PLAYER_Z,RUSH_Z,GOAL_Z} from '../dist/core.mjs';
 
 test('球场、人物与球均为有厚度的3D对象，主要对象投射和接收阴影',()=>{
   const w=buildWorld(assets);assert.ok(w?.scene?.isScene);
@@ -69,6 +69,21 @@ test('来球靠近主角时在最上层画出球的轮廓，压在甜点上时�
     else assert.ok(z>hitZone(s).far+1.3,`z=${z.toFixed(2)} 应该画出轮廓`);}
   assert.ok(seen.perfect?.every(c=>c==='ff7a3d'),'甜点时为橙色');assert.ok(seen.clean?.every(c=>c!=='ff7a3d'),'普通击球区不是橙色');
   const s=incomingAt(2.2);s.ball.vz=5;w.update(s,0,true);assert.equal(w.ballGhost.visible,false,'打出去的球不画轮廓');
+});
+test('门将姿态看得出来：出击站到门线前、压边往一侧倾、守线举手、出击张开双臂；头顶写出姿态名，球飞出后收起',()=>{
+  const measure=stance=>{const w=buildWorld(assets),s=createGame(3);s.level={...s.level,stances:null};startGame(s);for(let i=0;i<240&&s.phase!=='playing';i++)stepGame(s,1/120,0);
+    s.keeper.stance=stance;s.ball={x:0,z:7,vx:0,vz:-4,z0:7,z1:PLAYER_Z};let now=1;for(let i=0;i<40;i++){stepGame(s,1/60,0);w.update(s,0,false,now+=1/60);}
+    w.scene.updateMatrixWorld(true);const gloves=[];w.keeper.traverse(o=>{if(o.name==='glove-body')gloves.push(o.getWorldPosition(new THREE.Vector3()));});
+    const x0=w.keeper.position.x;return {w,s,now,z:w.keeper.position.z,tilt:w.keeper.rotation.z,high:Math.min(...gloves.map(g=>g.y)),spread:Math.max(...gloves.map(g=>Math.abs(g.x-x0))),tag:w.stanceTag.visible?w.stanceTag.userData.key:null};};
+  const rest=measure(null),lean=measure({kind:'lean',side:1}),rush=measure({kind:'rush',side:0}),set=measure({kind:'set',side:0});
+  assert.equal(rest.tag,null);assert.equal(lean.tag,'leanR');assert.equal(rush.tag,'rush');assert.equal(set.tag,'set');
+  assert.ok(Math.abs(-rush.z-RUSH_Z)<1e-6&&Math.abs(-rest.z-KEEPER_Z)<1e-6,`出击站位 ${rush.z}`);
+  assert.ok(lean.tilt>.1,`压边倾斜 ${lean.tilt}`);
+  assert.ok(set.high>=rest.high+.3,`守线举手 ${set.high.toFixed(2)} / 站立 ${rest.high.toFixed(2)}`);
+  assert.ok(rush.spread>=rest.spread+.1,`出击张臂 ${rush.spread.toFixed(2)} / 站立 ${rest.spread.toFixed(2)}`);
+  // Once the shot is on its way the name goes away (the keeper is reacting now).
+  const {w,s}=rush;let now=rush.now;s.ball={x:0,z:3,vx:0,vz:6,z0:2,z1:GOAL_Z};s.shot={x:0,z:2,angle:0,kind:'straight',at:s.elapsed,zone:'mid'};
+  for(let i=0;i<5;i++){stepGame(s,1/60,0);w.update(s,0,false,now+=1/60);}assert.equal(w.stanceTag.visible,false);
 });
 test('射门后显示路线终点：被门将封住为红色，门前空着为绿色',()=>{
   const w=buildWorld(assets),s=createGame(0);startGame(s);stepGame(s,1,0);

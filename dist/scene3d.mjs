@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
 import {makeSurfaceTexture,softBoxGeometry,netGeometry,mergeRigidParts,mergeMeshGeometry} from './art.mjs';
-import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z,GOAL_TOP,ZONES,playerGear} from './core.mjs';
+import {LEVELS,WEAPONS,SKILLS,foldX,HIT_HEIGHT,ballHeight,hitZone,burstZone,swingPreview,skillStatus,spinPreview,predictFlight,goalLock,GOAL_CAM,KEEPER_Z,KEEPER_REACH,GOAL_Z,FAR_WALL,SIDE,PLAYER_Z,GOAL_TOP,ZONES,playerGear,saveReach} from './core.mjs';
 import {hitFeel} from './ui.mjs';
 import {buildSpectatorCrowd} from './crowd.mjs';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
@@ -272,6 +272,17 @@ export function buildWorld(assets){
   const sparkList=Array.from({length:22},(_,i)=>{const m=new THREE.Mesh(sparkGeo,sparkMat);m.userData={a:i*2.39996,r:.42+(i*37%10)/22,o:i*.137%1};sparks.add(m);return m;});
   const handGlow=new THREE.Mesh(new THREE.SphereGeometry(.27,16,12),glow('#ff9a3c'));handGlow.visible=false;gear.glove.add(handGlow);
   const halo=new THREE.Mesh(new THREE.RingGeometry(.36,.46,36),glow('#fff1b0',{depthTest:false}));halo.renderOrder=7;halo.visible=false;scene.add(halo);
+  // The keeper's stance (core.mjs STANCES): how much of its pose shows, and a name chip in front of its feet.
+  let stanceW=0,shownStance=null;
+  const stanceMaps={},STANCE_TAGS={leanL:['← 压边','#9cc8ea'],leanR:['压边 →','#9cc8ea'],rush:['出击','#ffb347'],set:['守线','#ff8f8f']};
+  for(const [key,[text,color]] of Object.entries(STANCE_TAGS)){
+    if(typeof document==='undefined'){stanceMaps[key]=null;continue;}
+    const c=document.createElement('canvas');c.width=256;c.height=96;const ctx=c.getContext('2d');
+    ctx.fillStyle='#141a33e6';ctx.beginPath();ctx.roundRect(4,4,248,88,30);ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=6;ctx.stroke();
+    ctx.fillStyle=color;ctx.font='900 50px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,128,52);
+    const map=new THREE.CanvasTexture(c);map.colorSpace=THREE.SRGBColorSpace;stanceMaps[key]=map;}
+  const stanceTag=new THREE.Mesh(new THREE.PlaneGeometry(1.1,.41),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,depthTest:false,toneMapped:false}));
+  stanceTag.renderOrder=7;stanceTag.visible=false;stanceTag.userData.key=null;scene.add(stanceTag);
   // From behind, the defender's own body hides the incoming ball right where the swing is timed. Near the defender the
   // ball is drawn again on top of everything: a ring with a faint fill, orange while a swing now would be a power shot.
   const ghostRing=new THREE.Mesh(new THREE.RingGeometry(.25,.31,32),glow('#fff1c0',{depthTest:false})),ghostFill=new THREE.Mesh(new THREE.CircleGeometry(.25,32),glow('#fff1c0',{depthTest:false}));
@@ -417,7 +428,18 @@ export function buildWorld(assets){
     goalie.pose(layers,{lockHips:a>0});
     goalie.crouch(sink);goalie.lean('spine',.16*ready*(1-a));
     if(look&&a<.15)goalie.look('head',look,.6);
-    if(w>0){armTarget.set(tx,ty-(ty-.2)*land,-KEEPER_Z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
+    if(w>0){armTarget.set(tx,ty-(ty-.2)*land,keeper.position.z+.15);goalie.aimArm('L',armTarget,w);goalie.aimArm('R',armTarget,w);}
+  }
+  // The stance shown before a shot (core.mjs STANCES), laid over the body by weight w: a lean tilts toward its side
+  // with both hands low that way, a rush spreads its arms wide and low, a set keeper stands up with both hands high.
+  // The keeper's left hand is on the world's +x side (it faces the striker, turned half round).
+  const stanceL=new THREE.Vector3(),stanceR=new THREE.Vector3();
+  function poseStance(kind,side,w){
+    if(!(w>0)||!kind)return;const x=keeper.position.x,z=keeper.position.z+.25;
+    if(kind==='lean'){keeper.rotation.z+=side*.16*w;stanceL.set(x+side*.75,.75,z);stanceR.copy(stanceL);}
+    else if(kind==='rush'){stanceL.set(x+1.4,.8,z+.15);stanceR.set(x-1.4,.8,z+.15);}
+    else{stanceL.set(x+.35,3,z);stanceR.set(x-.35,3,z);}
+    goalie.aimArm('L',stanceL,w);goalie.aimArm('R',stanceR,w);
   }
   // How far the keeper's body reaches sideways at ball height (below 1.7) for each stretch with both arms reaching
   // out toward the ball side, measured once from the model.
@@ -442,12 +464,12 @@ export function buildWorld(assets){
     if(d.state!==s||s.phase==='ready')Object.assign(d,{state:s,on:false,locked:false,lastK:k.dive});
     const saved=k.dive>d.lastK+.01;d.lastK=k.dive;
     if(saved)Object.assign(d,{on:true,locked:true,at:d.on?Math.min(d.at,now):now,dir:k.diveDir,amt:saveStretch(Math.abs(pose.bx-pose.kx)),tx:pose.bx,ty:b.h0??HIT_HEIGHT});
-    else if(s.phase==='playing'&&b.vz>0&&b.z<KEEPER_Z&&!d.locked){
-      const tk=(KEEPER_Z-b.z)/b.vz,goalX=foldX(b.x+b.vx*(GOAL_Z-b.z)/b.vz);
+    else if(s.phase==='playing'&&b.vz>0&&b.z<k.z&&!d.locked){
+      const tk=(k.z-b.z)/b.vz,goalX=foldX(b.x+b.vx*(GOAL_Z-b.z)/b.vz);
       if(tk<=DIVE.load+DIVE.launch&&Math.abs(goalX)<=s.level.goalHalf+.3){
         const cross=foldX(b.x+b.vx*tk),gap=cross-k.x,g=Math.abs(gap);
-        Object.assign(atKeeper.ball,b).z=KEEPER_Z;
-        Object.assign(d,{on:true,at:now+tk,dir:Math.sign(gap)||1,amt:g<=KEEPER_REACH?saveStretch(g):beatenDive(g),tx:cross,ty:ballHeight(atKeeper)});
+        Object.assign(atKeeper.ball,b).z=k.z;
+        Object.assign(d,{on:true,at:now+tk,dir:Math.sign(gap)||1,amt:g<=saveReach(s)?saveStretch(g):beatenDive(g),tx:cross,ty:ballHeight(atKeeper)});
       }
     }
     const big=d.amt>.6,end=DIVE.hold+(big?DIVE.land:0)+DIVE.up;
@@ -561,11 +583,20 @@ export function buildWorld(assets){
     // Ready stance while a shot comes at it: knees give a little and the upper body leans in, eased on the render clock.
     const readyTo=s.phase==='playing'&&s.ball.vz>0?1:0,since=keeperClock===null?0:Math.min(.1,Math.max(0,now-keeperClock));keeperClock=now;
     keeperReady+=(readyTo-keeperReady)*Math.min(1,since*9);
-    const off=poseKeeper(dv.a,dv.dir,dv.land),sink=.07*keeperReady+dv.crouch;
-    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-sink,-KEEPER_Z);
+    // The stance shows from the moment a ball heads for the defender until the keeper moves for the shot.
+    const kst=s.phase==='playing'?k.stance:null,stanceTo=kst?1:0;if(kst)shownStance=kst;
+    stanceW+=(stanceTo-stanceW)*Math.min(1,since*12);const stW=stanceW*(1-dv.w)*(1-Math.min(1,dv.a*4));
+    const off=poseKeeper(dv.a,dv.dir,dv.land),sink=.07*keeperReady*(shownStance?.kind==='set'?1-stW:1)+dv.crouch;
+    keeper.position.set(pose.kx+off.x+dv.dir*dv.step,off.y-sink,-k.z);
     // Shuffling means actually moving: the keeper's step since the last simulation tick.
     const kStep=s.pose?k.x-s.pose.kx:0,shuffling=!dv.a&&Math.abs(kStep)>1e-4&&s.phase==='playing',kw=react.kind==='miss'?reactEnv(goalie,'cheer'):0;
-    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady,sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null,dv.ty);
+    poseGoalie(dv.a,dv.dir,dv.land,dv.w,dv.tx,keeperReady*(shownStance?.kind==='set'?1-stW:1),sink,shuffling?Math.sign(kStep):0,animT,lookAt3,kw>0?['cheer',now-react.at,kw]:null,dv.ty);
+    poseStance(shownStance?.kind,shownStance?.side,stW);
+    // Its name floats just in front of its feet while the ball is on its way in (over its head it would leave the top of
+    // a landscape frame).
+    const tagOn=!!kst&&s.ball.vz<0&&stW>.3;stanceTag.visible=tagOn;
+    if(tagOn){const key=kst.kind==='lean'?(kst.side>0?'leanR':'leanL'):kst.kind;if(stanceTag.userData.key!==key){stanceTag.material.map=stanceMaps[key];stanceTag.material.needsUpdate=true;stanceTag.userData.key=key;}
+      stanceTag.position.set(pose.kx,.32,-k.z+.85);stanceTag.quaternion.copy(camera.quaternion);stanceTag.material.opacity=Math.min(1,(stW-.3)/.4);}
     // Big heads and gloves reach the turf first when the body lies on its side: lift the whole body by the deepest point.
     const low=goalie.lowestPoint();if(low<0){keeper.position.y-=low;keeper.updateMatrixWorld(true);}
     const height=ballHeight(heightProbe);
@@ -648,7 +679,7 @@ export function buildWorld(assets){
     // Only the striker's own contacts kick (in play, struck near its line), not a serve.
     const struck=s.phase==='playing'&&fxShot&&fxShot.z<PLAYER_Z+2.5;
     kick=reduceMotion||!fxFeel?0:fxShot?.kind==='burst'&&fxAge<.3?(1-fxAge/.3)*.18:struck&&fxFeel.flash==='burst'&&fxAge<.22?(1-fxAge/.22)**2*(.06+.05*Math.min(2,fxFeel.intensity)):0;
-    reachBar.position.set(s.keeper.x,.05,-KEEPER_Z);reachBar.visible=showHints||s.phase==='ready';
+    reachBar.position.set(s.keeper.x,.05,-s.keeper.z);reachBar.visible=showHints||s.phase==='ready';
     reachBar.material.color.set(s.keeper.dive>0?'#ff5a4a':'#9cc8ea');reachBar.material.opacity=s.keeper.dive>0?.6:.28;
     ballMarker.position.set(pose.bx,.035,-pose.bz);ballMarker.visible=ball.visible&&s.phase==='playing';
     ballShadow.position.set(ball.position.x,.038,ball.position.z);ballShadow.scale.setScalar(1.25-(ball.position.y-.73)*.35);ballShadow.visible=ball.visible;
@@ -742,7 +773,7 @@ export function buildWorld(assets){
    if(amount>0)camera.position.add(jolt.set(Math.random()-.5,(Math.random()-.5)*.6,Math.random()-.5).multiplyScalar(amount));}
   function project(x,z,height=.73){camera.updateMatrixWorld(true);const p=new THREE.Vector3(x,height,-z).project(camera);return {x:(p.x+1)*.5,y:(1-p.y)*.5};}
   buildFarGoal(LEVELS[0].goalHalf);resize(.85);
-  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,ballGhost,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
+  return {scene,camera,sun,hero,keeper,actors:{striker,goalie},punch:PUNCH,led:{get offset(){return ledOffset;}},confetti,cameraFollow:FOLLOW,farGoal,nearGoal:goal,ball,ballGhost,stanceTag,platform,gear,zone,aim,target,reachBar,fx,spinArc,burstEdges,chargeRing,burstFx,trail,wallFx,crowd,sign,cine,goalCam,goalCamPose:GC_POSE,update,project,resize,shake};
 }
 
 // Adaptive quality: sustained slow frames step the renderer down one tier at a time. It never steps back up within a
