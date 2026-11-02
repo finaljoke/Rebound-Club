@@ -59,7 +59,7 @@ const shown=p=>p.evaluate(()=>({court:document.getElementById('court').dataset.p
   // AC7: the pick survives a reload, and a point plays with it.
   await p.reload();await p.waitForFunction(()=>document.body.dataset.booted==='1',null,{timeout:30000});
   assert.equal((await shown(p)).court,'knight');assert.equal((await shown(p)).button,'骑士');
-  await p.getByRole('button',{name:'开始游戏'}).click();await p.waitForFunction(()=>document.body.dataset.screen==='match');
+  await p.getByRole('button',{name:'单机对战'}).click();await p.waitForFunction(()=>document.body.dataset.screen==='match');
   await p.waitForTimeout(2500);await p.screenshot({path:`${OUT}/match-knight-390.png`});
   results.reload={court:(await shown(p)).court,screen:await p.evaluate(()=>document.body.dataset.screen)};
   assert.deepEqual(errors,[]);await p.context().close();}
