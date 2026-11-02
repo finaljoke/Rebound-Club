@@ -17,6 +17,9 @@ export const LEVELS = [
   {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.45,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
   {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将会读招。变向、重炮、旋转都要用上，出手前别暴露方向。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4,read:.8,pattern:.5,recover:.9},color:'#285b54'}
 ].map(l=>({...l,speed:l.speed*PACE,keeper:{...l.keeper,speed:l.keeper.speed*PACE,delay:l.keeper.delay/PACE}}));
+// SWING_GRACE: how long after the swing's window opens a ball may still arrive and meet a clean contact (it lands at
+// the front of the box, an early lob); later than that it can only bump into the glove as a soft ball.
+export const SWING_GRACE=.06;
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
   glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5}
@@ -448,8 +451,10 @@ function tick(s,dt,axis){
   }
   if(b.vz>0){farEnd(s,prevZ,prevX,wall);return;}
   if(s.swing&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
-    // Whether the ball was already in range when the window opened decides clean hit vs. soft contact.
-    if(sw.armed===null)sw.armed=inHitRange(s);
+    // Whether the ball was in range when the window opened decides clean hit vs. soft contact. A press a hair early is
+    // buffered: a ball that comes into range within SWING_GRACE of the window opening still meets a clean swing.
+    const inRange=inHitRange(s);
+    if(sw.armed===null&&(inRange||sw.time-w.windup>SWING_GRACE))sw.armed=inRange;
     if(inHitRange(s)){strike(s,w,sw,axis);return;}
   }
   if(b.z<=0&&s.tutorial){tutorialReset(s,'tutorialRetry');return;}
