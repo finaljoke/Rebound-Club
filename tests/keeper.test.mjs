@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,pauseGame,resumeGame,hitZone,WEAPONS,LEVELS,PLAYER_Z,KEEPER_Z,FAR_WALL,ACTIVE_PHASES} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,pauseGame,resumeGame,hitZone,WEAPONS,LEVELS,PLAYER_Z,KEEPER_Z,GOAL_Z,RUSH_Z,FAR_WALL,ACTIVE_PHASES} from '../dist/core.mjs';
 
-function play(level=0,weapon='glove'){const s=createGame(level,weapon);startGame(s);stepGame(s,1,0);return s;}
+// These check the save geometry of a keeper that takes no stance (the level's stances switched off before the serve);
+// the stances have their own tests in keeper-ai.test.mjs.
+function play(level=0,weapon='glove',stances=false){const s=createGame(level,weapon);if(!stances)s.level={...s.level,stances:null};startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const sweet=s=>PLAYER_Z+WEAPONS[s.weapon].reach*.5;
 function swingAt(s,z){const w=WEAPONS[s.weapon];for(let i=0;i<2000&&s.ball.z>z+Math.abs(s.ball.vz)*w.windup;i++)stepGame(s,1/120,0);attack(s);for(let i=0;i<30&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,0);}
@@ -30,12 +32,12 @@ test('远端任何位置都不会穿出场地',()=>{
   }
 });
 test('守门员行为是确定性的',()=>{
-  const run=()=>{const s=play(2);for(let i=0;i<5;i++){incoming(s,i-2);swingAt(s,sweet(s)+.2*(i%3-1));resolve(s);}return JSON.stringify(s);};
+  const run=()=>{const s=play(2,'glove',true);for(let i=0;i<5;i++){incoming(s,i-2);swingAt(s,sweet(s)+.2*(i%3-1));resolve(s);}return JSON.stringify(s);};
   assert.equal(run(),run());
 });
-test('进球计分，重炮走中区 ×2；进满目标立即通关',()=>{
+test('进球计分：没有门将姿态可破解时直线进球 1000；进满目标立即通关',()=>{
   const s=play();s.goals=LEVELS[0].goals-1;incoming(s,1.9);swingAt(s,sweet(s));const before=s.score;
-  assert.equal(resolve(s),'goal');assert.equal(s.phase,'won');assert.equal(s.score-before,2000);
+  assert.equal(resolve(s),'goal');assert.equal(s.phase,'won');assert.equal(s.score-before,1000);
 });
 test('进球后重置回合速度，倒数后从守门员处重新发球',()=>{
   const s=play();incoming(s,1.9);swingAt(s,sweet(s));assert.ok(s.rally>1);assert.equal(resolve(s),'goal');
@@ -64,7 +66,13 @@ test('球越过守门员后，守门员不会被误差拉向反方向',()=>{
   const s=play();s.keeper.x=.3;s.keeper.err=20;s.ball={x:1,z:9.4,vx:0,vz:3,z0:2,z1:KEEPER_Z};
   const x=s.keeper.x;stepGame(s,1/120,0);assert.ok(s.keeper.x>x,`守门员从 ${x} 移到 ${s.keeper.x}`);
 });
-test('封角：球飞向玩家时，后期门将会向接球一侧移动，第1关不会',()=>{
-  for(const [level,moves] of [[0,false],[5,true]]){const s=play(level);s.keeper.x=0;s.ball={x:2.5,z:8,vx:0,vz:-4,z0:8,z1:PLAYER_Z};
-    for(let i=0;i<60;i++)stepGame(s,1/120,0);assert.equal(s.keeper.x>.15,moves,`关${level+1} 门将 x=${s.keeper.x}`);}
+test('出击：球飞向玩家时门将走出门线，站到接球点和球门中心的连线上，射门飞出后不再前后移动',()=>{
+  const s=play(3,'glove',true);s.keeper.x=0;s.keeper.z=KEEPER_Z;s.keeper.stance={kind:'rush',side:0};s.ball={x:2.5,z:8,vx:0,vz:-4,z0:8,z1:PLAYER_Z};
+  for(let i=0;i<100;i++)stepGame(s,1/120,0);
+  assert.ok(Math.abs(s.keeper.z-RUSH_Z)<1e-6,`门将纵深 ${s.keeper.z}`);
+  const want=2.5*(GOAL_Z-RUSH_Z)/(GOAL_Z-PLAYER_Z);assert.ok(Math.abs(s.keeper.x-want)<.03,`门将 x=${s.keeper.x}，应在 ${want.toFixed(2)}`);
+  // Struck while it is still on its way out: it stays at the depth it had reached.
+  const t=play(3,'glove',true);t.keeper.z=KEEPER_Z;t.keeper.stance={kind:'rush',side:0};t.ball={x:0,z:5,vx:0,vz:-4,z0:5,z1:PLAYER_Z};
+  for(let i=0;i<20;i++)stepGame(t,1/120,0);const z=t.keeper.z;assert.ok(z<KEEPER_Z&&z>RUSH_Z);
+  t.ball={x:0,z:3,vx:0,vz:6,z0:2,z1:GOAL_Z};for(let i=0;i<40;i++){stepGame(t,1/120,0);assert.equal(t.keeper.z,z);}
 });

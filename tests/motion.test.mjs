@@ -30,7 +30,8 @@ import {buildWorld} from '../dist/scene3d.mjs';
 import {loadCharacters} from './helpers/characters.mjs';
 const assets=await loadCharacters();
 import {createGame,startGame,stepGame,GOAL_Z} from '../dist/core.mjs';
-function playing(level=0){const s=createGame(level);startGame(s);for(let i=0;i<400&&s.phase!=='playing';i++)stepGame(s,1/60,0);return s;}
+// The keeper takes no stance here (switched off before the serve), so it stands at rest on its line.
+function playing(level=0){const s=createGame(level);s.level={...s.level,stances:null};startGame(s);for(let i=0;i<400&&s.phase!=='playing';i++)stepGame(s,1/60,0);return s;}
 // Rotation the ball mesh made between two updates, as world axis + angle.
 function turn(w,s,move){
   s.accumulator=0;w.update(s,0,false,1);const q0=w.ball.quaternion.clone();

@@ -4,6 +4,9 @@ export function screenFor(phase){return phase==='ready'?'ready':phase==='paused'
 export const MISS_CAUSE={early:'出手太早',late:'出手太晚',reach:'没跑到位',idle:'没有出手',unclear:'挥空'};
 // Names of the goal's height zones (core.mjs ZONES).
 export const ZONE_NAME={low:'下区',mid:'中区',top:'上区'};
+// Names of the keeper's stances (core.mjs STANCES), and the shot that answers each.
+export const STANCE_NAME={lean:'压边',rush:'出击',set:'守线'};
+export const STANCE_ANSWER={lean:'打另一边',rush:'早出手吊高',set:'晚出手打低平'};
 // Player style names (core.mjs STYLES).
 const STYLE_NAME={balanced:'均衡',agile:'灵活',power:'重拳',skill:'技巧',guard:'守护'};
 // What a style changes, in words worked out from its numbers: its strengths, then its costs.
@@ -71,8 +74,9 @@ export function whiffHint(w){
 export function timingWord(ms){return ms>0?`早 ${ms} 毫秒`:ms<0?`晚 ${-ms} 毫秒`:'';}
 // Why a shot was saved (core.mjs saveCause): the capsule line, then the subtitle saying what to try instead.
 export const SAVE_WHY={
-  read:['被扑住 · 门将看到了你提前按的方向','球进框后按住的方向会被门将看到。挥击那一刻再按方向，或先按反方向骗它。'],
-  pattern:['被扑住 · 门将摸清了你的规律','它在猜你下一球打哪边。别总打同一边，也别一直左右交替。'],
+  lean:['被扑住 · 门将早就压在这一边','门将往哪边靠，就打另一边。它会押你最近常打的那一侧。'],
+  rush:['被扑住 · 门将冲出来封住了角度','门将冲出门线时，平射很难过它：早一点出手（框的前段），吊高球越过它头顶。'],
+  set:['被扑住 · 门将贴线守住了','门将贴着门线举起双手时，高球和中路都被它守住：晚一点出手（框的后段），打低平球。'],
   body:['被扑住 · 正打在门将身上','终点变红说明门将挡在那条线上。挥击时按住另一侧方向键，或用旋转绕开它。'],
   chase:['被扑住 · 门将追上了这球','球不够快或不够靠边：在橙色甜点出手打重炮，或往离门将远的那侧打。']
 };

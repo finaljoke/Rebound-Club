@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {createGame,startGame,stepGame,attack,predictFlight,hitZone,WEAPONS,PLAYER_Z,SIDE,GOAL_Z,AIM_SHARE,LEVELS} from '../dist/core.mjs';
 import {createMatchStats,recordMatchEvent,matchSummary} from '../dist/ui.mjs';
 
-function play(level){const s=createGame(level);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
+// The keeper takes no stance (the level's stances switched off before the serve); bank shots against stances are in
+// zones.test.mjs and keeper-ai.test.mjs.
+function play(level){const s=createGame(level);s.practiceLeft=0;s.level={...s.level,stances:null};startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const half=WEAPONS.glove.reach*.5,sweet=PLAYER_Z+half;
 // Opens the active window when the ball is at depth `z` (t = share of the half box in front of the sweet spot).
@@ -45,8 +47,8 @@ test('借墙球真实打进时按借墙得分，结算亮点记下借墙破门',
   const s=play(2);s.level={...s.level,keeper:{...s.level.keeper,speed:0}};s.keeper.x=s.keeper.target=1.5;
   incoming(s);swingAt(s,.7,1);const before=s.score;
   for(let i=0;i<600&&!s.events.includes('goal');i++)stepGame(s,1/120,0);
-  // An early contact is a lob as well, so it lands in the top zone (zones.test.mjs).
-  assert.equal(s.goals,1);assert.equal(s.score-before,1500*3);
+  // No stance to answer, so the bank's own score: 1500 for one wall.
+  assert.equal(s.goals,1);assert.equal(s.score-before,1500);
   const stats=createMatchStats();recordMatchEvent(stats,'goal',s);assert.equal(stats.bankGoals,1);
   assert.equal(matchSummary({...s,phase:'won',bestCombo:1},stats).highlight,'借墙破门 1 次');
 });

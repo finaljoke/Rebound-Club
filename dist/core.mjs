@@ -1,25 +1,44 @@
-// goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed, aim error amplitude, and from
-// level 3 on: read (how far it starts toward a direction held once the defender is planted, as a share of the aim
-// mark), pattern (lean toward the side the last aims predict) and recover (speed share for getting back between shots).
-// practice: misses forgiven at the start of a level. Levels 1-3 keep ball speed and goal width fixed so
-// each one teaches a single thing through the keeper alone; later levels change one variable at a time, with the
-// keeper's speed raised alongside the faster ball (5) so a plain shot to the open side is not a sure goal.
+// goalHalf: half width of the far goal mouth. keeper: reaction delay (s), lateral speed and aim error amplitude.
+// lean: how far off centre a leaning keeper stands, as a share of the half mouth; the lean gets subtler level by level
+// (Weigelt & Memmert 2012: the further off centre, the more shooters take the bigger side, ~70% at 1.5% of the goal's
+// width, ~98% at 12%). stances: the keeper stances the level uses (STANCES) with their weights, and adapt: how strongly the keeper picks
+// the stance that answers the defender's habit. practice: misses forgiven at the start of a level. Each level brings
+// one new thing: the lean (1), the power shot past it (2), the rush and the lob (3), the set keeper and the low
+// shot (4), then all three mixed with a faster ball (5) and a narrower goal (6), the keeper adapting.
 // Ball pace (user request, 2026-10-27): the game runs PACE times faster than these authored numbers. Ball speeds, the
 // serve's sideways drift, the burst cap and the striker's run scale up with it, and the keeper moves PACE times faster
 // after a reaction PACE times shorter, so every chase keeps its geometry. Swing timings stay as they are (they are the
 // player's reactions); the first-visit tutorial keeps its own slow serves.
 export const PACE=1.5;
 export const LEVELS = [
-  {name:'初次交锋',tag:'接住来球，打进第一球',lesson:'等球的影子进入亮框再挥击。挥击时按住 ← 或 →，球就往那边飞。',goals:2,practice:3,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},color:'#286659'},
-  {name:'左右开弓',tag:'按住方向，指哪打哪',lesson:'门将守住了正中。挥击时按住 ← 打左边，按住 → 打右边，看准它站哪边。',goals:3,practice:2,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},color:'#316988'},
-  {name:'预判时刻',tag:'重炮、旋转与借墙',lesson:'普通变向会被追上。在橙色甜点出手打重炮，用旋转绕过门将，或早一点出手按住方向，借那侧的墙弹到另一边。',goals:3,practice:1,shade:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.5,pattern:.3,recover:.7},color:'#5c5a8b'},
-  {name:'封角对决',tag:'门将会提前封住你这一侧',lesson:'门将会往你接球的一侧靠，还会盯着你在框里按的方向。按住另一侧打对角，或最后一刻再换方向骗它。',goals:4,practice:0,shade:.5,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45,read:.6,pattern:.3,recover:.6},color:'#867045'},
-  {name:'节奏大师',tag:'球更快了，稳住节奏',lesson:'球更快，门将也更快。别一直左右交替，它会摸清你的规律。',goals:4,practice:0,shade:.5,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.45,error:.45,read:.7,pattern:.5,recover:.8},color:'#8b574d'},
-  {name:'守门王牌',tag:'球门变窄，综合运用',lesson:'球门更窄、门将会读招。变向、重炮、旋转都要用上，出手前别暴露方向。',goals:5,practice:0,shade:.6,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4,read:.8,pattern:.5,recover:.9},color:'#285b54'}
+  {name:'初次交锋',lean:0.55,tag:'看门将靠哪边，打另一边',lesson:'门将会往一边靠。看它站哪边，挥击时按住另一边的方向键。',goals:2,practice:3,speed:4,goalHalf:2.6,keeper:{delay:.7,speed:.35,error:.6},stances:{lean:1},color:'#286659'},
+  {name:'左右开弓',lean:0.5,tag:'甜点重炮，它追不上',lesson:'门将靠边后会追过来。在橙色甜点出手打重炮，球最快，打向它没靠的那边。',goals:3,practice:2,speed:4,goalHalf:2.6,keeper:{delay:.55,speed:.6,error:.5},stances:{lean:1},color:'#316988'},
+  {name:'出击与吊射',lean:0.45,tag:'门将冲出来，就吊它',lesson:'门将冲出门线封角度时，平射很难过它。早一点出手（框的前段）打高吊球，越过它头顶；按住方向还能借墙。',goals:3,practice:1,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},stances:{lean:1,rush:1},color:'#5c5a8b'},
+  {name:'贴线守高',lean:0.4,tag:'门将举手守线，就打低平',lesson:'门将贴着门线、举起双手时，高球和中路都会被它守住。晚一点出手（框的后段），打低平球钻到它手下。',goals:4,practice:0,speed:4,goalHalf:2.6,keeper:{delay:.45,speed:1.3,error:.45},stances:{lean:.7,rush:1,set:1.3},color:'#867045'},
+  {name:'节奏大师',lean:0.35,tag:'球更快，门将会针对你',lesson:'球更快，门将也更快。总用同一种射法，它就会摆出克你的姿态。每一球先看它的样子，再选射法。',goals:4,practice:0,speed:4.7,goalHalf:2.6,keeper:{delay:.45,speed:1.45,error:.45},stances:{lean:1,rush:1,set:1},adapt:.5,color:'#8b574d'},
+  {name:'守门王牌',lean:0.3,tag:'球门变窄，读它再出手',lesson:'球门更窄，门将会盯着你的习惯摆姿态。压边打另一边，出击就吊，守线就打低平。',goals:5,practice:0,speed:4.7,goalHalf:2.2,keeper:{delay:.4,speed:1.5,error:.4},stances:{lean:1,rush:1,set:1},adapt:.8,color:'#285b54'}
 ].map(l=>({...l,speed:l.speed*PACE,keeper:{...l.keeper,speed:l.keeper.speed*PACE,delay:l.keeper.delay/PACE}}));
 // SWING_GRACE: how long after the swing's window opens a ball may still arrive and meet a clean contact (it lands at
 // the front of the box, an early lob); later than that it can only bump into the glove as a soft ball.
 export const SWING_GRACE=.06;
+// Keeper stances (2026-11-02). Before each shot the keeper sets itself one way, plainly enough to read, and each way
+// has one answer. lean: weight on one side (side), standing off-centre towards it (the level's lean); a shot to the far
+// side beats it. rush: off its line to RUSH_Z, narrowing the angle; only a high lob (top zone) clears its hands, as a
+// chip beats a keeper who has come out but is not yet close. set: on its line, upright with its hands high, and alert;
+// only a low shot (low zone) gets under its hands, and getting down to one is slow (a game choice: a real keeper on its
+// line is beaten most often high, but this one shows it is guarding high; a slow high ball, lobbed or banked, gives it
+// time to get across). reach and speed: the save reach and the
+// sideways speed multipliers by the shot's zone; delay: the reaction delay multiplier.
+// The keeper shows its stance the moment a ball heads for the defender (shooters need it at least ~0.4 s before they
+// strike to read it: Morya 2003) and walks into position at STANCE_RUN; it stays there until the shot is decided.
+export const STANCES={
+  lean:{reach:{top:1,mid:1,low:1},speed:{},delay:1},
+  rush:{reach:{top:0,mid:1.7,low:1.7},speed:{},delay:1},
+  set:{reach:{top:1.8,mid:1.6,low:.3},speed:{top:1.3,low:.7},delay:.6}
+};
+export const RUSH_Z=7.7,STANCE_RUN=3;
+// What beats a stance: the zone that answers it, or for a lean, the side away from it.
+export const ANSWER={rush:'top',set:'low'};
 // whiff: extra recovery after an empty swing, so mashing leaves gaps the ball can slip through.
 export const WEAPONS = {
   glove:{name:'拳套',subtitle:'快出手 · 灵活补位',width:.9,reach:1,windup:.03,active:.12,recovery:.14,whiff:.5}
@@ -39,7 +58,7 @@ export const BANK_FROM=2,GOAL_SCORE=[1000,1500,2500];
 // through the middle. Only the zone enters the rules (the goal's mult); h is the drawn height at the goal line, loft
 // scales the drawn arc and color marks the zone on screen. The mouth is GOAL_TOP tall, split in equal thirds.
 export const GOAL_TOP=1.25,EARLY_SPEED=.85,LATE_SPEED=1.05;
-export const ZONES={low:{mult:1,h:.21,loft:.35,color:'#8fd3ff'},mid:{mult:2,h:.62,loft:.6,color:'#ff8a3c'},top:{mult:3,h:1.04,loft:1.5,color:'#ffd84d'}};
+export const ZONES={low:{label:'低',h:.21,loft:.35,color:'#8fd3ff'},mid:{label:'中',h:.62,loft:.6,color:'#ff8a3c'},top:{label:'高',h:1.04,loft:1.5,color:'#ffd84d'}};
 // Perfect chain (single player, not in the tutorial): perfect returns in a row. The bonus-th in a row scores
 // bonusScore; the fire-th arms a fireball and the chain starts over. The next contact of any kind takes the fireball:
 // it goes through the keeper, though it still has to find the mouth.
@@ -126,16 +145,38 @@ function tutorialServe(s){
 }
 // Ends a tutorial rally without touching lives, practice or the goal count.
 function tutorialReset(s,event){s.events.push(event);s.swing=null;s.power=false;s.rally=1;s.phase='miss';s.countdown=1;}
+// A new ball is heading for the defender: the keeper picks how to set itself for the shot to come (STANCES). Weights
+// come from the level; a habit (the shot height used most in the last four shots) moves adapt of the weight to the
+// stance that answers it; the same stance a third time running is unlikely. A lean goes to the side the defender's
+// recent aims predict, else to a side picked from the leg count. Deterministic: the same game picks the same way.
+function chooseStance(s){
+  const k=s.keeper,W=s.level.stances;s.legs++;
+  if(!W||s.tutorial){k.stance=null;return;}
+  const w={...W},last=s.stanceLog??=[];
+  if(s.level.adapt&&s.habits.length>=3){
+    const n={top:0,mid:0,low:0};for(const z of s.habits)n[z]++;const fav=Object.keys(n).sort((a,b)=>n[b]-n[a])[0],share=n[fav]/s.habits.length;
+    const add=s.level.adapt*share*Object.values(W).reduce((a,b)=>a+b,0);
+    if(fav==='top'&&w.set!==undefined)w.set+=add;else if(fav==='low'&&w.rush!==undefined)w.rush+=add;
+    else if(fav==='mid'){if(w.rush!==undefined)w.rush+=add/2;if(w.set!==undefined)w.set+=add/2;}
+  }
+  if(last.length>=2&&last.at(-1)===last.at(-2)&&w[last.at(-1)]!==undefined)w[last.at(-1)]*=.25;
+  const roll=r=>{const x=Math.sin(r*12.9898+s.levelIndex*78.233)*43758.5453;return x-Math.floor(x);};
+  let pick=roll(s.legs)*Object.values(w).reduce((a,b)=>a+b,0),kind=Object.keys(w)[0];
+  for(const [key,v] of Object.entries(w)){if(pick<v){kind=key;break;}pick-=v;}
+  const side=kind==='lean'?Math.sign(predictSide(s))||(roll(s.legs+.5)<.5?-1:1):0;
+  k.stance={kind,side};last.push(kind);if(last.length>3)last.shift();s.events.push('stance');
+}
 function serve(s){
   if(s.tutorial){tutorialServe(s);return;}
   const z=KEEPER_Z-.3,dir=(s.misses+s.goals)%2?-1:1;
   s.ball={x:clamp(s.keeper.x,-1.5,1.5),z,vx:.65*PACE*dir,vz:-s.level.speed};launch(s.ball,sweetZ(s,WEAPONS[s.weapon]));s.swing=null;
+  chooseStance(s);
 }
 export function createGame(level=0,weapon='glove',options={}){
   const levelIndex=clamp(Math.floor(Number(level)||0),0,LEVELS.length-1);
   return {levelIndex,level:LEVELS[levelIndex],weapon:WEAPONS[weapon]?weapon:'glove',style:STYLES[options.style]?options.style:'balanced',phase:'ready',
     ball:{x:0,z:KEEPER_Z-.3,vx:.65,vz:-LEVELS[levelIndex].speed,z0:KEEPER_Z-.3,z1:PLAYER_Z},player:{x:0,z:PLAYER_Z},
-    keeper:{x:0,target:0,delay:0,err:0,dive:0,diveDir:0},practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
+    keeper:{x:0,z:KEEPER_Z,target:0,delay:0,err:0,dive:0,diveDir:0,stance:null},legs:0,habits:[],practiceLeft:LEVELS[levelIndex].practice||0,shot:null,
     goals:0,hits:0,misses:0,combo:0,bestCombo:0,score:0,elapsed:0,boardAngle:0,swing:null,
     rally:1,power:false,shots:0,hitstop:0,lastShot:'',held:0,aims:[],chase:null,missCause:null,chain:0,fire:false,
     energy:options.tutorial&&levelIndex===0?0:SKILLS.start,skill:null,skillSeq:0,queued:[],
@@ -197,8 +238,6 @@ function strike(s,w,sw,axis){
   const soft=!sw.armed,perfect=!soft&&Math.abs(t)<=band;
   // How far outside the power band the contact was, in ms of the incoming flight: + early, − late, 0 inside (and soft).
   const off=b.z-sweetZ(s,w),timing=soft||perfect?0:Math.round((off-Math.sign(off)*band*half)/-b.vz*1000);
-  // What a reading keeper had to go on before this shot: the side the defender held while planted, and its pattern lean.
-  const shown=s.chase?.shown??0,lean=Math.sign(predictSide(s));
   const bank=!soft&&t>band&&aimSide(axis)!==0&&s.levelIndex>=BANK_FROM&&!s.tutorial;
   const angle=bank?bankAngle(s,b.x,b.z,axis):aimAngle(s,b.x,b.z,axis);
   // Timing picks the line (ZONES): early lobs high and slow, the power band drives through the middle, late skims low.
@@ -207,13 +246,12 @@ function strike(s,w,sw,axis){
   const v=s.level.speed*s.rally*(perfect?POWER*(styleOf(s).power??1):soft?SOFT:zone==='top'?EARLY_SPEED:LATE_SPEED);
   b.vx=Math.sin(angle)*v;b.vz=Math.cos(angle)*v;launch(b,GOAL_Z,zone);
   sw.hit=true;s.shots++;s.power=perfect;
-  // The keeper reacts late and misjudges by a deterministic amount that varies shot to shot.
-  s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
+  keeperReacts(s);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=perfect?150:100;
   // A bank is noted on the side it lands, which is what a pattern-reading keeper guesses at.
   s.lastShot=soft?'soft':perfect?'perfect':bank?'bank':['left','straight','right'][aimSide(axis)+1];noteAim(s,bank?-aimSide(axis):aimSide(axis));
   s.shot={x:b.x,z:b.z,angle,kind:s.lastShot,at:s.elapsed,zone,fire:takeFire(s),timing,
-    read:{shown,lean,kx:s.keeper.x,cross:crossingFrom(b.x,b.z,b.vx,b.vz,s).x}};
+    read:keeperSaw(s)};habit(s,zone);
   s.lastHit=perfect?'漂亮回击':'成功回击';s.flash=1;
   // Every contact holds the frame for a moment (user request, 2026-10-27); a perfect strike holds longer.
   s.hitstop=perfect?.07:.05;
@@ -222,6 +260,27 @@ function strike(s,w,sw,axis){
   b.kind=perfect?'perfect':null;b.curve=null;
   if(!s.tutorial)addEnergy(s,soft?0:perfect?SKILLS.gainPerfect:SKILLS.gainHit,s.events);
   const tu=s.tutorial;if(tu){tu.shotStep=tu.step;if(tu.step<2){tu.step++;s.events.push('tutorialStep');}}
+}
+// The keeper reacts late (longer or shorter by its stance) and misjudges by a deterministic amount that varies shot to
+// shot.
+function keeperReacts(s){
+  const k=s.keeper;k.delay=s.level.keeper.delay*(STANCES[k.stance?.kind]?.delay??1);k.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
+}
+// What the keeper had in front of it as a shot left: its stance, where it stood, and the straight line's crossing.
+function keeperSaw(s){
+  const b=s.ball,k=s.keeper;return {stance:k.stance?{...k.stance}:null,kx:k.x,cross:crossingFrom(b.x,b.z,b.vx,b.vz,s).x};
+}
+// The shot heights used most recently, which an adapting keeper answers (chooseStance).
+function habit(s,zone){s.habits.push(zone);if(s.habits.length>4)s.habits.shift();}
+// The save reach and the keeper's sideways speed against a shot, by its stance and the shot's zone.
+export function saveReach(s){return KEEPER_REACH*(STANCES[s.keeper.stance?.kind]?.reach[s.shot?.zone??'mid']??1);}
+export function keeperSpeed(s){return s.level.keeper.speed*(STANCES[s.keeper.stance?.kind]?.speed[s.shot?.zone??'mid']??1);}
+// Whether a shot that went in answered the stance it was hit against: the far side of a lean, a lob over a rush, a
+// low shot under a set keeper. Read-only; such goals score double.
+export function answered(shot,goalX){
+  const st=shot?.read?.stance;if(!st)return false;
+  if(st.kind==='lean')return Math.sign(Math.round(goalX*10))===-st.side;
+  return shot.zone===ANSWER[st.kind];
 }
 // --- Active skills -------------------------------------------------------------------------------
 // Perfect chain bookkeeping (CHAIN) for a return: other returns break it, the milestones pay out.
@@ -271,9 +330,9 @@ export function skillStatus(s,kind){
 // the middle zone.
 function registerContact(s,b,angle,kind,id,events){
   s.shots++;s.power=false;s.flash=1;
-  s.keeper.delay=s.level.keeper.delay;s.keeper.err=s.level.keeper.error*Math.sin(s.shots*2.3+s.levelIndex);
+  keeperReacts(s);
   s.hits++;s.combo++;s.bestCombo=Math.max(s.bestCombo,s.combo);s.score+=100;
-  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id,zone:'mid',fire:takeFire(s)};events.push(kind);
+  s.lastShot=kind;s.shot={x:b.x,z:b.z,angle,kind,at:s.elapsed,id,zone:'mid',fire:takeFire(s),read:keeperSaw(s)};habit(s,'mid');events.push(kind);
 }
 // The first accepted action takes the lock: it spends energy exactly once. Spin strikes immediately;
 // burst freezes the rally and strikes when its own clock reaches the duration (see tick).
@@ -310,7 +369,7 @@ export function predictFlight(s){
   for(let i=0;i<2400&&b.vz>0;i++){
     const px=b.x,pz=b.z,wall=advanceBall(b,1/120),at=line=>wall?b.x:px+(b.x-px)*(line-pz)/(b.z-pz);
     if(wall&&!out.wall)out.wall={x:wall*SIDE,z:b.z};
-    if(out.keeper===null&&pz<KEEPER_Z&&b.z>=KEEPER_Z)out.keeper=at(KEEPER_Z);
+    const kz=s.keeper.z;if(out.keeper===null&&pz<kz&&b.z>=kz)out.keeper=at(kz);
     if(pz<GOAL_Z&&b.z>=GOAL_Z){out.goal=at(GOAL_Z);FLIGHT_X[out.count]=out.goal;FLIGHT_Z[out.count]=GOAL_Z;out.count++;break;}
     if(i%every===every-1&&out.count<FLIGHT_X.length-1){FLIGHT_X[out.count]=b.x;FLIGHT_Z[out.count]=b.z;out.count++;}
   }
@@ -327,10 +386,10 @@ export function goalLock(s){
   for(let i=1;i<=2400&&b.vz>0;i++){
     const px=b.x,pz=b.z,wall=advanceBall(b,dt),at=line=>wall?b.x:px+(b.x-px)*(line-pz)/(b.z-pz);
     if(wall)banks=true;
-    if(keeperX===null&&pz<KEEPER_Z&&b.z>=KEEPER_Z){keeperX=at(KEEPER_Z);keeperSteps=i;}
+    if(keeperX===null&&pz<s.keeper.z&&b.z>=s.keeper.z){keeperX=at(s.keeper.z);keeperSteps=i;}
     if(pz<GOAL_Z&&b.z>=GOAL_Z){
       const x=at(GOAL_Z);if(Math.abs(x)>g)return null;
-      if(keeperX!==null&&!s.shot?.fire&&Math.abs(keeperX-s.keeper.x)<=KEEPER_REACH+s.level.keeper.speed*keeperSteps*dt+1e-9)return null;
+      if(keeperX!==null&&!s.shot?.fire&&Math.abs(keeperX-s.keeper.x)<=saveReach(s)+keeperSpeed(s)*keeperSteps*dt+1e-9)return null;
       return {x,t:i*dt,key:keyGoal(s,banks)};
     }
   }
@@ -349,25 +408,27 @@ function moveKeeper(s,dt){
   const k=s.keeper,K=s.level.keeper,b=s.ball,g=s.level.goalHalf;
   k.dive=Math.max(0,k.dive-dt);
   if(s.tutorial?.step===2&&s.tutorial.shotStep!==1){k.x=k.target=s.tutorial.keeperX;return;}
-  let target=0,speed=K.speed*.35;
-  if(s.phase==='playing'&&b.vz>0&&b.z>=KEEPER_Z){
+  let target=0,speed=K.speed*.35,depth=KEEPER_Z;
+  // Its depth is set before the shot: it walks out to rush (or back to its line) while the ball comes in, and stays
+  // where it stood once a shot is on its way. Between rallies it goes back to its line.
+  if(s.phase==='playing')depth=b.vz>0?k.z:k.stance?.kind==='rush'?RUSH_Z:KEEPER_Z;
+  k.z+=clamp(depth-k.z,-STANCE_RUN*dt,STANCE_RUN*dt);
+  if(s.phase==='playing'&&b.vz>0&&b.z>=k.z){
     // Beaten: a last lunge straight at the ball, no misread left to apply.
     target=clamp(b.x,-g,g);speed=K.speed;
   }else if(s.phase==='playing'&&b.vz>0){
     if(k.delay>0){k.delay-=dt;return;}
     // Straight-line read only: shots banked off a side wall fool the keeper.
     // The misread fades over the last 0.6s, so slow balls get corrected and fast ones don't.
-    const remaining=(KEEPER_Z-b.z)/b.vz;
-    target=clamp(b.x+b.vx*remaining+k.err*Math.min(1,remaining/.6),-g,g);speed=K.speed;
+    const remaining=(k.z-b.z)/b.vz;
+    target=clamp(b.x+b.vx*remaining+k.err*Math.min(1,remaining/.6),-g,g);speed=keeperSpeed(s);
   }else if(s.phase==='playing'&&b.vz<0){
-    // Between shots the keeper gets back toward the middle. Narrowing the angle: while the defender receives, a
-    // shading keeper leans toward that side, so a straight shot from the flank runs into it. A pattern reader also
-    // leans toward the side the recent aims predict. Once the ball is in the hit box the defender is planted, so a
-    // direction held then is the aim showing: a reading keeper starts across early, and a late switch fools it.
-    const mark=g*AIM_SHARE,held=aimSide(s.held);speed=K.speed*(K.recover??(s.level.shade?.5:.35));
-    if(s.level.shade)target=foldX(b.x+b.vx*(sweetZ(s,WEAPONS[s.weapon])-b.z)/b.vz)*s.level.shade;
-    target=clamp(target+predictSide(s)*mark*(K.pattern||0),-g,g);
-    if(K.read&&held&&inHitRange(s)){target=held*mark*K.read;speed=K.speed;}
+    // While the ball comes in, the keeper walks into its stance: a lean stands off-centre on its side, a rush steps
+    // out onto the line from the receiving point to the goal's centre, a set keeper stays central on its line.
+    const st=k.stance?.kind;speed=STANCE_RUN;
+    if(st==='lean')target=k.stance.side*g*(s.level.lean??.5);
+    else if(st==='rush')target=clamp(foldX(b.x+b.vx*(sweetZ(s,WEAPONS[s.weapon])-b.z)/b.vz)*(GOAL_Z-RUSH_Z)/(GOAL_Z-PLAYER_Z),-g,g);
+    else if(!st)speed=K.speed*.35;
   }
   k.target=target;k.x+=clamp(target-k.x,-speed*dt,speed*dt);
 }
@@ -389,14 +450,13 @@ function missCause(s,w){
   if(sw&&!sw.hit&&!sw.whiffed){const r=whiffReason(s,w,sw).reason;return r==='none'?'late':r;}
   return c?.reach?'idle':'reach';
 }
-// Why the keeper got to a shot, from what it had when the shot left (s.shot.read): it reads the side held while the
-// defender was planted, and leans on a pattern it predicted; failing those, the line ran straight at where it stood, or
-// it simply ran the ball down. One of read, pattern, body, chase. Skill shots carry no read and count as chase.
+// Why the keeper got to a shot, from what it had when the shot left (s.shot.read): a shot into a lean's side, a flat
+// shot at a rushing keeper, a high or middle one at a set keeper; failing those, the line ran straight at where it
+// stood, or it simply ran the ball down. One of lean, rush, set, body, chase.
 export function saveCause(s){
-  const r=s.shot?.read,K=s.level.keeper;if(!r)return 'chase';
-  const side=Math.sign(Math.round(r.cross*100));
-  if(K.read&&r.shown&&r.shown===side)return 'read';
-  if(K.pattern&&r.lean&&r.lean===side)return 'pattern';
+  const r=s.shot?.read;if(!r)return 'chase';const st=r.stance;
+  if(st?.kind==='lean'&&st.side===Math.sign(Math.round(r.cross*10)))return 'lean';
+  if(st&&st.kind!=='lean'&&s.shot.zone!==ANSWER[st.kind])return st.kind;
   return Math.abs(r.cross-r.kx)<=KEEPER_REACH?'body':'chase';
 }
 // The keeper gets one chance as the ball crosses its line; the goal itself is the drawn mouth further back.
@@ -404,7 +464,7 @@ function farEnd(s,prevZ,prevX,wall){
   const b=s.ball,k=s.keeper,g=s.level.goalHalf;
   // Fast balls cover ~0.1 per step, so lines are judged where the path actually crossed them.
   const at=line=>wall?b.x:prevX+(b.x-prevX)*(line-prevZ)/(b.z-prevZ);
-  const keeperX=prevZ<KEEPER_Z&&b.z>=KEEPER_Z?at(KEEPER_Z):null,goalX=prevZ<GOAL_Z&&b.z>=GOAL_Z?at(GOAL_Z):null;
+  const kz=k.z,keeperX=prevZ<kz&&b.z>=kz?at(kz):null,goalX=prevZ<GOAL_Z&&b.z>=GOAL_Z?at(GOAL_Z):null;
   if(s.tutorial&&keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.tutorial.attempt++;tutorialReset(s,'save');return;}
   if(s.tutorial&&goalX!==null&&Math.abs(goalX)<=g){
     if(s.tutorial.shotStep===2){s.tutorial.done=true;s.swing=null;s.phase='tutorial-done';s.events.push('goal','tutorialDone');}
@@ -412,20 +472,20 @@ function farEnd(s,prevZ,prevX,wall){
     return;
   }
   if(s.tutorial&&b.z>FAR_WALL){s.tutorial.attempt+=s.tutorial.shotStep===2?1:0;tutorialReset(s,'wide');return;}
-  const reached=keeperX!==null&&Math.abs(keeperX-k.x)<=KEEPER_REACH;
+  const reached=keeperX!==null&&Math.abs(keeperX-k.x)<=saveReach(s);
   // A fireball goes through: the keeper still dives at it.
   if(reached&&s.shot?.fire){k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.events.push('pierce');}
   else if(reached){
     // Saves come back at varied angles, so the defender still has to move. Returns are never skill shots.
     b.x=keeperX;const angle=clamp((b.x-k.x)/KEEPER_REACH*.3+.35*Math.sin(s.shots*1.9+s.levelIndex),-.6,.6),v=s.level.speed*s.rally;
-    b.curve=null;b.kind=null;b.z=KEEPER_Z;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
-    k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.saveCause=saveCause(s);s.events.push('save');
+    b.curve=null;b.kind=null;b.z=kz;b.vx=Math.sin(angle)*v;b.vz=-Math.cos(angle)*v;launch(b,sweetZ(s,WEAPONS[s.weapon]));
+    k.dive=.35;k.diveDir=Math.sign(b.x-k.x)||1;s.power=false;s.saveCause=saveCause(s);s.events.push('save');chooseStance(s);
     return;
   }
   if(goalX!==null&&Math.abs(goalX)<=g){
-    const banks=s.shot?.banks||0,zone=s.shot?.zone??null;
-    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks,zone,fire:!!s.shot?.fire};
-    s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(ZONES[zone]?.mult??1);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
+    const banks=s.shot?.banks||0,zone=s.shot?.zone??null,beat=answered(s.shot,goalX);
+    s.lastGoal={x:goalX,vx:b.vx,vz:b.vz,key:keyGoal(s),n:s.goals+1,banks,zone,fire:!!s.shot?.fire,answered:beat,stance:s.shot?.read?.stance?.kind??null};
+    s.goals++;s.score+=GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(beat?2:1);s.hitstop=.12;s.rally=1;s.power=false;s.swing=null;s.events.push('goal');
     if(s.goals>=s.level.goals){s.phase='won';s.events.push('win');}
     else{s.phase='goal';s.countdown=1.2;}
     return;
@@ -433,7 +493,7 @@ function farEnd(s,prevZ,prevX,wall){
   if(b.z>FAR_WALL){
     b.z=2*FAR_WALL-b.z;
     const angle=clamp(Math.atan2(b.vx,b.vz)+s.boardAngle,-.76,.76),speed=s.level.speed*s.rally;
-    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));b.curve=null;b.kind=null;s.power=false;s.events.push('wide');
+    b.vx=Math.sin(angle)*speed;b.vz=-Math.cos(angle)*speed;launch(b,sweetZ(s,WEAPONS[s.weapon]));b.curve=null;b.kind=null;s.power=false;s.events.push('wide');chooseStance(s);
   }
 }
 function tick(s,dt,axis){
@@ -465,8 +525,7 @@ function tick(s,dt,axis){
   const b=s.ball,prevZ=b.z,prevX=b.x;
   const wall=advanceBall(b,dt);if(wall){s.events.push('wall');if(b.vz>0&&s.shot){s.shot.banked=true;s.shot.banks=(s.shot.banks||0)+1;}}
   // What the defender does about an incoming ball, kept until it goes back out, so a conceded one can say why.
-  // The side held on the last planted moment before a swing is what a reading keeper saw (saveCause).
-  if(b.vz>0)s.chase=null;else{s.chase??={reach:false,whiff:null,shown:0};if(inHitRange(s)){s.chase.reach=true;if(!s.swing)s.chase.shown=aimSide(axis);}}
+  if(b.vz>0)s.chase=null;else{s.chase??={reach:false,whiff:null};if(inHitRange(s))s.chase.reach=true;}
   if(sw&&!sw.hit&&sw.time>=w.windup&&sw.time<=w.windup+w.active){
     // What the ball was doing while the window was open, so a whiff can be explained honestly.
     const r=hitZone(s),dx=b.x-s.player.x,inc=b.vz<0;sw.first??={z:b.z,dx,inc};sw.last={z:b.z,dx,inc};

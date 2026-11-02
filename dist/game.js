@@ -4,7 +4,7 @@ import {renderShareCard,shareCard} from './share.mjs';
 import {loadProgress,saveProgress,needsTutorial} from './storage.mjs';
 import {create3DRenderer} from './scene3d.mjs';
 import {PLAYERS,playerSpec} from './characters.mjs';
-import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,timingWord,SAVE_WHY,TUTORIAL_TIPS,SKILL_STATE,ZONE_NAME,styleSummary} from './ui.mjs';
+import {screenFor,createMatchStats,recordMatchEvent,matchSummary,icon,hitFeel,whiffHint,timingWord,SAVE_WHY,TUTORIAL_TIPS,SKILL_STATE,STANCE_NAME,styleSummary} from './ui.mjs';
 
 const $=id=>document.getElementById(id);
 // In a match tips float over the court as a caption: any change to the feedback line shows it for a few seconds.
@@ -365,7 +365,7 @@ function hints(){
   const quad=(l,rgt,n,f)=>[project(l,n),project(rgt,n),project(rgt,f),project(l,f)].map(q=>[q.x,q.y]);
   const tone={perfect:['#ffffff','#ff6a2be6'],clean:['#ffffff','#ff6a2b60'],soft:['#f3df8a','#ff6a2b38'],whiff:['#e9edd066','#ff6a2b26'],none:['#e9edd055','#ff6a2b22']}[p.kind];
   polygon(quad(r.left,r.right,r.near,r.far),'#e5efac22',tone[0],1.6);polygon(quad(r.left,r.right,r.sweetNear,r.sweetFar),tone[1]);
-  const k=project(game.keeper.x-KEEPER_REACH,KEEPER_Z),k2=project(game.keeper.x+KEEPER_REACH,KEEPER_Z);line(k.x,k.y+3,k2.x,k2.y+3,game.keeper.dive>0?'#ff5a4acc':'#9cc8ea88',5);
+  const k=project(game.keeper.x-KEEPER_REACH,game.keeper.z),k2=project(game.keeper.x+KEEPER_REACH,game.keeper.z);line(k.x,k.y+3,k2.x,k2.y+3,game.keeper.dive>0?'#ff5a4acc':'#9cc8ea88',5);
   if(p.kind==='clean'||p.kind==='perfect'){const a=project(p.x,p.z),b=project(p.x+Math.sin(p.angle)*2,p.z+Math.cos(p.angle)*2);line(a.x,a.y,b.x,b.y,p.kind==='perfect'?'#ff7a3d':'#ffffff',3);}
   const fl=game.ball.vz>0&&['playing','goal','won'].includes(game.phase)?predictFlight(game):null;
   if(fl){
@@ -373,7 +373,7 @@ function hints(){
     const gx=fl.goal??fl.xs[fl.count-1],t=project(gx,GOAL_Z),open=Math.abs(gx)<=game.level.goalHalf,blocked=!game.shot?.fire&&Math.abs(gx-game.keeper.x)<=KEEPER_REACH;
     ctx.beginPath();ctx.ellipse(t.x,t.y,9,5,0,0,Math.PI*2);ctx.strokeStyle=!open?'#c9c9b8':blocked?'#ff5a4a':'#5fe07a';ctx.lineWidth=3;ctx.stroke();
     // The top-down view has no height: the shot's zone is its mult beside the end ring, in the zone's colour.
-    const zone=ZONES[game.shot?.zone];if(zone&&open)text(`×${zone.mult}`,t.x,t.y-9,11,zone.color,'800');
+    const zone=ZONES[game.shot?.zone];if(zone&&open)text(zone.label,t.x,t.y-9,11,zone.color,'800');
   }
   if(incoming&&skillStatus(game,'spin').ok){const sp=spinPreview(game,input.axis());for(let i=1;i<sp.count;i++){const q=project(sp.xs[i],sp.zs[i]);ellipse(q.x,q.y,2.4,1.6,'#37d6c0ee');}}
   if(incoming&&!game.swing&&game.energy>=SKILLS.burst.cost){const z=burstZone(game);polygon(quad(z.left,z.right,z.near,z.far),null,'#ff9a3caa',1.4);}
@@ -386,7 +386,7 @@ function hints(){
     if(!reduceMotion&&(t<.07||(t>=B.strike&&t<B.strike+.1))){ctx.fillStyle='rgba(255,248,230,.55)';ctx.fillRect(0,0,450,540);}}
 }
 function keeper(){
-  const k=game.keeper,p=project(k.x,KEEPER_Z),s=p.scale,lean=k.diveDir*(k.dive/.35)*14;
+  const k=game.keeper,p=project(k.x,k.z),s=p.scale,lean=k.diveDir*(k.dive/.35)*14;
   ellipse(p.x,p.y+2,KEEPER_REACH*48*s,5,'#12372d45');
   line(p.x-5*s,p.y-14*s,p.x-7*s,p.y,'#ad805f',6*s);line(p.x+5*s,p.y-14*s,p.x+7*s,p.y,'#ad805f',6*s);
   polygon([[p.x-12*s+lean*.4,p.y-36*s],[p.x+12*s+lean*.4,p.y-36*s],[p.x+10*s,p.y-14*s],[p.x-10*s,p.y-14*s]],'#3d6f95','#2c5574',1);
@@ -440,7 +440,7 @@ function frame(time){
     if(e==='burstStrike')sound('strike');
     if(e==='burst'){const f=hitFeel(game.weapon,'burst');sound(f.sound,f.intensity);sound('impact');pop('爆发！');shake=Math.max(shake,.08);say('爆发球很快，但正对门将一样会被扑住。');}
     if(e==='hit'){const bank=game.lastShot==='bank',lob=game.shot.zone==='top',off=timingWord(game.shot.timing);pop(`${bank?(game.shot.angle>0?'借右墙 ↗':'借左墙 ↖'):aim[game.lastShot]||'好球！'} · ${lob?'高吊':'低平'}${off?` · ${off}`:''}`);
-      if(!teaching)say(bank?'早出手按住方向：球高吊着借那侧的墙弹到另一边，门将要等撞墙才回头。进了算上区 ×3。':lob?'早出手是高吊球：慢一些，门将更容易追上，进了算上区 ×3。':'晚出手是低平快球：最难追，进了算下区 ×1。在橙色甜点正中出手打重炮，算中区 ×2。');}
+      if(!teaching)say(bank?'早出手按住方向：球高吊着借那侧的墙弹到另一边，也能越过冲出来的门将。':lob?'早出手是高吊球：能越过冲出来的门将，但对贴线的门将太慢。':'晚出手是低平快球：能钻到举手守线的门将手下。在橙色甜点出手是重炮，最快，适合打压边门将的另一边。');}
     if(e==='perfect'){pop(game.chain>1?`重炮！完美 ×${game.chain}`:'重炮！');shake=Math.max(shake,.06);}
     if(['hit','perfect','soft','spin','burst'].includes(e)&&game.shot?.fire){pop('火球！');sound('impact');shake=Math.max(shake,.08);}
     if(e==='chain3')verdict(`完美 ×${CHAIN.bonus} · +${CHAIN.bonusScore}`,'good');
@@ -454,7 +454,7 @@ function frame(time){
     // The winning goal's camera shot plays out before the result card covers the court.
     if(e==='goal'&&game.phase==='won')resultAt=performance.now()+1000*(reduceMotion?.3:game.lastGoal?.key?GOAL_CAM.hold+GOAL_CAM.back:.6);
     if(e==='goal'&&!teaching){const g=game.lastGoal,banks=g?.banks||0,zone=ZONES[g?.zone],what=g?.fire?'火球破门':banks?`${banks>1?'两次':''}借墙破门`:game.lastShot==='perfect'?'重炮破门':'进球';
-      verdict(`${zone?`${ZONE_NAME[g.zone]} ×${zone.mult} · `:''}${what}！+${GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(zone?.mult??1)}`,'good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
+      verdict(`${g?.answered?`破解${STANCE_NAME[g.stance]} ×2 · `:''}${what}！+${GOAL_SCORE[Math.min(banks,GOAL_SCORE.length-1)]*(g?.answered?2:1)}`,'good');shake=Math.max(shake,.1);say(game.phase==='won'?'漂亮，本关拿下！':`进球！还差 ${Math.max(0,game.level.goals-game.goals)} 球。`);}
     if(e==='wide'){verdict('打偏了 · 球出了门框','bad');if(!teaching)say('这球偏出了门框，下一球换个方向。');}
     if(e==='practice'){verdict(`练习球 · 不扣机会（还剩 ${game.practiceLeft}）`,'info');say('看地上的影子，移动到亮框里再挥击。');trail=[];}
     if(['hit','perfect','goal'].includes(e)&&!reduceMotion&&!court3D){const p=project(game.ball.x,game.ball.z);for(let i=0;i<9;i++)particles.push({x:p.x,y:p.y-12,vx:Math.cos(i*2.4)*60,vy:Math.sin(i*2.4)*60,life:.35});}

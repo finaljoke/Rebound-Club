@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,inHitRange,hitZone,saveCause,WEAPONS,PLAYER_Z,KEEPER_REACH} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,hitZone,saveCause,WEAPONS,PLAYER_Z} from '../dist/core.mjs';
 import {timingWord,SAVE_WHY} from '../dist/ui.mjs';
 
 function play(level=0){const s=createGame(level);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
@@ -16,32 +16,31 @@ test('每一拍记下离甜点差多少毫秒：甜点内为 0，早为正、晚
     assert.ok(Math.sign(s.shot.timing)===Math.sign(t),`t=${t} timing=${s.shot.timing}`);assert.ok(Math.abs(s.shot.timing-want)<=1,`t=${t} ${s.shot.timing} vs ${want.toFixed(1)}`);}
   assert.equal(timingWord(32),'早 32 毫秒');assert.equal(timingWord(-18),'晚 18 毫秒');assert.equal(timingWord(0),'');
 });
-test('被扑原因：看到方向、押中规律、正打在身上、追上了，按这个顺序判断',()=>{
-  const at=(level,read)=>{const s=play(level);s.shot={read};return saveCause(s);};
-  // Level 4 (index 3) reads the held side and leans on patterns; level 1 does neither.
-  assert.equal(at(3,{shown:1,lean:0,kx:1.2,cross:1.6}),'read');
-  assert.equal(at(3,{shown:-1,lean:0,kx:1.2,cross:1.6}),'body','按了反方向骗它：不算看到方向');
-  assert.equal(at(3,{shown:0,lean:-1,kx:-1,cross:-1.7}),'pattern');
-  assert.equal(at(0,{shown:1,lean:1,kx:1.2,cross:1.6}),'body','前两关的门将不读招也不猜规律');
-  assert.equal(at(3,{shown:0,lean:0,kx:.3,cross:.3+KEEPER_REACH*.9}),'body');
-  assert.equal(at(3,{shown:0,lean:0,kx:-1.5,cross:1.8}),'chase');
-  assert.equal(saveCause(play(3)),'chase','没有射门信息（技能球）按追上了算');
-  for(const k of ['read','pattern','body','chase'])assert.equal(SAVE_WHY[k].length,2);
+test('被扑原因：压边押中这一侧、出击封住平射、守线守住高球和中路，其余按正打在身上、追上了',()=>{
+  const at=(stance,zone,cross,kx=0)=>{const s=play(3);s.shot={zone,read:{stance:stance&&{kind:stance[0],side:stance[1]},kx,cross}};return saveCause(s);};
+  assert.equal(at(['lean',1],'mid',1.6),'lean');assert.equal(at(['lean',1],'low',-1.6,-1.2),'body','打了另一边，只是正对着它');
+  assert.equal(at(['rush',0],'mid',.8),'rush');assert.equal(at(['rush',0],'low',.8),'rush');assert.equal(at(['rush',0],'top',.8,0),'chase','吊高被扑不怪出击');
+  assert.equal(at(['set',0],'top',1.4),'set');assert.equal(at(['set',0],'mid',1.4),'set');assert.equal(at(['set',0],'low',1.4,0),'chase','打低平被扑不怪守线');
+  assert.equal(at(null,'mid',.3,.2),'body');assert.equal(at(null,'mid',1.8,-1.5),'chase');
+  const s=play(3);s.shot={zone:'mid'};assert.equal(saveCause(s),'chase','没有射门信息（技能球）按追上了算');
+  for(const k of ['lean','rush','set','body','chase'])assert.equal(SAVE_WHY[k].length,2);
 });
-test('实战里（晚打）：提前按住要打的方向会出现「看到方向」，挥击那一刻才按就从不出现',()=>{
-  const causes=show=>{const out=[];
-    for(let k=0;k<40;k++){const s=createGame(3);s.misses=-99;startGame(s);let side=0,planted=false;
-      for(let f=0;f<120*60&&out.length<400&&!['won','lost'].includes(s.phase);f++){let axis=0;
-        if(s.phase==='playing'&&s.ball.vz<0){
-          if(!planted&&inHitRange(s)){planted=true;side=s.keeper.x>0?-1:1;}
-          if(!planted){const dx=s.ball.x-s.player.x;axis=Math.abs(dx)>.08?Math.sign(dx):0;}
-          else if(!s.swing)axis=show?side:0;
-          if(planted&&!s.swing&&s.ball.z<=sweet-.35-(k%3)*.05+Math.abs(s.ball.vz)*.03)attack(s);
-          if(s.swing&&!s.swing.hit)axis=side;}
-        if(s.ball.vz>0)planted=false;
-        stepGame(s,1/120,axis);if(s.events.includes('save'))out.push(s.saveCause);}}
-    return out;};
-  const honest=causes(true),hidden=causes(false);
-  assert.ok(honest.includes('read'),JSON.stringify(honest.slice(0,20)));
-  assert.ok(!hidden.includes('read'),JSON.stringify(hidden.slice(0,20)));
+test('实战里：用错射法被扑，原因说的正是那个姿态；用对了就不会怪到姿态头上',()=>{
+  // Level 4 uses all three stances; each is forced on the keeper and met with every window, aimed away from it.
+  const causes={};
+  for(const kind of ['lean','rush','set'])for(const window of ['early','sweet','late'])for(let k=0;k<10;k++){
+    const s=play(3);s.shots=k;s.keeper.stance={kind,side:k%2?1:-1};s.keeper.x=0;incoming(s,(k%5-2)*.6,8);
+    const w=WEAPONS.glove,r=hitZone(s),v=Math.abs(s.ball.vz),z=window==='early'?r.far-v*.035:window==='late'?r.sweetNear-v*.035:(r.sweetNear+r.sweetFar)/2;
+    const away=kind==='lean'?-s.keeper.stance.side:(s.player.x>0?-1:1);
+    for(let i=0;i<2000&&s.ball.z>z+v*w.windup;i++)stepGame(s,1/120,0);attack(s);
+    for(let i=0;i<900&&!s.events.includes('goal')&&!s.events.includes('save');i++)stepGame(s,1/120,s.swing&&!s.swing.hit?away:0);
+    if(s.events.includes('save')){const key=kind+'/'+window;(causes[key]??=[]).push(s.saveCause);
+      // A lean is blamed only for a ball that went its way (an early aimed contact banks off the far wall onto the lean's side).
+      // (The keeper picks its next stance on the save, so the one this shot met is read from the shot.)
+      const r=s.shot.read;if(kind==='lean')assert.equal(s.saveCause==='lean',Math.sign(Math.round(r.cross*10))===r.stance.side,`${key} ${s.saveCause}`);}}
+  const answer={rush:'early',set:'late'};
+  for(const [key,list] of Object.entries(causes)){const [kind,window]=key.split('/');
+    if(kind!=='lean'&&window!==answer[kind])assert.ok(list.every(c=>c===kind),`${key}: ${list}`);
+    if(kind!=='lean'&&window===answer[kind])assert.ok(!list.includes(kind),`${key}: ${list}`);}
+  assert.ok((causes['rush/sweet']?.length??0)>=5&&(causes['set/early']?.length??0)>=5,JSON.stringify(Object.fromEntries(Object.entries(causes).map(([k,v])=>[k,v.length]))));
 });

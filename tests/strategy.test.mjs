@@ -1,19 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,swingPreview,crossingFrom,WEAPONS,PLAYER_Z,KEEPER_REACH,SIDE} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,swingPreview,hitZone,WEAPONS,PLAYER_Z,SIDE} from '../dist/core.mjs';
 
 // Bots act only through the real inputs (move axis + swing, then the held aim) and decide from what the screen shows:
-// ball, keeper and the swing preview for each aim. A seeded ±1 frame press error stands in for human timing.
+// ball, keeper, the keeper's stance and the swing preview (which window a press now would land in). A seeded ±1 frame
+// press error stands in for human timing.
 function rng(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
 function interceptX(s){const b=s.ball,z=PLAYER_Z+WEAPONS[s.weapon].reach*.5;if(b.vz>=0)return 0;const raw=b.x+b.vx*(z-b.z)/b.vz,p=4*SIDE;let u=((raw+SIDE)%p+p)%p;if(u>2*SIDE)u=p-u;return u-SIDE;}
 const lastChance=s=>s.ball.z<s.player.z+.1+Math.abs(s.ball.vz)*(WEAPONS[s.weapon].windup+.02);
-const crossing=(s,p)=>crossingFrom(p.x,p.z,Math.sin(p.angle),Math.cos(p.angle),s);
-// Each strategy returns the aim to hold for this swing, or null to wait. powerOnly never aims; observe picks a side
-// whose line clears the keeper by a margin that a power shot may cut finer.
+// Which window a press now would land in: early (lob), sweet (power) or late (low); null when it would not connect.
+function windowNow(s){const p=swingPreview(s,0);if(p.kind==='perfect')return 'sweet';if(p.kind!=='clean')return null;
+  const r=hitZone(s);return p.z>r.sweetFar?'early':'late';}
+// The side away from the keeper: the far side of a lean, else away from where it stands.
+const away=s=>s.keeper.stance?.kind==='lean'?-s.keeper.stance.side:s.keeper.x>0?-1:1;
+// Each strategy returns the aim to hold for this swing, or null to wait. The one-shot bots always use one window aimed
+// away from the keeper; reader looks at the stance first: power past a lean, a lob over a rush, low under a set keeper.
+const one=want=>s=>windowNow(s)===want?away(s):null;
 const strategies={
-  powerOnly:s=>swingPreview(s,0).kind==='perfect'?0:null,
-  observe:s=>{for(const aim of [-1,1,0]){const p=swingPreview(s,aim);
-    if((p.kind==='clean'||p.kind==='perfect')&&crossing(s,p).inMouth&&Math.abs(crossing(s,p).x-s.keeper.x)>(p.kind==='perfect'?KEEPER_REACH+.35:KEEPER_REACH+.9))return aim;}return null;},
+  powerOnly:one('sweet'),lobOnly:one('early'),lowOnly:one('late'),
+  reader:s=>{const want={lean:'sweet',rush:'early',set:'late'}[s.keeper.stance?.kind]??'sweet';return windowNow(s)===want?away(s):null;},
 };
 function goalsPerShot(level,name,runs){
   let goals=0,shots=0;
@@ -32,7 +37,8 @@ function goalsPerShot(level,name,runs){
   }
   return goals/Math.max(1,shots);
 }
-test('封角之后，观察门将选路线的效率明显高于只打重炮（第4、6关）',()=>{
-  for(const level of [3,5]){const power=goalsPerShot(level,'powerOnly',6),observe=goalsPerShot(level,'observe',6);
-    assert.ok(observe>=power*1.8,`关${level+1} 只打重炮 ${power.toFixed(3)} 观察门将 ${observe.toFixed(3)}`);}
+test('看门将选射法的玩家明显比只会一种射法的玩家进得多，任何单一射法都打不穿（第3~6关）',()=>{
+  for(const level of [2,3,4,5]){const rate={};for(const name of Object.keys(strategies))rate[name]=goalsPerShot(level,name,6);
+    const single=Math.max(rate.powerOnly,rate.lobOnly,rate.lowOnly),tag=`关${level+1} ${JSON.stringify(Object.fromEntries(Object.entries(rate).map(([k,v])=>[k,+v.toFixed(2)])))}`;
+    assert.ok(single<=.7,`单一射法太强 ${tag}`);assert.ok(rate.reader>=single+.2,`看门将没有明显更好 ${tag}`);}
 });

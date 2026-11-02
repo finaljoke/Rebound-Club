@@ -71,8 +71,9 @@ test('旋转预览：显示真实方向与短弧线，与实际弯曲方向一�
     const p=spinPreview(s,axis);assert.equal(p.dir,dir);assert.ok(p.count>=6);const lastX=p.xs[p.count-1];assert.ok(dir==='left'?lastX<0:lastX>0);
     const snap=JSON.stringify(s);spinPreview(s);assert.equal(JSON.stringify(s),snap);}
 });
-// Reproducible cases under real level rules (keeper speed, delay and misread untouched).
-function caseState(level,x,shots){const s=createGame(level,'glove');s.practiceLeft=0;startGame(s);stepGame(s,1,0);s.energy=100;s.shots=shots;s.player.x=x;s.keeper.x=0;s.hitstop=0;return s;}
+// Reproducible cases under real level rules (keeper speed, delay and misread untouched); the keeper takes no stance,
+// so the spin's curve is what gets round it (stances have their own tests in keeper-ai.test.mjs).
+function caseState(level,x,shots){const s=createGame(level,'glove');s.practiceLeft=0;s.level={...s.level,stances:null};startGame(s);stepGame(s,1,0);s.energy=100;s.shots=shots;s.player.x=x;s.keeper.x=0;s.hitstop=0;return s;}
 function outcome(s){for(let i=0;i<900;i++){stepGame(s,1/120,0);for(const e of ['goal','save','wide'])if(s.events.includes(e))return e;}return 'none';}
 test('AC14 旋转绕位案例：同一接球点与方向，普通回击被扑，旋转绕过门将进球（第4关封角、第5关左右对称）',()=>{
   const w=WEAPONS.glove,dt=1/120,t=.6;

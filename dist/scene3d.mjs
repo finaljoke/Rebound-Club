@@ -93,7 +93,7 @@ export function buildWorld(assets){
     rod([-g,.9,-.75],[g,.9,-.75],.045,'#e8edf8',farGoal);
     farNetLines=new THREE.LineSegments(netGeometry(g,GOAL_TOP,.9,.1,-.75),farNet);netRest=farNetLines.geometry.attributes.position.array.slice();netDirty=false;farGoal.add(farNetLines);
     // Height zones (ZONES): a band in each zone's colour across the mouth, thin lines between them, and the zone's
-    // mult beside both posts.
+    // label (高 / 中 / 低) beside both posts.
     ['low','mid','top'].forEach((zone,i)=>{
       const h=GOAL_TOP/3,y=h*(i+.5),see=o=>Object.assign(o,{receiveShadow:false}).userData.zoneBand=true;
       see(mesh(new THREE.PlaneGeometry(2*g,h),new THREE.MeshBasicMaterial({color:ZONES[zone].color,transparent:true,opacity:.2,depthWrite:false}),farGoal,0,y,-.02,false));
@@ -102,13 +102,13 @@ export function buildWorld(assets){
     });
     mergeRigidParts(farGoal);
   }
-  // A square chip with a height zone's mult in the zone's colour, large enough to read at the far goal.
+  // A square chip with a height zone's label in the zone's colour, large enough to read at the far goal.
   function zoneTag(zone,size){
     const geometry=new THREE.PlaneGeometry(size,size);
     if(typeof document==='undefined')return new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
     const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d');
     ctx.fillStyle='#141a33e6';ctx.beginPath();ctx.roundRect(4,4,120,120,22);ctx.fill();
-    ctx.fillStyle=ZONES[zone].color;ctx.font='900 76px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(`×${ZONES[zone].mult}`,64,70);
+    ctx.fillStyle=ZONES[zone].color;ctx.font='900 76px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(ZONES[zone].label,64,68);
     const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;
     return new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false}));
   }

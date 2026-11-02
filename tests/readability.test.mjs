@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGame,startGame,stepGame,attack,inHitRange,hitZone,swingPreview,predictCrossing,WEAPONS,LEVELS,PLAYER_Z,GOAL_Z,FAR_WALL,KEEPER_REACH} from '../dist/core.mjs';
 
-function play(level=0,weapon='glove'){const s=createGame(level,weapon);startGame(s);stepGame(s,1,0);return s;}
+// The keeper here takes no stance (switched off before the serve): these check aiming against each level's plain
+// keeper speed; the stances have their own tests in keeper-ai.test.mjs.
+function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.level={...s.level,stances:null};startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
 const sweet=s=>PLAYER_Z+WEAPONS[s.weapon].reach*.5;
 // Swings so the window opens at timing t (power and height only), holding `axis` (the aim) once the swing is under way.
