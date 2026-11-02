@@ -73,12 +73,19 @@ export function playerGear(s){
 // Power band, measured in time: SWEET_TIME seconds of the incoming ball's flight, so a power shot asks for the same
 // timing at every pace. Until 2026-11-02 it was a fixed 0.3 m: 50 ms at level 1's pace and 35 ms on the fastest balls,
 // the top judgement of a rhythm game. Never narrower than PERFECT_BAND of the half reach, never wider than SWEET_MAX of
-// it, so early and late contacts stay possible. Before a ball comes in, the band is drawn for the next one's speed.
-export const SWEET_TIME=.08,SWEET_MAX=.7;
+// it. Before a ball comes in, the band is drawn for the next one's speed.
+export const SWEET_TIME=.08,SWEET_MAX=1;
+// The speed the next contact meets: the incoming ball's, or before one comes in, the next serve or return's.
+const incomingSpeed=s=>s.ball.vz<0?-s.ball.vz:s.level.speed*s.rally;
 export function sweetHalf(s,w=playerGear(s)){
-  const v=s.ball.vz<0?-s.ball.vz:s.level.speed*s.rally,h=w.reach*.5;
-  return clamp(v*SWEET_TIME/2,PERFECT_BAND*h,SWEET_MAX*h);
+  const h=w.reach*.5;
+  return clamp(incomingSpeed(s)*SWEET_TIME/2,PERFECT_BAND*h,SWEET_MAX*h);
 }
+// The hit box is measured in time as well (2026-11-02): EARLY_TIME of the incoming flight in front of the power band
+// (an early contact, the high lob) and LATE_TIME behind it (a late one, the low skimmer), so each of the three shots
+// keeps a window of its own at every pace. It never reaches more than BOX_NEAR behind the defender. Until then the box
+// was a fixed 1.12 m: 187 ms at level 1's pace, and an early lob had only 18-30 ms on the fastest balls.
+export const EARLY_TIME=.07,LATE_TIME=.07,BOX_NEAR=.5;
 // A skill's energy cost for this player: a style may cheapen the spin.
 export function skillCost(s,kind){return kind==='spin'?styleOf(s).spinCost??SKILLS.spin.cost:SKILLS[kind].cost;}
 const aimSide=axis=>axis<-.5?-1:axis>.5?1:0;
@@ -144,8 +151,8 @@ export function pauseGame(s){if(ACTIVE_PHASES.includes(s.phase)){s.previousPhase
 export function resumeGame(s){if(s.phase==='paused'){s.phase=s.previousPhase||'playing';s.previousPhase=null;}}
 // The exact rectangle a swing can connect in, and the band inside it that yields a power shot.
 export function hitZone(s){
-  const w=playerGear(s),sweet=sweetZ(s,w),band=sweetHalf(s,w);
-  return {left:s.player.x-w.width,right:s.player.x+w.width,near:s.player.z-.12,far:s.player.z+w.reach,sweetNear:sweet-band,sweetFar:sweet+band};
+  const w=playerGear(s),sweet=sweetZ(s,w),band=sweetHalf(s,w),v=incomingSpeed(s);
+  return {left:s.player.x-w.width,right:s.player.x+w.width,near:Math.max(s.player.z-BOX_NEAR,sweet-band-v*LATE_TIME),far:sweet+band+v*EARLY_TIME,sweetNear:sweet-band,sweetFar:sweet+band};
 }
 export function inHitRange(s){
   const b=s.ball,r=hitZone(s);

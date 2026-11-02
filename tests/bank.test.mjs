@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,predictFlight,WEAPONS,PLAYER_Z,SIDE,GOAL_Z,AIM_SHARE,LEVELS} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,predictFlight,hitZone,WEAPONS,PLAYER_Z,SIDE,GOAL_Z,AIM_SHARE,LEVELS} from '../dist/core.mjs';
 import {createMatchStats,recordMatchEvent,matchSummary} from '../dist/ui.mjs';
 
 function play(level){const s=createGame(level);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
@@ -26,7 +26,7 @@ test('前两关、不按方向、软球都不借墙',()=>{
   for(const level of [0,1]){const s=play(level);incoming(s);swingAt(s,.7,1);assert.equal(s.lastShot,'right');assert.equal(predictFlight(s).wall,null);}
   let s=play(2);incoming(s);swingAt(s,.7,0);assert.equal(s.lastShot,'straight');assert.equal(predictFlight(s).wall,null);
   // Swinging well before the ball reaches the box (past the swing grace) gives a soft contact: aimed, never banked.
-  s=play(2);incoming(s);swingAt(s,2,1);assert.equal(s.lastShot,'soft');assert.equal(predictFlight(s).wall,null);
+  s=play(2);incoming(s);swingAt(s,(hitZone(s).far+Math.abs(s.ball.vz)*.09-sweet)/half,1);assert.equal(s.lastShot,'soft');assert.equal(predictFlight(s).wall,null);
 });
 // Sends the ball from (0, 4) so its straight line crosses the goal line at `raw` (folded by the walls), keeper out of reach.
 // The shot carries no height zone, so the bank tier alone is scored (zones.test.mjs multiplies it).

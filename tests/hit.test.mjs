@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,ballHeight,hitZone,WEAPONS,LEVELS,PLAYER_Z,PERFECT_BAND,SWEET_TIME,SWING_GRACE,SWEET_MAX,RALLY_CAP,POWER,SOFT,RALLY_STEP} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,ballHeight,hitZone,WEAPONS,LEVELS,PLAYER_Z,PERFECT_BAND,SWEET_TIME,SWING_GRACE,SWEET_MAX,EARLY_TIME,LATE_TIME,BOX_NEAR,RALLY_CAP,POWER,SOFT,RALLY_STEP} from '../dist/core.mjs';
 
 function play(level=0,weapon='glove'){const s=createGame(level,weapon);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
 function incoming(s,x=0,z=4){const v=s.level.speed*s.rally;s.ball={x,z,vx:0,vz:-v,z0:z,z1:PLAYER_Z};s.player.x=x;s.hitstop=0;}
@@ -39,16 +39,25 @@ test('甜点按时间算：各种球速下都约 80 毫秒宽，只在极快、�
   }
 });
 test('提前挥拍等球撞上来是软球：直线、减速、不判完美',()=>{
-  const s=play(),w=WEAPONS.glove;incoming(s,0,4);const front=PLAYER_Z+w.reach,v=Math.abs(s.ball.vz);
+  const s=play(),w=WEAPONS.glove;incoming(s,0,4);const front=hitZone(s).far,v=Math.abs(s.ball.vz);
   for(let i=0;i<2000&&s.ball.z>front+v*(w.windup+w.active*.8);i++)stepGame(s,1/120,0);
   attack(s);for(let i=0;i<60&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,0);
   assert.equal(s.lastShot,'soft');assert.equal(s.ball.vx,0);assert.ok(s.ball.vz>0);
   assert.ok(Math.abs(speed(s.ball)-LEVELS[0].speed*RALLY_STEP*SOFT)<1e-6);
 });
+test('击球框也按时间算：早段、甜点、晚段各有约 70、80、70 毫秒，只有极快的球晚段贴到身后上限',()=>{
+  for(const [level,rally] of [[0,1],[0,RALLY_CAP],[4,1],[5,RALLY_CAP]]){const s=play(level);s.rally=rally;incoming(s);
+    const v=Math.abs(s.ball.vz),r=hitZone(s),ms=d=>d/v*1000,tag=`关${level+1} ×${rally}`;
+    assert.ok(Math.abs(ms(r.far-r.sweetFar)-EARLY_TIME*1000)<1e-6,`${tag} 早段 ${ms(r.far-r.sweetFar).toFixed(1)}`);
+    assert.ok(Math.abs(ms(r.sweetFar-r.sweetNear)-SWEET_TIME*1000)<1e-6,`${tag} 甜点`);
+    const late=ms(r.sweetNear-r.near);
+    if(r.near>s.player.z-BOX_NEAR+1e-9)assert.ok(Math.abs(late-LATE_TIME*1000)<1e-6,`${tag} 晚段 ${late.toFixed(1)}`);
+    else assert.ok(late>=45,`${tag} 晚段贴上限后仍有 ${late.toFixed(1)}ms`);}
+});
 test('早按一点有缓冲：判定窗口开了 SWING_GRACE 内球才进框，仍是干净的早段高吊球；再早才是软球',()=>{
-  const w=WEAPONS.glove,front=PLAYER_Z+w.reach;
+  const w=WEAPONS.glove;
   // `late` seconds after the window opens the ball reaches the front of the box; one 1/120 s step of slack either way.
-  const press=(late,axis=1)=>{const s=play();incoming(s,0,4);const v=Math.abs(s.ball.vz);
+  const press=(late,axis=1)=>{const s=play();incoming(s,0,4);const v=Math.abs(s.ball.vz),front=hitZone(s).far;
     for(let i=0;i<2000&&s.ball.z>front+v*(w.windup+late);i++)stepGame(s,1/120,0);
     attack(s);for(let i=0;i<60&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,axis);return s;};
   for(const late of [.01,.03,SWING_GRACE-1/60]){const s=press(late);

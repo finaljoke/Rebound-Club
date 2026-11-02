@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,useSkill,ballHeight,WEAPONS,PLAYER_Z,KEEPER_Z,GOAL_Z,SIDE,RALLY_STEP,POWER,SOFT,
+import {createGame,startGame,stepGame,attack,useSkill,ballHeight,hitZone,WEAPONS,PLAYER_Z,KEEPER_Z,GOAL_Z,SIDE,RALLY_STEP,POWER,SOFT,
   ZONES,GOAL_TOP,EARLY_SPEED,LATE_SPEED,GOAL_SCORE} from '../dist/core.mjs';
 
 function play(level){const s=createGame(level);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
@@ -9,6 +9,8 @@ const half=WEAPONS.glove.reach*.5,sweet=PLAYER_Z+half;
 // Opens the active window when the ball is at depth `z` (t = share of the half box in front of the sweet spot).
 function swingAt(s,t,axis=0){const z=sweet+t*half,w=WEAPONS.glove;for(let i=0;i<2000&&s.ball.z>z+Math.abs(s.ball.vz)*w.windup;i++)stepGame(s,1/120,0);attack(s);for(let i=0;i<30&&s.ball.vz<0&&!s.misses;i++)stepGame(s,1/120,axis);}
 const speed=b=>Math.hypot(b.vx,b.vz);
+// Timing that opens the window 0.09 s before the ball reaches the front of the box: a press too early, a soft ball.
+const softT=s=>(hitZone(s).far+Math.abs(s.ball.vz)*.09-sweet)/half;
 // The keeper stands still far from the ball, so every shot reaches the goal line.
 function clearKeeper(s,x=2.4){s.level={...s.level,keeper:{...s.level.keeper,speed:0}};s.keeper.x=s.keeper.target=x;}
 // Flies the current shot to the goal line; returns the drawn height there and the highest point on the way.
@@ -20,7 +22,7 @@ test('出手时机决定球路：早出手高吊、正中重炮、晚出手低�
   let s=play(0);incoming(s);swingAt(s,.7,1);assert.equal(s.shot.zone,'top');assert.ok(Math.abs(speed(s.ball)-base(s)*EARLY_SPEED)<1e-6);
   s=play(0);incoming(s);swingAt(s,0,1);assert.equal(s.shot.zone,'mid');assert.ok(Math.abs(speed(s.ball)-base(s)*POWER)<1e-6);
   s=play(0);incoming(s);swingAt(s,-.7,1);assert.equal(s.shot.zone,'low');assert.ok(Math.abs(speed(s.ball)-base(s)*LATE_SPEED)<1e-6);
-  s=play(0);incoming(s);swingAt(s,2,1);assert.equal(s.lastShot,'soft');assert.equal(s.shot.zone,'low');assert.ok(Math.abs(speed(s.ball)-base(s)*SOFT)<1e-6);
+  s=play(0);incoming(s);swingAt(s,softT(s),1);assert.equal(s.lastShot,'soft');assert.equal(s.shot.zone,'low');assert.ok(Math.abs(speed(s.ball)-base(s)*SOFT)<1e-6);
   assert.ok(EARLY_SPEED<1&&LATE_SPEED>1&&LATE_SPEED<POWER);
   // From level 3 an early contact with a side held banks, and the bank is a lob too.
   s=play(2);incoming(s);swingAt(s,.7,1);assert.equal(s.lastShot,'bank');assert.equal(s.shot.zone,'top');

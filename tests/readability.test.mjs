@@ -22,7 +22,7 @@ test('挥击预判与实际挥击结果完全一致（种类与方向，含按�
 });
 test('挥击预判不会改动真实状态',()=>{const s=play();incoming(s,0,2.4);const snap=JSON.stringify(s);swingPreview(s);assert.equal(JSON.stringify(s),snap);});
 test('击球区矩形与真实判定一致，甜点带位于区内',()=>{
-  for(const id of Object.keys(WEAPONS)){const s=play(0,id);s.player.x=.7;const r=hitZone(s);
+  for(const id of Object.keys(WEAPONS)){const s=play(0,id);s.player.x=.7;s.ball={x:0,z:5,vx:0,vz:-4};const r=hitZone(s);
     assert.ok(r.sweetNear>r.near&&r.sweetFar<r.far);
     for(let x=-1.5;x<=2.9;x+=.05)for(let z=0;z<=3.5;z+=.05){s.ball={x,z,vx:0,vz:-4};
       const inside=x>=r.left&&x<=r.right&&z>=r.near&&z<=r.far;assert.equal(inHitRange(s),inside,`${id} x=${x.toFixed(2)} z=${z.toFixed(2)}`);}}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,startGame,stepGame,attack,useSkill,goalLock,WEAPONS,PLAYER_Z,KEEPER_Z,CHAIN} from '../dist/core.mjs';
+import {createGame,startGame,stepGame,attack,useSkill,goalLock,hitZone,WEAPONS,PLAYER_Z,KEEPER_Z,CHAIN} from '../dist/core.mjs';
 import {createMatchStats,recordMatchEvent,matchSummary} from '../dist/ui.mjs';
 
 function play(level=0,options={}){const s=createGame(level,'glove',options);s.practiceLeft=0;startGame(s);stepGame(s,1,0);return s;}
@@ -9,7 +9,7 @@ const half=WEAPONS.glove.reach*.5,sweet=PLAYER_Z+half;
 // One return: opens the active window when the ball is at timing t (0 = the sweet spot, a perfect), lets the swing
 // resolve, and returns every event raised on the way.
 function hit(s,t,axis=0){
-  incoming(s);const z=sweet+t*half,w=WEAPONS.glove,seen=[],step=a=>{stepGame(s,1/120,a);seen.push(...s.events);};
+  incoming(s);const z=t==='soft'?hitZone(s).far+Math.abs(s.ball.vz)*.09:sweet+t*half,w=WEAPONS.glove,seen=[],step=a=>{stepGame(s,1/120,a);seen.push(...s.events);};
   for(let i=0;i<2000&&s.ball.z>z+Math.abs(s.ball.vz)*w.windup;i++)step(0);
   attack(s);for(let i=0;i<30&&s.ball.vz<0&&!s.misses;i++)step(axis);
   return seen;
@@ -24,7 +24,7 @@ test('完美连击：连续打在甜点上累计，打早、打晚、软球都�
   for(let i=1;i<=2;i++){hit(s,0);assert.equal(s.lastShot,'perfect');assert.equal(s.chain,i);}
   hit(s,-.7);assert.equal(s.chain,0,'晚出手断');
   hit(s,0);hit(s,.7);assert.equal(s.chain,0,'早出手断');
-  hit(s,0);hit(s,2.4);assert.equal(s.lastShot,'soft');assert.equal(s.chain,0,'软球断');
+  hit(s,0);hit(s,'soft');assert.equal(s.lastShot,'soft');assert.equal(s.chain,0,'软球断');
 });
 test('进球、被扑不断连击；丢球断连击',()=>{
   const s=play();hit(s,0);assert.equal(resolve(s,3).result,'goal');assert.equal(s.chain,1,'进球不断');
