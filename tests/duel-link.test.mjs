@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createStream,createLink,roomsServer,ROOMS_API} from '../dist/duel-link.mjs';
+import {createHmac} from 'node:crypto';
+import {createStream,createLink,roomsServer,relayOnly,ROOMS_API,LINK} from '../dist/duel-link.mjs';
 import {createClient} from '../dist/duel-net.mjs';
 import {createBot} from '../dist/duel-bot.mjs';
 import {createDevServer} from '../scripts/serve.mjs';
@@ -51,10 +52,17 @@ test('房间地址：开发服务器的页面连本机替身，其他连线上 W
   assert.equal(roomsServer({port:'',protocol:'https:',host:'x',search:'?api=ws://127.0.0.1:8787/api/ws'}),'ws://127.0.0.1:8787/api/ws');
 });
 
+test('?ice=relay：直连只许走 TURN 中转（真机上确认中转通不通）', ()=>{
+  assert.equal(relayOnly({search:'?ice=relay'}),true);
+  assert.equal(relayOnly({search:'?code=2NCC6&ice=relay'}),true);
+  assert.equal(relayOnly({search:''}),false);assert.equal(relayOnly(undefined),false);
+});
+
 // --- Whole links on the room stand-in ---------------------------------------------------------------------------------
-async function serve(){
-  const server=createDevServer(),sockets=new Set();server.on('upgrade',(r,sk)=>{sockets.add(sk);sk.on('close',()=>sockets.delete(sk));});
-  await new Promise(r=>server.listen(0,'127.0.0.1',r));
+// rooms: createRooms options (scripts/dev-rooms.mjs).
+async function serve(rooms){
+  const server=createDevServer({rooms}),sockets=new Set();server.on('upgrade',(r,sk)=>{sockets.add(sk);sk.on('close',()=>sockets.delete(sk));});
+  await server.rooms.ready;await new Promise(r=>server.listen(0,'127.0.0.1',r));
   return {url:`ws://127.0.0.1:${server.address().port}/api/ws`,close:()=>new Promise(r=>{for(const sk of sockets)sk.destroy();server.close(r);})};
 }
 const until=async(check,ms=4000,what='')=>{const t0=Date.now();while(!check()){if(Date.now()-t0>ms)throw Error(`等太久：${what}`);await new Promise(r=>setTimeout(r,10));}};
@@ -171,4 +179,29 @@ test('擂台房：分出胜负换人后，新的一对重新开始，上一对�
     await new Promise(r=>setTimeout(r,200));assert.ok(!as.msgs.some(m=>'fresh' in m),'下场的人收不到');
     for(const x of [A,B,C])x.close();
   }finally{await s.close();}
+});
+
+// A stand-in RTCPeerConnection that only keeps the configuration it was made with.
+function recordingRTC(){
+  const made=[];
+  class RTC{constructor(c){made.push(c);}createDataChannel(){return {readyState:'connecting',send(){},close(){}};}close(){}}
+  return {RTC,made};
+}
+test('TURN：房间给了 TURN，直连带上它（顶替最后一个 STUN）；要求只走中转时只走 TURN；房间没给就照旧', async()=>{
+  const urls='turn:1.2.3.4:3478?transport=udp,turn:1.2.3.4:3478?transport=tcp',s=await serve({turn:{urls,secret:'s3cret'}});
+  const plain=await serve(),{RTC,made}=recordingRTC();
+  try{
+    const dial=async(server,relay)=>{
+      const host=createLink({server,join:{create:true},RTC,relayOnly:relay}),{code}=await host.ready,n=made.length;
+      const guest=createLink({server,join:{code},RTC:null});await until(()=>made.length>n,4000,'房主开始直连');
+      host.close();guest.close();return made.at(-1);
+    };
+    const withTurn=await dial(s.url,false),turn=withTurn.iceServers[2];
+    assert.deepEqual(withTurn.iceServers.slice(0,2),LINK.ice.slice(0,2));assert.equal(withTurn.iceServers.length,3);
+    assert.deepEqual(turn.urls,urls.split(','));assert.match(turn.username,/^\d+:[0-9a-f]{8}$/);
+    assert.equal(turn.credential,createHmac('sha1','s3cret').update(turn.username).digest('base64'),'密码按 coturn 的规则');
+    assert.equal(withTurn.iceTransportPolicy,undefined);
+    assert.equal((await dial(s.url,true)).iceTransportPolicy,'relay');
+    assert.deepEqual(await dial(plain.url,false),{iceServers:LINK.ice},'没有 TURN 就只有 STUN');
+  }finally{await s.close();await plain.close();}
 });

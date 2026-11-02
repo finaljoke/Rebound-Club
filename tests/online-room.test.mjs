@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
 import {ROOM,CLOSE,normalizeCode,newHub,reserveCode,resolveCode,closeCode,holdCode,cleanName,newRoom,joinRoom,roomMessage,leaveRoom,nextWake,wakeRoom,originAllowed} from '../server/room.mjs';
+import {TURN,turnServer} from '../server/turn.mjs';
 
 // The online rooms' rules (server/room.mjs) on a hand-moved clock (seconds).
 let tokens=0;const newToken=()=>`token-${++tokens}`;
@@ -286,4 +288,28 @@ test('信令和中转只在场上两人之间，带着这一对的编号；编�
   assert.deepEqual(msg(room,'p3',{type:'signal',pair:2,data:{}}),[],'不在场上');
   const bye=msg(room,'p3',{type:'bye'});
   assert.deepEqual(heard(bye,'p1','watching'),[{type:'watching',on:false}]);assert.deepEqual(heard(bye,'p2','watching'),[{type:'watching',on:false}]);
+});
+
+// --- TURN ------------------------------------------------------------------------------------------------------------
+
+test('TURN 临时密码：按 coturn 的 use-auth-secret 算，用户名是过期时间加标记，默认 12 小时后失效', async()=>{
+  const t=await turnServer({urls:'turn:1.2.3.4:3478?transport=udp, turn:1.2.3.4:3478?transport=tcp',secret:'s3cret',now:1000.7,tag:'abc'});
+  const username=`${1000+TURN.ttl}:abc`;
+  assert.equal(TURN.ttl,12*3600);
+  assert.deepEqual(t,{urls:['turn:1.2.3.4:3478?transport=udp','turn:1.2.3.4:3478?transport=tcp'],username,
+    credential:createHmac('sha1','s3cret').update(username).digest('base64')});
+  const [a,b]=[await turnServer({urls:'turn:x',secret:'s',now:0}),await turnServer({urls:'turn:x',secret:'s',now:0})];
+  assert.match(a.username,/^43200:[0-9a-f]{8}$/);assert.notEqual(a.username,b.username,'每次一个新标记，coturn 的配额按人算');
+  assert.equal(await turnServer({urls:'turn:x',secret:'',now:0}),null,'没有密钥就不给');
+  assert.equal(await turnServer({urls:'',secret:'s',now:0}),null,'没有地址就不给');
+});
+
+test('TURN：进房时给了就放进 joined，没给就没有这一项', ()=>{
+  const turn={urls:['turn:1.2.3.4:3478'],username:'1:a',credential:'c'};
+  const room=newRoom({id:'room-1',code:'2NCC6',now:0}),host=joinRoom(room,{create:true,now:0,newToken,turn});
+  assert.deepEqual(sends(host.actions,'p1')[0].turn,turn);
+  assert.equal('turn' in sends(joinRoom(room,{now:1,newToken}).actions,'p2')[0],false);
+  const {joins}=arena(['阿甲'],0);assert.equal('turn' in sends(joins[0].actions,'p1')[0],false);
+  const two=newRoom({id:'room-9',code:'ARENA',now:0,v:2});
+  assert.deepEqual(sends(joinRoom(two,{create:true,name:'阿甲',now:0,newToken,turn}).actions,'p1')[0].turn,turn,'擂台房也给');
 });

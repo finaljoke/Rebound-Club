@@ -4,11 +4,17 @@
 // rules' actions is the same.
 import {randomBytes,randomUUID} from 'node:crypto';
 import {ROOM,CLOSE,newHub,reserveCode,resolveCode,closeCode,holdCode,newRoom,joinRoom,roomMessage,leaveRoom,nextWake,wakeRoom,originAllowed} from '../server/room.mjs';
+import {turnServer} from '../server/turn.mjs';
 
 // cfg: the rules' limits (tests shorten them); now(): seconds; origins: allowed Origin list ('*' for local play);
-// log(stats): what a room carried, when it closes.
-export function createRooms({cfg=ROOM,now=()=>Date.now()/1000,origins='*',log=()=>{}}={}){
+// log(stats): what a room carried, when it closes; turn: {urls, secret} of a TURN server (server/turn.mjs), or null.
+export function createRooms({cfg=ROOM,now=()=>Date.now()/1000,origins='*',log=()=>{},turn=null}={}){
   const hub=newHub(),rooms=new Map();
+  // TURN credentials: one set for every connection here (the Worker makes one per connection), made again every hour so
+  // they never lapse; `ready` settles once the first set is made.
+  let ice=null;const renew=()=>turnServer({...turn,now:now()}).then(t=>{ice=t;});
+  const ready=turn?renew():Promise.resolve();
+  if(turn)setInterval(renew,3600e3).unref?.();
   // entry = {room, sockets:{place:ws}, buckets, timer}: a socket counts for its place only while it is the one there.
   function run(entry,actions){
     const texts=new Map();
@@ -39,7 +45,7 @@ export function createRooms({cfg=ROOM,now=()=>Date.now()/1000,origins='*',log=()
         rooms.set(id,{room:newRoom({id,code:r.code,now:now(),v:params.get('v')==='2'?2:1}),sockets:{},buckets:{},timer:null});create=true;
       }else if(params.has('code')){id=resolveCode(hub,{code:params.get('code'),now:now()},cfg);if(!id)return refuse(ws,'not-found');}
       const entry=id&&rooms.get(id);if(!entry)return refuse(ws,'not-found');
-      const r=joinRoom(entry.room,{create,token:params.get('token'),name:params.get('name'),now:now(),newToken:randomUUID},cfg);
+      const r=joinRoom(entry.room,{create,token:params.get('token'),name:params.get('name'),now:now(),newToken:randomUUID,turn:ice},cfg);
       if(r.error){if(create)rooms.delete(id);return refuse(ws,r.error);}
       const place=r.place;
       // The place taken back: the old connection goes first, then the new one takes the place and hears it joined.
@@ -49,6 +55,7 @@ export function createRooms({cfg=ROOM,now=()=>Date.now()/1000,origins='*',log=()
         run(entry,roomMessage(entry.room,{place,text,bytes,now:now(),buckets:entry.buckets},cfg));schedule(entry);});
       ws.onClose(()=>{if(entry.sockets[place]!==ws)return;entry.sockets[place]=null;run(entry,leaveRoom(entry.room,{place,now:now()},cfg));schedule(entry);});
     },
+    ready,
     // For tests: the rooms open now.
     get size(){return rooms.size;}
   };
